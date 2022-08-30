@@ -1,18 +1,35 @@
 #include <iostream>
-#include <WS2tcpip.h>
 #include <string>
 #include <thread>
 #include <vector>
 #include <fstream>
 
+#ifndef _WIN32
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#else
+#include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
-#define port 27031
+#endif
+
+#define port 80
+#ifndef _WIN32
+//Temporary
+#define SOCKET_ERROR -2
+#define INVALID_SOCKET -1
+typedef int SOCKET;
+#endif
+
 using namespace std;
 
 typedef	struct clientInfo {//This structure has the information from client request. Currently only has request type and requested path.
 	unsigned char RequestType = 0;
 	string RequestPath = "";
 }; 
+
 
 string fileMime(string filename) {//This function returns the MIME type from file extension.
 	bool hasExtension = 0; string ext = "";
@@ -92,13 +109,22 @@ public:
 					send(sock, temp.c_str(), temp.size(), 0);
 				}
 			}
+			#ifndef _WIN32
+			close(sock);
+			#else
 			closesocket(sock);
+			#endif
 		}
 		else {
 			temp = serverHeaders(404);
 			int result=send(sock, temp.c_str(), temp.size(), 0); temp = "";
 			//cout << result;
-			closesocket(sock); return;
+			#ifndef _WIN32
+			close(sock);
+			#else
+			closesocket(sock);
+			#endif 
+			return;
 		}
 	}
 private:
@@ -141,10 +167,10 @@ void parseHeader(char* buf, SOCKET sock) {//This function reads and parses the R
 
 void clientConnection(SOCKET sock) {//This is the thread function that gets data from client.
 	// While loop: accept and echo message back to client
-	char buf[4096];
+	char buf[4096]={0};
 	while (true)
 	{
-		ZeroMemory(buf, 4096);
+		//ZeroMemory(buf, 4096);
 
 		// Wait for client to send data
 		int bytesReceived = recv(sock, buf, 4096, 0);
@@ -168,33 +194,41 @@ void clientConnection(SOCKET sock) {//This is the thread function that gets data
 	}
 }
 
-void main()//This is the main server function that fires up the server and listens for connections.
+int main()//This is the main server function that fires up the server and listens for connections.
 {
+	#ifdef _WIN32
 	// Initialze winsock
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
 	if (WSAStartup(ver, &wsData))
 	{
 		cerr << "Can't Initialize winsock! Quitting" << endl;
-		return;
+		return -1;
 	}
+	#endif
 
 	// Create a socket
 	SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
 	if (listening == INVALID_SOCKET)
 	{
 		cerr << "Can't create a socket! Quitting" << endl;
-		return;
+		return -1;
 	}
 
-	// Bind the ip address and port to a socket
-	sockaddr_in hint;
-	hint.sin_family = AF_INET;
-	hint.sin_port = htons(port);
-	hint.sin_addr.S_un.S_addr = INADDR_ANY;
-
+	 // Bind the ip address and port to a socket
+	    sockaddr_in hint;
+	    hint.sin_family = AF_INET;
+	    hint.sin_port = htons(port);
+		inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+		socklen_t len = sizeof(hint);
 	bind(listening, (sockaddr*)&hint, sizeof(hint));
+	if (getsockname(listening, (struct sockaddr *)&hint, &len) == -1) {
+		cout << "Error binding socket on port " << port << endl << "Make sure port is not in use by another program."; return -2;
+	}
+	//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+	else if(port!=ntohs(hint.sin_port)) {cout << "Error binding socket on port " << port << " (OS assigned socket on another port)" << endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << endl; return -2;}
+
 	std::vector<std::unique_ptr<std::thread>> threads;
-	cout << "Alyssa HTTP Server v0.1\n"; cout << "Listening on: " << port << endl;
+	cout << "Alyssa HTTP Server v0.1.1\n"; cout << "Listening on: " << port << endl;
 	
 	while (true)
 	{
@@ -203,14 +237,18 @@ void main()//This is the main server function that fires up the server and liste
 
 		// Wait for a connection
 		sockaddr_in client;
+#ifndef _WIN32
+		unsigned int clientSize = sizeof(client);
+#else
 		int clientSize = sizeof(client);
+#endif
 		SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
 
-		char host[NI_MAXHOST];		// Client's remote name
-		char service[NI_MAXSERV];	// Service (i.e. port) the client is connect on
+		char host[NI_MAXHOST]={0};		// Client's remote name
+		char service[NI_MAXSERV]={0};	// Service (i.e. port) the client is connect on
 
-		ZeroMemory(host, NI_MAXHOST); // same as memset(host, 0, NI_MAXHOST);
-		ZeroMemory(service, NI_MAXSERV);
+		//ZeroMemory(host, NI_MAXHOST); // same as memset(host, 0, NI_MAXHOST);
+		//ZeroMemory(service, NI_MAXSERV);
 
 		if (getnameinfo((sockaddr*)&client, sizeof(client), host, NI_MAXHOST, service, NI_MAXSERV, 0) == 0)
 		{
@@ -224,9 +262,9 @@ void main()//This is the main server function that fires up the server and liste
 		}
 		threads.emplace_back(new std::thread((clientConnection), clientSocket));
 	}
-	
+	#ifdef _WIN32
 	// Cleanup winsock
 	WSACleanup();
-
-	system("pause");
+	#endif
+	return 0;
 }

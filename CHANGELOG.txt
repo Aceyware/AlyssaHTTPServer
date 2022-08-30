@@ -1,6 +1,10 @@
 # Alyssa HTTP Server Changelog
 ##############################
 
+v0.1.1
+• Now code is multi platform (Windows, Linux, Darwin).
+• Error checking added for listening port for cases like occupied port.
+
 v0.1 - First ever version
 • This is the first version ever. First implementations made such as:
 	• Initial HTTP GET implementation
