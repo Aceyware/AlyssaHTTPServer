@@ -1,0 +1,11 @@
+# Alyssa HTTP Server Changelog
+##############################
+
+v0.1 - First ever version
+• This is the first version ever. First implementations made such as:
+	• Initial HTTP GET implementation
+	• Initial Server Response Header implementation
+	• Initial Sockets code
+	• Initial Client Request Header parser
+	• Initial MIME Type implementation
+	
