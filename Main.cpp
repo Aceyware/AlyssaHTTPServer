@@ -1,35 +1,19 @@
-#include <iostream>
-#include <string>
-#include <thread>
-#include <vector>
-#include <fstream>
-
-#ifndef _WIN32
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#else
-#include <WS2tcpip.h>
-#pragma comment (lib, "ws2_32.lib")
-#endif
-
-#define port 80
-#ifndef _WIN32
-//Temporary
-#define SOCKET_ERROR -2
-#define INVALID_SOCKET -1
-typedef int SOCKET;
-#endif
+#include "Alyssa.h"
 
 using namespace std;
 
-typedef	struct clientInfo {//This structure has the information from client request. Currently only has request type and requested path.
+struct clientInfo {//This structure has the information from client request. Currently only has request type and requested path.
 	unsigned char RequestType = 0;
 	string RequestPath = "";
 }; 
 
+bool fileExists(string filepath) {//This function checks for desired file is exists and is accessible
+	ifstream file;
+	file.open(filepath);
+	if (!file.is_open()) return 0;
+	else { file.close(); return 1; }
+	
+}
 
 string fileMime(string filename) {//This function returns the MIME type from file extension.
 	bool hasExtension = 0; string ext = "";
@@ -72,14 +56,23 @@ class AlyssaHTTP//This class has some server code, mainly HTTP Response types.
 public:
 	static void Get(string path, SOCKET sock) {
 		ifstream file; string temp = ""; int filesize = 0;
-		if (path == "/") {
-			file.open("./htroot/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open("./htroot/index.html");
+		if (path == "/") {//If server requests for root, we'll handle it specially
+			if(fileExists( "/htroot/root.htaccess")) {} //Check for the special rules first
+			else if (fileExists( "/htroot/index.html")) { file.open( "/htroot/index.html"); } //Check for index.html, which is default filename for webpage on root of any folder.
 		}
-		else {
-			file.open("./htroot/" + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open("./htroot/" + path, ios::binary);
+		else { 
+			if (fileExists( "/htroot/"+path+".htaccess")) {}//Check for special rules first
+			else if (fileExists( "/htroot" + path + "/root.htaccess")) {}//Requested path may be a folder, check for special rules inside specified path folder
+			else if (fileExists( "/htroot/" + path)) {//If special rules are not found, check for a file with exact name on request
+				file.open( "/htroot/" + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path, ios::binary); }
+			else if (fileExists( "/htroot/" + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+				file.open( "/htroot/" + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path + ".html"); }
+			else if (fileExists( "/htroot/" + path + "/index.html")) {//Requested path may be a folder, check for index.html inside of folder
+				file.open( "/htroot/" + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path + "/index.html"); }
+			//If none is exist, don't open any file so server will return 404.
 		}
 		if (file.is_open()) {
-			temp = serverHeaders(200,fileMime(path),filesize);
+			temp = serverHeaders(200,fileMime( "/htroot/" + path),filesize);
 			send(sock, temp.c_str(), temp.size(), 0); temp = "";
 			if (fileMime(path)!="text/html") {//If requested file is not a HTML, read it byte by byte and send the file in 8KiB buffers. Reading binary line by line like on text is not a good idea.
 				char readChar;
@@ -196,6 +189,8 @@ void clientConnection(SOCKET sock) {//This is the thread function that gets data
 
 int main()//This is the main server function that fires up the server and listens for connections.
 {
+	//Read the config file
+	Config::initialRead();
 	#ifdef _WIN32
 	// Initialze winsock
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
@@ -228,7 +223,7 @@ int main()//This is the main server function that fires up the server and listen
 	else if(port!=ntohs(hint.sin_port)) {cout << "Error binding socket on port " << port << " (OS assigned socket on another port)" << endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << endl; return -2;}
 
 	std::vector<std::unique_ptr<std::thread>> threads;
-	cout << "Alyssa HTTP Server v0.1.1\n"; cout << "Listening on: " << port << endl;
+	cout << "Alyssa HTTP Server v0.2\n"; cout << "Listening on: " << port << endl;
 	
 	while (true)
 	{

@@ -1,6 +1,10 @@
 # Alyssa HTTP Server Changelog
 ##############################
 
+v0.2
+• Initial code for config implementation
+• Initial handling of folders added.
+
 v0.1.1
 • Now code is multi platform (Windows, Linux, Darwin).
 • Error checking added for listening port for cases like occupied port.
