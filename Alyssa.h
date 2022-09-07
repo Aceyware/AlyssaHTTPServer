@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include <fstream>
+#include <filesystem>//Cpp17
 
 #ifndef _WIN32
 #include <sys/types.h>
@@ -35,6 +36,14 @@ public:
 private:
 	static void Configcache();
 };
+class Folder {
+public:
+    static std::string folder(std::string path);
+private:
+	static std::string getFolder(std::string path);
+	static std::string HTML(std::string payload, std::string relpath);
+};
+
 
 // Declaration of options
 extern int port;
@@ -43,5 +52,9 @@ extern bool foldermode;
 extern bool forbiddenas404;
 extern std::string whitelist;
 extern bool errorpages;
-extern std::string errorpath;
+extern std::string respath;
+extern std::string htrespath;
 
+// Definition of constant values
+static char separator = 1;
+static std::string version = "v0.3";

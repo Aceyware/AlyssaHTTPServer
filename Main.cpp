@@ -12,7 +12,6 @@ bool fileExists(string filepath) {//This function checks for desired file is exi
 	file.open(filepath);
 	if (!file.is_open()) return 0;
 	else { file.close(); return 1; }
-	
 }
 
 string fileMime(string filename) {//This function returns the MIME type from file extension.
@@ -47,7 +46,7 @@ string serverHeaders(int statusCode,string mime="text/html",int contentlength=0)
 	else if (statusCode == 403) {
 		temp += "403 Forbiddden\r\n";
 	}
-	temp += "Server: AlyssaHTTPServer\r\n\r\n";
+	temp += "Server: Alyssa/"+version+"\r\n\r\n";
 	return temp;
 }
 
@@ -57,22 +56,50 @@ public:
 	static void Get(string path, SOCKET sock) {
 		ifstream file; string temp = ""; int filesize = 0;
 		if (path == "/") {//If server requests for root, we'll handle it specially
-			if(fileExists( "/htroot/root.htaccess")) {} //Check for the special rules first
-			else if (fileExists( "/htroot/index.html")) { file.open( "/htroot/index.html"); } //Check for index.html, which is default filename for webpage on root of any folder.
+			if(fileExists( "./htroot/root.htaccess")) {} //Check for the special rules first
+			else if (fileExists( "./htroot/index.html")) { file.open( "./htroot/index.html"); } //Check for index.html, which is default filename for webpage on root of any folder.
+			else if (foldermode){
+				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, "text/html",asd.size()) + asd;
+				send(sock, asd.c_str(), asd.size(), 0); 
+				#ifndef _WIN32
+				close(sock);
+				#else
+				closesocket(sock);
+				#endif return;
+			}
 		}
-		else { 
-			if (fileExists( "/htroot/"+path+".htaccess")) {}//Check for special rules first
-			else if (fileExists( "/htroot" + path + "/root.htaccess")) {}//Requested path may be a folder, check for special rules inside specified path folder
-			else if (fileExists( "/htroot/" + path)) {//If special rules are not found, check for a file with exact name on request
-				file.open( "/htroot/" + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path, ios::binary); }
-			else if (fileExists( "/htroot/" + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-				file.open( "/htroot/" + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path + ".html"); }
-			else if (fileExists( "/htroot/" + path + "/index.html")) {//Requested path may be a folder, check for index.html inside of folder
-				file.open( "/htroot/" + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open( "/htroot/" + path + "/index.html"); }
+		else if (path.substr(0,htrespath.size())==htrespath){//Request for a resource
+			if (fileExists(respath + "/" + path.substr(htrespath.size()))){ file.open(respath + "/" + path.substr(htrespath.size()), ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(respath + "/" + path.substr(htrespath.size()), ios::binary); }
+		}
+		else {
+			if (std::filesystem::is_directory(htroot + "/" + path)) {
+				if (fileExists(htroot + "/"  + path + "/root.htaccess")) {}//Requested path may be a folder, check for special rules inside specified path folder
+				else if (fileExists(htroot + "/"  + path + "/index.html")) {//Requested path may be a folder, check for index.html inside of folder
+					file.open(htroot + "/"  + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/"  + path + "/index.html");
+				}
+				else  {
+					string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, "text/html", asd.size()) + asd;
+					send(sock, asd.c_str(), asd.size(), 0);
+					#ifndef _WIN32
+					close(sock);
+					#else
+					closesocket(sock);
+					#endif return;
+				}
+			}
+			else {
+				if (fileExists(htroot + "/"  + path + ".htaccess")) {}//Check for special rules first
+				else if (fileExists(htroot + "/"  + path)) {//If special rules are not found, check for a file with exact name on request
+					file.open(htroot + "/"  + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/"  + path, ios::binary);
+				}
+				else if (fileExists(htroot + "/"  + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+					file.open(htroot + "/"  + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/"  + path + ".html");
+				}
+			}
 			//If none is exist, don't open any file so server will return 404.
 		}
 		if (file.is_open()) {
-			temp = serverHeaders(200,fileMime( "/htroot/" + path),filesize);
+			temp = serverHeaders(200,fileMime( htroot + "/"  + path),filesize);
 			send(sock, temp.c_str(), temp.size(), 0); temp = "";
 			if (fileMime(path)!="text/html") {//If requested file is not a HTML, read it byte by byte and send the file in 8KiB buffers. Reading binary line by line like on text is not a good idea.
 				char readChar;
@@ -110,8 +137,14 @@ public:
 		}
 		else {
 			temp = serverHeaders(404);
-			int result=send(sock, temp.c_str(), temp.size(), 0); temp = "";
-			//cout << result;
+			send(sock, temp.c_str(), temp.size(), 0); temp = "";
+			if (errorpages) {
+				file.open(respath + "/404.html"); file.open(respath + "/404.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(respath + "/404.html");
+				if (file.is_open()) {
+					while (getline(file, temp)) {
+						send(sock, temp.c_str(), temp.size(), 0);}
+				}
+			}
 			#ifndef _WIN32
 			close(sock);
 			#else
@@ -139,7 +172,7 @@ void parseHeader(char* buf, SOCKET sock) {//This function reads and parses the R
 				else if (temp == "POST") cl.RequestType = 3;
 				else if (temp == "DELETE") cl.RequestType = 4;
 				else if (temp == "OPTIONS") cl.RequestType = 5;
-				else //Return 404 and break
+				else {} //Return 404 and break
 					break;
 			case 1:
 				cl.RequestPath = temp; break;
@@ -223,7 +256,7 @@ int main()//This is the main server function that fires up the server and listen
 	else if(port!=ntohs(hint.sin_port)) {cout << "Error binding socket on port " << port << " (OS assigned socket on another port)" << endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << endl; return -2;}
 
 	std::vector<std::unique_ptr<std::thread>> threads;
-	cout << "Alyssa HTTP Server v0.2\n"; cout << "Listening on: " << port << endl;
+	cout << "Alyssa HTTP Server "+version+"\n"; cout << "Listening on: " << port << endl;
 	
 	while (true)
 	{

@@ -1,5 +1,16 @@
 # Alyssa HTTP Server Changelog
-##############################
+------------------------------
+
+v0.3
+• Now configuration is actually used.
+• Now configuration flies are platform independent (newline terminators were causing problems on ex. when config written on Windows is used on *nix)
+• Initial implementation of custom error pages (only 404 is supported for now)
+• Folder index pages implemented
+	• When enabled, requests to folders will be responded with a page that's index(contents) of folder 
+	• Supports icons for folders and files
+	• Size of files are shown
+	• Folders are listed first, which is a thing Apple couldn't do to their OS since decades
+• Now code is C++ 17
 
 v0.2
 • Initial code for config implementation

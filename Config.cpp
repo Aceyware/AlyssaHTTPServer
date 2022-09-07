@@ -1,13 +1,16 @@
 #include "Alyssa.h"
-
 using namespace std;
 //Redefinition of options
-fstream configfs; string configcache[20] = {}; string configcache_value[20] = {}; int port = 80; string htroot=""; bool foldermode=0; string whitelist=""; bool forbiddenas404=0; string errorpath=""; bool errorpages=0;
+fstream configfs; string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF=0; int port = 80; string htroot = ""; bool foldermode = 0; string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = "";
 
 void Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
-	configfs.open("Alyssa.cfg", ios::in);
+	configfs.open("Alyssa.cfg", ios::in | ios::binary);
+	//Determine the newline delimiter on config file
+	while((delimiter=configfs.get())!='\r' && delimiter != '\n'){}
+	if(configfs.get()=='\n') isCRLF=1;
+	configfs.seekg(0);
 	int temp = 0; string stemp, tempie, key, value;
-	while (getline(configfs, stemp))
+	while (getline(configfs, stemp,delimiter))
 	{
 		if (stemp[0] == '#') {}//Comment line, discard
 		else if (stemp == "") {}//Blank line, discard
@@ -30,7 +33,8 @@ void Config::Configcache() {//This function reads the config file and caches all
 			if (stemp == tempie) { tempie = ""; alreadyseparated = 0; }//Invalid, discard
 			else//There's where the values and keys are cached to arrays. And resets the vars in the end and loops again until EOF.
 			{
-				configcache[temp] = key; configcache_value[temp] = value; temp++; tempie = ""; alreadyseparated = 0;
+				configcache[temp] = key; configcache_value[temp] = value; if(isCRLF && temp>0) configcache[temp].erase(0,1);
+				temp++; tempie = ""; alreadyseparated = 0;
 			}
 		}
 	}
@@ -52,4 +56,9 @@ string Config::getValue(std::string key, std::string value) {//Interface functio
 void Config::initialRead() {//Initial read of the config file and setup of setting variables at the startup of the program.
 	Configcache();
 	port = stoi(getValue("port", "80"));
+	htroot = getValue("htrootpath", "./htroot");
+	respath = getValue("respath", "./htroot/res");
+	htrespath = getValue("htrespath", "/res");
+	foldermode = stoi(getValue("foldermode", "0"));
+	errorpages = stoi(getValue("errorpages", "0"));
 }
