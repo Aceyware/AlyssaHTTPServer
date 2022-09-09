@@ -1,6 +1,16 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.4
+• First implementation of custom actions. For now it only supports redirections
+• HTTP HEAD support
+• Non-implemented Requests (HTTP POST,DELETE,etc.) will be responded with 501 Not Implemented, instead of sending nothing and holding connection forever
+• Whitelist implementation, when enabled hosts on the list will be dropped just after connection.
+• Renewed Request Header parser
+• Now hostname always printed to console with IP address instead of hostname.
+• Fixed some hardcoded strings
+• Some other things that I forgot
+
 v0.3
 • Now configuration is actually used.
 • Now configuration flies are platform independent (newline terminators were causing problems on ex. when config written on Windows is used on *nix)

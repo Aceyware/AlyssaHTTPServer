@@ -21,10 +21,10 @@
 #endif
 
 #ifndef _WIN32
-//Temporary
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
 typedef int SOCKET;
+#define closesocket close
 #endif
 
 // Definition of functions and classes outside of Main
@@ -44,8 +44,21 @@ private:
 	static std::string HTML(std::string payload, std::string relpath);
 };
 
+static std::string currentDateTime(bool x) {
+	time_t     now = time(0);
+	struct tm  tstruct;
+	char       buf[80];
+#pragma warning(suppress : 4996)
+	tstruct = *localtime(&now);
+	if (x) strftime(buf, sizeof(buf), "%d.%m.%Y-%X", &tstruct);
+	else strftime(buf, sizeof(buf), "%X", &tstruct);
+	return buf;
+}
 
-// Declaration of options
+
+// Declaration of variables
+extern bool isCRLF;
+extern char delimiter;
 extern int port;
 extern std::string htroot;
 extern bool foldermode;
@@ -54,7 +67,8 @@ extern std::string whitelist;
 extern bool errorpages;
 extern std::string respath;
 extern std::string htrespath;
+extern bool logging;
 
 // Definition of constant values
 static char separator = 1;
-static std::string version = "v0.3";
+static std::string version = "v0.4";
