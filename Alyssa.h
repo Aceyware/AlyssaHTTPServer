@@ -25,50 +25,80 @@
 #define INVALID_SOCKET -1
 typedef int SOCKET;
 #define closesocket close
+#define Sleep sleep
 #endif
+
+#define COMPILE_OPENSSL//Define that if you want to compile with SSL support
+#ifdef COMPILE_OPENSSL
+#include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#define SSL_recv SSL_read // Definitions for making SSL identical to code I used to know
+#define SSL_send SSL_write
+#endif
+using std::string;
 
 // Definition of functions and classes outside of Main
 class Config
 {
 public:
-	static std::string getValue(std::string key, std::string value);
+	static string getValue(std::string key, std::string value);
 	static void initialRead();
 private:
 	static void Configcache();
 };
 class Folder {
 public:
-    static std::string folder(std::string path);
+    static string folder(std::string path);
 private:
-	static std::string getFolder(std::string path);
-	static std::string HTML(std::string payload, std::string relpath);
+	static string getFolder(std::string path);
+	static string HTML(std::string payload, std::string relpath);
 };
-
-static std::string currentDateTime(bool x) {
-	time_t     now = time(0);
-	struct tm  tstruct;
-	char       buf[80];
-#pragma warning(suppress : 4996)
-	tstruct = *localtime(&now);
-	if (x) strftime(buf, sizeof(buf), "%d.%m.%Y-%X", &tstruct);
-	else strftime(buf, sizeof(buf), "%X", &tstruct);
-	return buf;
-}
+#ifndef COMPILE_OPENSSL
+typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
+typedef struct ssl_st SSL;
+#endif // !COMPILE_OPENSSL
 
 
 // Declaration of variables
 extern bool isCRLF;
 extern char delimiter;
 extern int port;
-extern std::string htroot;
+extern string htroot;
 extern bool foldermode;
 extern bool forbiddenas404;
-extern std::string whitelist;
+extern string whitelist;
 extern bool errorpages;
-extern std::string respath;
-extern std::string htrespath;
+extern string respath;
+extern string htrespath;
 extern bool logging;
+#ifdef COMPILE_OPENSSL
+extern string SSLcertpath;
+extern string SSLkeypath;
+extern int SSLport;
+#endif
 
 // Definition of constant values
 static char separator = 1;
-static std::string version = "v0.4";
+static string version = "v0.5";
+
+#ifdef COMPILE_OPENSSL
+// SSL stuff
+#define	QLEN		  32	/* maximum connection queue length	*/
+#define	BUFSIZE		4096
+#define MAXCLI      100
+static SSL_CTX* InitServerCTX(void) {
+	OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
+	SSL_load_error_strings();   /* load all error messages */
+	SSL_CTX* ctx;
+#pragma warning(suppress : 4996)
+	const SSL_METHOD* method = TLSv1_2_server_method();  /* create new server-method instance */
+	ctx = SSL_CTX_new(method);   /* create new context from method */
+	if (ctx == NULL)
+	{
+		ERR_print_errors_fp(stderr);
+		abort();
+	}
+	return ctx;
+}
+#endif

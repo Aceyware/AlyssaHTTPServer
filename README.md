@@ -9,6 +9,6 @@ Alyssa is a lightweight, multiplatform, multiconnection HTTP server. It can just
 - [ ] HTTP2 Support
 - [ ] Fixup of bugs and issues
 - [ ] Actual keep-alive support
-- [ ] SSL/TLS support
-#### Note for compiling on *nix systems
-For now `g++` and `c++` can compile without a problem. `gcc` gives error on linking, `clang` doesn't even compiles.
+- [x] SSL/TLS support
+### SSL Support
+Compiling with SSL support requires OpenSSL libraries. SSL support is optional and enabled by default, if you want to compile without SSL support and OpenSSL libraries, just remove definition of `COMPILE_OPENSSL` from `Alyssa.h` file.

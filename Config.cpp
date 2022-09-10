@@ -2,7 +2,9 @@
 using namespace std;
 //Redefinition of options
 fstream configfs; string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF = 0; int port = 80; string htroot = ""; bool foldermode = 0; string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logging = 0;
-
+#ifdef COMPILE_OPENSSL
+int SSLport; string SSLkeypath; string SSLcertpath;
+#endif
 void Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
 	configfs.open("Alyssa.cfg", ios::in | ios::binary);
 	//Determine the newline delimiter on config file
@@ -64,5 +66,10 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	whitelist = getValue("whitelist", ""); 
 	if(whitelist!="") { if (whitelist[whitelist.size() - 1] != ';') whitelist += ";"; }
 	logging = stoi(getValue("logging", "0"));
+#ifdef COMPILE_OPENSSL
+	SSLcertpath = getValue("SSLcert", "./crt.pem");
+	SSLkeypath = getValue("SSLkey", "./key.key");
+	SSLport = stoi(getValue("SSLport", "443"));
+#endif
 	return;
 }

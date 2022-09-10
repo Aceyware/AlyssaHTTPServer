@@ -1,6 +1,11 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.5
+• Added HTTPS support with TLS 1.2
+• Added file and folder count to folder index pages
+• Removed port number from folder index pages
+
 v0.4
 • First implementation of custom actions. For now it only supports redirections
 • HTTP HEAD support
