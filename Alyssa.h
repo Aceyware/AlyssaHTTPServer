@@ -71,7 +71,7 @@ extern string whitelist;
 extern bool errorpages;
 extern string respath;
 extern string htrespath;
-extern bool logging;
+extern bool logOnScreen;
 #ifdef COMPILE_OPENSSL
 extern string SSLcertpath;
 extern string SSLkeypath;
@@ -80,7 +80,7 @@ extern int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.5";
+static string version = "v0.5.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

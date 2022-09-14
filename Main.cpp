@@ -5,6 +5,12 @@ using namespace std;
 struct clientInfo {//This structure has the information from client request. Currently only has request type and requested path.
 	string RequestType = "", RequestPath = "",
 		cookies = "", auth = "", otherHeaders = "";
+	size_t rstart = 0, rend = 0; // Range request integers.
+	SOCKET sock = INVALID_SOCKET;
+#ifdef COMPILE_OPENSSL
+	SSL* ssl = NULL;
+#endif // COMPILE_OPENSSL
+
 }; 
 
 bool fileExists(string filepath) {//This function checks for desired file is exists and is accessible
@@ -50,11 +56,20 @@ string serverHeaders(int statusCode,string mime="text/html",int contentlength=0)
 		temp += "200 OK\r\n";
 		temp += "Content-Type: "; temp += mime; temp += "\r\n";
 		if (contentlength > 0) {
+			temp += "Accept-Ranges: bytes\r\n";
 			temp += "Content-Length: "; temp += to_string(contentlength); temp += "\r\n";
 		}
 		break;
+	case 206:
+		temp += "206 Partial Content\r\nContent-Range : bytes ";
+		temp += mime; temp += "/";
+		if (contentlength > 0) temp += to_string(contentlength);
+		else temp += "*";
+		temp += "\r\n"; break;
 	case 302:
 		temp += "302 Found\r\nLocation: " + mime+"\r\n"; break;
+	case 400:
+		temp += "400 Bad Request\r\n"; break;
 	case 401:
 		temp += "401 Unauthorized\r\n"; break;
 	case 403:
@@ -97,8 +112,9 @@ void customActions(string path, SOCKET sock, SSL* ssl=NULL) {
 
 class AlyssaHTTP {//This class has main code for responses to client
 public:
-	static void Get(string path, SOCKET sock, SSL* ssl=NULL, bool isHEAD = 0) {
+	static void Get(clientInfo cl, bool isHEAD = 0) {
 		ifstream file; string temp = ""; int filesize = 0;
+		SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string path = cl.RequestPath;//The old definitions for ease and removing the need of rewriting the code
 		if (path == "/") {//If server requests for root, we'll handle it specially
 			if (fileExists(htroot + "/root.htaccess")) {
 				customActions(htroot + "/root.htaccess", sock); return;
@@ -123,37 +139,37 @@ public:
 			}
 		}
 		else {
-			if (std::filesystem::is_directory(htroot + "/" + path)) {//Check for if path is a folder
-				if (fileExists(htroot + "/" + path + "/root.htaccess")) {//Check if custom actions exists
-					customActions(htroot + "/root.htaccess", sock); return; 
+			if (std::filesystem::is_directory(htroot + path)) {//Check for if path is a folder
+				if (fileExists(htroot + path + "/root.htaccess")) {//Check if custom actions exists
+					customActions(htroot + path + "/root.htaccess", sock); return; 
 				}
-				else if (fileExists(htroot + "/" + path + "/index.html")) {//Check for index.html
-					file.open(htroot + "/" + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + "/index.html");
+				else if (fileExists(htroot +  path + "/index.html")) {//Check for index.html
+					file.open(htroot + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + "/index.html");
 				}
 				else {//Send the folder structure if it's enabled
-					string asd = Folder::folder(htroot + "/");
+					string asd = Folder::folder(htroot + path);
 					if (!isHEAD) asd = serverHeaders(200, "text/html", asd.size()) + asd;
 					else asd = serverHeaders(200, "text/html", asd.size());//Refeer to below (if(isHEAD)) part for more info about that.
 #ifdef COMPILE_OPENSSL
 					if (ssl != NULL) {
-						SSL_send(ssl, temp.c_str(), temp.size());
+						SSL_send(ssl, asd.c_str(), asd.size());
 					}
-					else { send(sock, temp.c_str(), temp.size(), 0); }
+					else { send(sock, asd.c_str(), asd.size(), 0); }
 #else
-					send(sock, temp.c_str(), temp.size(), 0);
+					send(sock, asd.c_str(), asd.size(), 0);
 #endif // COMPILE_OPENSSL
 					closesocket(sock); return;
 				}
 				}
 				else {//Path is a file
-					if (fileExists(htroot + "/" + path + ".htaccess")) {//Check for special rules first
-						customActions(htroot + "/"+ path + ".htaccess", sock); return;
+					if (fileExists(htroot +  path + ".htaccess")) {//Check for special rules first
+						customActions(htroot + path + ".htaccess", sock); return;
 					}
-					else if (fileExists(htroot + "/" + path)) {//If special rules are not found, check for a file with exact name on request
-						file.open(htroot + "/" + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path, ios::binary);
+					else if (fileExists(htroot +  path)) {//If special rules are not found, check for a file with exact name on request
+						file.open(htroot + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path, ios::binary);
 					}
-					else if (fileExists(htroot + "/" + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-						file.open(htroot + "/" + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + ".html");
+					else if (fileExists(htroot +  path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+						file.open(htroot + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + ".html");
 					}
 				} //If none is exist, don't open any file so server will return 404.
 			}
@@ -173,80 +189,74 @@ public:
 				closesocket(sock); return;
 			}
 
-			if (file.is_open()) {
-				temp = serverHeaders(200, fileMime(htroot + "/" + path), filesize);
-#ifdef COMPILE_OPENSSL
-				if (ssl != NULL) {
-					SSL_send(ssl, temp.c_str(), temp.size());
-				}
-				else { send(sock, temp.c_str(), temp.size(), 0); }
-#else
-				send(sock, temp.c_str(), temp.size(), 0);
-#endif // COMPILE_OPENSSL
-				temp = "";
-				if (fileMime(path) != "text/html") {//If requested file is not a HTML, read it byte by byte and send the file in 8KiB buffers. Reading binary line by line like on text is not a good idea.
-					char readChar;
-					string filebuf = ""; int readbytes = 0; int bufrounds = 1;
-					while ((readChar = file.get()) != 257 && readbytes < filesize)
-					{
-						readbytes++;
-						if ((readbytes % (8192 * bufrounds)) != 0)
-						{
-							filebuf += readChar;
-						}
-						else
-						{
-							filebuf += readChar;//We'll read one more time for not losing a byte when readbytes%(8192*bufrounds)==0
-#ifdef COMPILE_OPENSSL
-							if (ssl != NULL) {
-								if (SSL_send(ssl, filebuf.c_str(), filebuf.size()) < 0) return;
-								else {
-									bufrounds++; filebuf = "";
-								}
-							}
-							else {
-								if (send(sock, filebuf.c_str(), filebuf.size(),0) < 0) return;
-								else {
-									bufrounds++; filebuf = "";
-								}
-							}
-#else
-							if (send(sock, filebuf.c_str(), filebuf.size(), 0) < 0) return;
-							else {
-								bufrounds++; filebuf = "";
-							}
-#endif // COMPILE_OPENSSL
-						}
-					}
-					//We'll send the remainder now
+			if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
+				if (!cl.rend) {
+					temp = serverHeaders(200, fileMime(htroot + "/" + path), filesize);// Send the HTTP 200 first
 #ifdef COMPILE_OPENSSL
 					if (ssl != NULL) {
-						SSL_send(ssl, filebuf.c_str(), filebuf.size());
+						SSL_send(ssl, temp.c_str(), temp.size());
 					}
-					else { send(sock, filebuf.c_str(), filebuf.size(), 0); }
+					else { send(sock, temp.c_str(), temp.size(), 0); }
 #else
-					send(sock, filebuf.c_str(), filebuf.size(), 0);
+					send(sock, temp.c_str(), temp.size(), 0);
 #endif // COMPILE_OPENSSL
-					bufrounds++; filebuf = ""; file.close();
-				}
-				else {
-					while (getline(file, temp)) {
+					temp = "";
+					string filebuf(32768, '\0');
+					while (true) {//Read the file as 8KB blocks in loop
+						file.read(&filebuf[0], 32768);
 #ifdef COMPILE_OPENSSL
 						if (ssl != NULL) {
-							if (SSL_send(ssl, temp.c_str(), temp.size()) < 0) return;
+							if (SSL_send(ssl, filebuf.c_str(), 32768) < 0) return;
 						}
 						else {
-							if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+							if (send(sock, filebuf.c_str(), 32768, 0) < 0) return;
 						}
 #else
-						if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+						if (send(sock, filebuf.c_str(), 32768, 0) < 0) return;
 #endif // COMPILE_OPENSSL
-					}
+						if (file.eof()) {// If file is all read, break the loop
+							break;
+						}
+						}
+					file.close();
 				}
-				closesocket(sock);
+				else {//Server made a range request. we'll handle it specially
+					temp = serverHeaders(206, to_string(cl.rstart) + "-" + to_string(cl.rend), filesize);
+#ifdef COMPILE_OPENSSL
+					if (ssl != NULL) {
+						SSL_send(ssl, temp.c_str(), temp.size());
+					}
+					else { send(sock, temp.c_str(), temp.size(), 0); }
+#else
+					send(sock, temp.c_str(), temp.size(), 0);
+#endif // COMPILE_OPENSSL
+					string filebuf(32768, '\0'); int x = cl.rend-cl.rstart; file.seekg(cl.rstart);
+					while (true) {
+						if (x>=32768) {
+							file.read(&filebuf[0], 32768); x -= 32768;
+						}
+						else {
+							file.read(&filebuf[0], x); x = 0;
+						}
+#ifdef COMPILE_OPENSSL
+						if (ssl != NULL) {
+							if (SSL_send(ssl, filebuf.c_str(), 32768) < 0) return;
+						}
+						else {
+							if (send(sock, filebuf.c_str(), 32768, 0) < 0) return;
+						}
+#else
+						if (send(sock, filebuf.c_str(), 32768, 0) < 0) return;
+#endif // COMPILE_OPENSSL
+						if (file.eof() || x==0) {// If file is all read, break the loop
+							break;
+						}
+					}
+					closesocket(sock);
+				}
 			}
-			else {
-				temp = serverHeaders(404);
+			else { // Cannot open file, probably doesn't exist so we'll send a 404
+				temp = serverHeaders(404); // Send the HTTP 404 Response.
 #ifdef COMPILE_OPENSSL
 				if (ssl != NULL) {
 					if (SSL_send(ssl, temp.c_str(), temp.size()) < 0) return;
@@ -258,21 +268,27 @@ public:
 				if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
 #endif // COMPILE_OPENSSL
 				temp = "";
-				if (errorpages) {
+				if (errorpages) { // If custom error pages enabled send the error page
 					file.open(respath + "/404.html"); file.open(respath + "/404.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(respath + "/404.html");
 					if (file.is_open()) {
-						while (getline(file, temp)) {
+						string filebuf(8192, '\0');
+						while (true) {
+							file.read(&filebuf[0], 8192);
 #ifdef COMPILE_OPENSSL
 							if (ssl != NULL) {
-								if (SSL_send(ssl, temp.c_str(), temp.size()) < 0) return;
+								if (SSL_send(ssl, filebuf.c_str(), 8192) < 0) return;
 							}
 							else {
-								if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+								if (send(sock, filebuf.c_str(), 8192, 0) < 0) return;
 							}
 #else
-							if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+							if (send(sock, filebuf.c_str(), 8192, 0) < 0) return;
 #endif // COMPILE_OPENSSL
+							if (file.eof()) {
+								break;
+							}
 						}
+						file.close();
 					}
 				}
 				closesocket(sock);
@@ -285,26 +301,68 @@ private:
 
 void parseHeader(char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads and parses the Request Header.
 	clientInfo cl; string temp = "";
+	cl.sock = sock; cl.ssl = ssl;
 	for (size_t i = 0; buf[i] != 0; i++) {
 		if (buf[i] != '\r') {
 			temp += buf[i];
 		}
-		else {
+		else if(temp.size()>8) {
 			if (temp.substr(temp.size()-8,4)=="HTTP")
 			{
 				short x = temp.find(" "); cl.RequestType = temp.substr(0, x);
 				cl.RequestPath=temp.substr(x+1,temp.find(" ",x+1)-x-1);
 			}
 			else {
-				short x = temp.find(" "); string header = temp.substr(0, x - 1); string value = temp.substr(x + 1);
+				short x = temp.find(" "); string header = temp.substr(1, x - 1); string value = temp.substr(x + 1);
 				if (header == "Cookie:") cl.cookies = value;
 				else if (header == "Authorization:") cl.auth = value;
+				else if (header == "Range:") {
+					string temp2 = temp.substr(temp.find("=") + 1);
+					short y = temp2.find("-");
+					try {
+						cl.rstart = stoull(temp2.substr(0, y));	}
+					catch (const std::invalid_argument) {
+						temp = serverHeaders(400);
+#ifdef COMPILE_OPENSSL
+						if (ssl != NULL) {
+							if (SSL_send(ssl, temp.c_str(), temp.size()) < 0) return;
+						}
+						else {
+							if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+						}
+#else
+						if (send(sock, temp.c_str(), temp.size(), 0) < 0) return;
+#endif // COMPILE_OPENSSL
+					}
+					try {
+						cl.rend = stoull(temp2.substr(y + 1));
+					}
+					catch (const std::invalid_argument) {
+						cl.rend = -1;
+					}
+				}
 				else cl.otherHeaders += header + " " + value + "\n";
+				temp = "";
 			}
 		}
 	}
-	if (cl.RequestType == "GET") AlyssaHTTP::Get(cl.RequestPath, sock, ssl);
-	else if (cl.RequestType == "HEAD") AlyssaHTTP::Get(cl.RequestPath, sock, ssl ,1);
+	while (cl.RequestPath.find("%") < cl.RequestPath.size()) { //Check for if there's a special character like a space
+		unsigned int y = cl.RequestPath.find("%");//Special characters is identified with %{HEX}, find where % is
+		unsigned char x; string temp = "";
+		try { x = stoi(cl.RequestPath.substr(y + 1, 2), nullptr, 16); }//Convert such char from hex to decimal
+		catch (std::invalid_argument){// %s are identified as % only and not as %25, so stoi will probably fail to convert next two chars to int because of not hex value, because of that percentages has a special rule
+			temp = cl.RequestPath.substr(0, y) + "\\PERCENTAGE\\" + temp += cl.RequestPath.substr(y+1); cl.RequestPath = temp; continue;//We'll replace %s with "\PERCENTAGE\". The reason it starts and ends with \ is it's impossible to exploit because making files with \ in their names is illegal.
+		}
+		temp+= cl.RequestPath.substr(0, y); temp += x; temp += cl.RequestPath.substr(y+3);//Save the new converted path string back to clientinfo struct
+		cl.RequestPath = temp;
+	}
+	while (cl.RequestPath.find("\\PERCENTAGE\\") < cl.RequestPath.size()) {//Now we'll convert the \PERCENTAGE\ s we converted earlier to %s if they exist
+		unsigned int y = cl.RequestPath.find("\\PERCENTAGE\\"); string temp = "";//Code is mostly same as on % one
+		temp += cl.RequestPath.substr(0, y); temp += '%'; temp += cl.RequestPath.substr(y + 12); 
+		cl.RequestPath = temp;
+	}
+	if (cl.RequestType == "GET") AlyssaHTTP::Get(cl);
+	else if (cl.RequestType == "HEAD") AlyssaHTTP::Get(cl,1);
 	else {
 		string asd = serverHeaders(501); send(sock, asd.c_str(), asd.size(), 0); closesocket(sock);
 	}
@@ -314,14 +372,7 @@ void clientConnection(SOCKET sock) {//This is the thread function that gets data
 	char buf[4096]={0};
 		// Wait for client to send data
 		int bytesReceived = recv(sock, buf, 4096, 0);
-		if (bytesReceived == SOCKET_ERROR)
-		{
-			cerr << "Error in recv(). Quitting" << endl; return;
-		}
-		if (bytesReceived == 0)
-		{
-			cout << "Client disconnected " << endl; return;
-		}
+		if (bytesReceived <= 0) return;
 		parseHeader(buf, sock, NULL); 
 }
 #ifdef COMPILE_OPENSSL
@@ -343,13 +394,11 @@ void clientConnection_SSL(SOCKET sock,SSL* ssl) {
 
 void LoadCertificates(SSL_CTX* ctx, char* CertFile, char* KeyFile)
 {
-	//New lines 
 	if (SSL_CTX_load_verify_locations(ctx, CertFile, KeyFile) != 1)
 		ERR_print_errors_fp(stderr);
 
 	if (SSL_CTX_set_default_verify_paths(ctx) != 1)
 		ERR_print_errors_fp(stderr);
-	//End new lines
 
 	/* set the local certificate from CertFile */
 	if (SSL_CTX_use_certificate_file(ctx, CertFile, SSL_FILETYPE_PEM) <= 0)
@@ -464,7 +513,7 @@ int main()//This is the main server function that fires up the server and listen
 			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-			cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
+			if (logOnScreen) cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
 
 			if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
 			else if (isWhitelisted(host)) {
@@ -498,7 +547,7 @@ int main()//This is the main server function that fires up the server and listen
 			SSL_set_fd(ssl, clientSocket);
 
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-			cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
+			if(logOnScreen) cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
 
 			if (whitelist=="") sthreads.emplace_back(new std::thread((clientConnection_SSL),clientSocket, ssl));
 			else if (isWhitelisted(host)) {

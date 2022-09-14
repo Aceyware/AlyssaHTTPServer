@@ -41,11 +41,11 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 			filesize = stoi(temp2); x = 0; temp2 = "";
 			if (isFolder) {
 				folders += "<img src=\""+htrespath+"/folder.png\" height=12 width=15>";
-				folders += " <a href=" + relpath.substr(1) + "/" + name + ">" + name + "</a><br>"; folderc++;
+				folders += " <a href=\"" + relpath.substr(1) + "/" + name + "\">" + name + "</a><br>"; folderc++;
 			}
 			else {
 				files += "<img src=\"" + htrespath + "/file.png\" height=12 width=15>";
-				files += " <a href=" + relpath.substr(1) + "/" + name + ">" + name + "</a>" + "<pre class=\"t\">	[" + std::to_string(filesize) + "]</pre><br>"; filec++;
+				files += " <a href=\"" + relpath.substr(1) + "/" + name + "\">" + name + "</a>" + "<pre class=\"t\">	[" + std::to_string(filesize) + "]</pre><br>"; filec++;
 			}
 			temp = "";
 		}

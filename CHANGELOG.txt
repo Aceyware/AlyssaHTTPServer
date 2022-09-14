@@ -1,6 +1,18 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.5.1 - 14.09.2022
+• HTTP Range Requests is now supported
+• Completely rewritten core functions
+	• Now files are read as blocks instead of single chars.
+	• This hugely improved the file reading and transfer speeds (4MB/s vs. 350MB/s, a.k.a. my I/O limit)
+	• CPU usage is much lower despite the much faster speeds (8 simultaneous connections @ 350MB/s uses %8 CPU on my system, a single connection with 4MB/s was using double of that), still needs improvements
+• Now Requests with URIs that includes special characters and spaces are supported.
+• Fixed the almost fully broken Request Header parser
+• Fixed the bug on folder indexes that has files with spaces causes truncated HTML links
+• Removed some debugging features
+• Now connections are print to console optionally, disabled by default.
+
 v0.5
 • Added HTTPS support with TLS 1.2
 • Added file and folder count to folder index pages
