@@ -1,10 +1,10 @@
 # Alyssa HTTP Server Project
 Alyssa is a lightweight, multiplatform, multiconnection HTTP server. It can just work without hours of configuration. It supports custom actions like redirection (and only redirection for now).
 ### TODO (in random order, things may added/removed)
-- [ ] HTTP POST, PUT, DELETE, OPTIONS Support
-- [ ] CGI Support
-- [ ] Authentication support
-- [ ] Extensive custom actions support
+- [x] HTTP POST, PUT Support
+- [x] CGI Support
+- [x] Authentication support
+- [x] Extensive custom actions support
 - [ ] Compression support
 - [ ] HTTP/2 Support
 - [x] Fixup of bugs and issues

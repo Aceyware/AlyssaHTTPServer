@@ -64,7 +64,6 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	foldermode = stoi(getValue("foldermode", "0"));
 	errorpages = stoi(getValue("errorpages", "0"));
 	whitelist = getValue("whitelist", ""); 
-	if(whitelist!="") { if (whitelist[whitelist.size() - 1] != ';') whitelist += ";"; }
 	logOnScreen = stoi(getValue("printconnections", "0"));
 #ifdef COMPILE_OPENSSL
 	SSLcertpath = getValue("SSLcert", "./crt.pem");

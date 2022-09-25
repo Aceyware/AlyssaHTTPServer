@@ -24,9 +24,15 @@
     <ClCompile Include="Folder.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="base64.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Alyssa.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="base64.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>

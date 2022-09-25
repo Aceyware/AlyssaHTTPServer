@@ -42,6 +42,7 @@ using std::string;
 class Config
 {
 public:
+	static char getDelimiter(std::fstream fs);
 	static string getValue(std::string key, std::string value);
 	static void initialRead();
 private:
@@ -49,7 +50,7 @@ private:
 };
 class Folder {
 public:
-    static string folder(std::string path);
+	static string folder(std::string path);
 private:
 	static string getFolder(std::string path);
 	static string HTML(std::string payload, std::string relpath);
@@ -80,7 +81,7 @@ extern int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.5.1";
+static string version = "v0.6";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

@@ -1,6 +1,24 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.6 - 25.09.2022
+• First implementation of CGI support
+	• Executing anything is theoretically supported, including a shell. So be careful when running server with privileges
+	• Giving POST/PUT payloads to stdin of CGI executables is supported. Running with GET without any input is supported.
+	• URL Query strings are currently not supported. Environment variables are currently not supported.
+• Extended custom actions
+	• 2 layered custom actions implemented.
+	• First layer is for whitelist,blacklist and new implemented authentication support.
+	• Credentials for authencation will be read from, if given with a subparameter (this is also a new feature) specified file, or else the .htpasswd file with same name as such requested file
+	• Second layer is for executing CGI and redirection.
+• Initial HTTP POST and PUT support
+	• POST and PUT requests will execute the defined CGI executable.
+	• Client payload will be passed to stdin of such executable.
+	• If no executable is set with a .htaccess file, server will return a 404 instead.
+• Fixed the critical issue that server was sending garbage (NULL chars) with blocks that has less data than it's size, causing corruptions on files especially with range requests.
+• Added parent directory to folder indexes.
+• Probably some other things I forgot.
+
 v0.5.1 - 14.09.2022
 • HTTP Range Requests is now supported
 • Completely rewritten core functions
@@ -13,12 +31,12 @@ v0.5.1 - 14.09.2022
 • Removed some debugging features
 • Now connections are print to console optionally, disabled by default.
 
-v0.5
+v0.5 - 10.09.2022
 • Added HTTPS support with TLS 1.2
 • Added file and folder count to folder index pages
 • Removed port number from folder index pages
 
-v0.4
+v0.4 - 09.09.2022
 • First implementation of custom actions. For now it only supports redirections
 • HTTP HEAD support
 • Non-implemented Requests (HTTP POST,DELETE,etc.) will be responded with 501 Not Implemented, instead of sending nothing and holding connection forever
@@ -28,7 +46,7 @@ v0.4
 • Fixed some hardcoded strings
 • Some other things that I forgot
 
-v0.3
+v0.3 08.09-2022
 • Now configuration is actually used.
 • Now configuration flies are platform independent (newline terminators were causing problems on ex. when config written on Windows is used on *nix)
 • Initial implementation of custom error pages (only 404 is supported for now)
@@ -39,15 +57,15 @@ v0.3
 	• Folders are listed first, which is a thing Apple couldn't do to their OS since decades
 • Now code is C++ 17
 
-v0.2
+v0.2 - 05.09.2022
 • Initial code for config implementation
 • Initial handling of folders added.
 
-v0.1.1
+v0.1.1 - 31.08.2022
 • Now code is multi platform (Windows, Linux, Darwin).
 • Error checking added for listening port for cases like occupied port.
 
-v0.1 - First ever version
+v0.1 - First ever version - 30.08.2022
 • This is the first version ever. First implementations made such as:
 	• Initial HTTP GET implementation
 	• Initial Server Response Header implementation
