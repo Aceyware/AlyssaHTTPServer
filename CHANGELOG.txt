@@ -1,6 +1,18 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.6.1 - 30.09.2022
+• Updated CGI code
+	• Now CGIs work on their isolated environment with some CGI-spesific and PATH environment variables. Query-String support will be implemented in the next version.
+• Some of the memory leaks fixed across the whole code
+• Updated error page code
+• Added fake 404 when client is unauthorized
+• Added some error messages
+• Keep-alive is now "theoretically" supported.
+• Updated temporary MIME types code with an actual one, most popular formats are now supported.
+• Server now can send 418 I'm a Teapot with custom actions
+• Possibly some other things I forgot
+
 v0.6 - 25.09.2022
 • First implementation of CGI support
 	• Executing anything is theoretically supported, including a shell. So be careful when running server with privileges

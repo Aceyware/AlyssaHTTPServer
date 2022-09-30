@@ -1,5 +1,6 @@
 // Header file for Alyssa
 #pragma once
+#pragma warning(disable : 4996)
 
 // Includes
 #include <iostream>
@@ -8,7 +9,7 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>//Cpp17
-
+#include <sstream>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -19,15 +20,6 @@
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
 #endif
-
-#ifndef _WIN32
-#define SOCKET_ERROR -1
-#define INVALID_SOCKET -1
-typedef int SOCKET;
-#define closesocket close
-#define Sleep sleep
-#endif
-
 #define COMPILE_OPENSSL//Define that if you want to compile with SSL support
 #ifdef COMPILE_OPENSSL
 #include <openssl/rand.h>
@@ -37,6 +29,15 @@ typedef int SOCKET;
 #define SSL_send SSL_write
 #endif
 using std::string;
+
+// Definitions for non-Windows platforms
+#ifndef _WIN32
+#define SOCKET_ERROR -1
+#define INVALID_SOCKET -1
+typedef int SOCKET;
+#define closesocket close
+#define Sleep sleep
+#endif
 
 // Definition of functions and classes outside of Main
 class Config
@@ -55,6 +56,13 @@ private:
 	static string getFolder(std::string path);
 	static string HTML(std::string payload, std::string relpath);
 };
+static string currentTime() {
+	std::ostringstream x;
+	std::time_t tt = time(0);
+	std::tm* gmt = std::gmtime(&tt);
+	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
+	return x.str();
+}
 #ifndef COMPILE_OPENSSL
 typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
 typedef struct ssl_st SSL;
@@ -81,7 +89,7 @@ extern int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.6";
+static string version = "v0.6.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
