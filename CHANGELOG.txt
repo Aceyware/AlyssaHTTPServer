@@ -1,6 +1,15 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.6.2 - 02.10.2022
+• Keep-alive is now actually supported.
+	• Now server can reliably get and send multiple data from same TCP connection
+	• Reverted the code change that caused listening sockets to be single threaded and resulting a deadlock on server as server still waits for data
+	• With this release, server should be ready to use reliably on all clients
+• Now server securely shuts down TCP connections before closing them, solving truncated headers, deadlocks and more problems on clients.	
+• Parsing Query String from Request URL is now supported.
+• Some other fixes and improvements
+
 v0.6.1 - 30.09.2022
 • Updated CGI code
 	• Now CGIs work on their isolated environment with some CGI-spesific and PATH environment variables. Query-String support will be implemented in the next version.
@@ -58,7 +67,7 @@ v0.4 - 09.09.2022
 • Fixed some hardcoded strings
 • Some other things that I forgot
 
-v0.3 08.09-2022
+v0.3 08.09.2022
 • Now configuration is actually used.
 • Now configuration flies are platform independent (newline terminators were causing problems on ex. when config written on Windows is used on *nix)
 • Initial implementation of custom error pages (only 404 is supported for now)

@@ -112,7 +112,7 @@ string execCGI(const char* exec, clientInfo cl) {
 	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
 	if (cl.qStr != "") payload = cl.qStr;
 	else if (cl.payload != "") payload = cl.payload;
-	const char * environment[6] = { _strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),"GATEWAY_INTERFACE=\"CGI/1.1\"",_strdup(string("REQUEST_METHOD=\"" + cl.RequestType + "\"").c_str()),_strdup(string("QUERY_STRING=" + cl.qStr).c_str()),_strdup(string("PATH="+pathstr).c_str()),NULL};// Potential memory leak
+	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),"GATEWAY_INTERFACE=\"CGI/1.1\"",strdup(string("REQUEST_METHOD=\"" + cl.RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl.qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};// Potential memory leak
 	//Refer to github page of library.
 	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
 	int result = subprocess_create_ex(cmd, 0,environment, &cgi);
@@ -187,7 +187,7 @@ bool customActions(string path, clientInfo cl) {
 		}
 		else if (action[0]=="Authenticate") {
 			if (cl.auth=="") {
-				Send(serverHeaders(401), cl.sock, cl.ssl); closesocket(sock); return 0;
+				Send(serverHeaders(401), cl.sock, cl.ssl); shutdown(sock, 2); closesocket(sock); return 0;
 			}
 			ifstream pwd; if (subparam[0] == "") { subparam[0] = path.substr(0, path.size() - 9); subparam[0] += ".htpasswd"; }
 			pwd.open(subparam[0]);
@@ -197,7 +197,7 @@ bool customActions(string path, clientInfo cl) {
 				if (errorpages) { // If custom error pages enabled send the error page
 					Send(errorPage(500), cl.sock, cl.ssl);
 				}
-				closesocket(sock); return 0;
+				shutdown(sock, 2); closesocket(sock); return 0;
 			}
 			int c = 0; bool found = 0; string tmp = "";
 			while (getline(pwd, tmp)) {
@@ -219,7 +219,7 @@ bool customActions(string path, clientInfo cl) {
 						Send(errorPage(404), cl.sock, cl.ssl);
 					}
 				}
-				closesocket(sock); return 0;
+				shutdown(sock, 2); closesocket(sock); return 0;
 			}
 		}
 	}
@@ -227,6 +227,7 @@ bool customActions(string path, clientInfo cl) {
 		if (action[1] == "Redirect") {
 			string asd = serverHeaders(302, param[1]);
 			Send(asd, sock, ssl);
+			shutdown(sock, 2);
 			closesocket(sock);
 			return 0;
 		}
@@ -234,11 +235,13 @@ bool customActions(string path, clientInfo cl) {
 			string asd = serverHeaders(200);
 			asd += execCGI(param[1].c_str(), cl);
 			Send(asd, sock, ssl);
+			shutdown(sock, 2);
 			closesocket(sock);
 			return 0;
 		}
 		else if (action[1] == "ReturnTeapot") {
-			Send(serverHeaders(418), sock, ssl);
+			Send(serverHeaders(418) + "\r\n", sock, ssl);
+			shutdown(sock,2);
 			closesocket(sock);
 			return 0;
 		}
@@ -336,6 +339,7 @@ public:
 					}
 					else {
 						file.read(&filebuf[0], x);
+						if (!file.is_open()) abort();
 						Send(filebuf.substr(0, x), sock, ssl, isText);
 						x = 0;
 					}
@@ -343,6 +347,7 @@ public:
 						break;
 					}
 				}
+				shutdown(sock, 2);
 				closesocket(sock);
 			}
 		}
@@ -380,7 +385,7 @@ private:
 
 };
 
-void parseHeader(char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads and parses the Request Header.
+void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads and parses the Request Header.
 	clientInfo cl; string temp = "";
 	cl.sock = sock; cl.ssl = ssl;
 	for (size_t i = 0; buf[i] != 0; i++) {
@@ -393,10 +398,10 @@ void parseHeader(char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads a
 			{
 				short x = temp.find(" "); cl.RequestType = temp.substr(0, x);
 				cl.RequestPath=temp.substr(x+1,temp.find(" ",x+1)-x-1);
-				//if (x = cl.RequestPath.find('?')>0) {
-					//cl.qStr = cl.RequestPath.substr(x);
-					//cl.RequestPath = cl.RequestPath.substr(0, x);
-				//}
+				if (cl.RequestPath.find('?')<cl.RequestPath.size()) {
+					cl.qStr = cl.RequestPath.substr(cl.RequestPath.find('?')+1);
+					cl.RequestPath = cl.RequestPath.substr(0, cl.RequestPath.find('?'));
+				}
 			}
 			else {
 				short x = temp.find(" "); string header = temp.substr(0, x); string value = temp.substr(x + 1);
@@ -407,17 +412,16 @@ void parseHeader(char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads a
 					string temp2 = temp.substr(temp.find("=") + 1);
 					short y = temp2.find("-");
 					try {
-						cl.rstart = stoull(temp2.substr(0, y));	}
+						cl.rstart = stoull(temp2.substr(0, y));
+					}
 					catch (const std::invalid_argument) {
-						temp = serverHeaders(400);
-						Send(temp, sock, ssl);
-						closesocket(sock); return;
+						Send(serverHeaders(400), sock, ssl); return;
 					}
 					try {
 						cl.rend = stoull(temp2.substr(y + 1));
 					}
 					catch (const std::invalid_argument) {
-						cl.rend = -1;
+						cl.rend = std::filesystem::file_size(htroot + cl.RequestPath);
 					}
 				}
 				else cl.otherHeaders += header + " " + value + "\n";
@@ -452,27 +456,38 @@ void parseHeader(char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads a
 }
 
 void clientConnection(SOCKET sock) {//This is the thread function that gets data from client.
-	char buf[4096] = { 0 }; 
-		// Wait for client to send data
-	while (recv(sock, buf, 4096, 0)>0){
-		parseHeader(buf, sock, NULL);
+	char buf[4096] = { 0 }; std::vector<std::unique_ptr<std::thread>> tt;
+	// Wait for client to send data
+	while (recv(sock, buf, 4096,0) > 0) {
+		tt.emplace_back(new std::thread([buf, sock]() {
+			parseHeader(buf, sock, NULL);
+		}));
 	}
+	for (size_t i = 0; i < tt.size(); i++) {
+		tt[i]->join();
+	}
+	return;
 }
 #ifdef COMPILE_OPENSSL
 void clientConnection_SSL(SOCKET sock,SSL* ssl) {
-	char buf[4096] = { 0 }; int bytes = 0;
+	char buf[4096] = { 0 }; int bytes = 0; std::vector<std::unique_ptr<std::thread>> tt;
 	if (SSL_accept(ssl) == -1) {    /* do SSL-protocol accept */
 		ERR_print_errors_fp(stderr); return;
 	}
-	SOCKET sd = INVALID_SOCKET;
+	SOCKET sd = SSL_get_fd(ssl);       // get socket connection 
 	while (bytes = SSL_recv(ssl, buf, sizeof(buf))>0 /* get request */) {
-		sd = SSL_get_fd(ssl);       // get socket connection 
-		parseHeader(buf, sd, ssl);
+		tt.emplace_back(new std::thread([buf, sd,ssl]() {
+			parseHeader(buf, sd, ssl);
+			}));
 	}
 	if (bytes < 0) {
 		ERR_print_errors_fp(stderr); SSL_free(ssl); return;
 	}
+	for (size_t i = 0; i < tt.size(); i++) {
+		tt[i]->join();
+	}
 	SSL_free(ssl);//Delete the SSL object for preventing memory leak
+	return;
 }
 
 void LoadCertificates(SSL_CTX* ctx, char* CertFile, char* KeyFile)
@@ -565,7 +580,7 @@ int main()//This is the main server function that fires up the server and listen
 	else if (SSLport != ntohs(HTTPShint.sin_port)) { cout << "Error binding socket on port " << SSLport << " (OS assigned socket on another port)" << endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << endl; return -2; }
 #endif // COMPILE_OPENSSL
 
-	std::vector<std::unique_ptr<std::thread>> threadsmaster;
+	std::vector<std::unique_ptr<std::thread>> threadsmaster; std::vector<std::unique_ptr<std::thread>> threads;
 	cout << "Alyssa HTTP Server " + version + "\n"; cout << "Listening on HTTP: " << port;
 #ifdef COMPILE_OPENSSL
 	cout << " HTTPS: " << SSLport;
@@ -573,7 +588,7 @@ int main()//This is the main server function that fires up the server and listen
 	cout << endl;
 
 	// Lambda threads for listening ports
-	threadsmaster.emplace_back(new std::thread([listening]() {
+	threadsmaster.emplace_back(new std::thread([&]() {
 		while (true)
 		{
 			// Tell Winsock the socket is for listening 
@@ -595,9 +610,9 @@ int main()//This is the main server function that fires up the server and listen
 			if (logOnScreen) cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
 
 			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-			if (whitelist == "") clientConnection(clientSocket);
+			if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
 			else if (isWhitelisted(host)) {
-				clientConnection(clientSocket);
+				threads.emplace_back(new std::thread((clientConnection), clientSocket));
 			}
 			else {
 				closesocket(clientSocket);
@@ -605,7 +620,7 @@ int main()//This is the main server function that fires up the server and listen
 		}
 		}));
 #ifdef COMPILE_OPENSSL //HTTPS listening thread below
-	threadsmaster.emplace_back(new std::thread([HTTPSlistening, ctx]() {
+	threadsmaster.emplace_back(new std::thread([&]() {
 		while (true)
 		{
 			// Tell Winsock the socket is for listening 
@@ -628,9 +643,9 @@ int main()//This is the main server function that fires up the server and listen
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 			if(logOnScreen) cout << host << " connected on port " << ntohs(client.sin_port) << endl;//TCP is big endian so convert it back to little endian.
 
-			if (whitelist == "") clientConnection_SSL(clientSocket, ssl);
+			if (whitelist == "") threads.emplace_back(new std::thread((clientConnection_SSL), clientSocket, ssl));
 			else if (isWhitelisted(host)) {
-				clientConnection_SSL(clientSocket, ssl);
+				threads.emplace_back(new std::thread((clientConnection_SSL), clientSocket, ssl));
 			}
 			else {
 				closesocket(clientSocket);

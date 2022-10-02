@@ -38,6 +38,10 @@ typedef int SOCKET;
 #define closesocket close
 #define Sleep sleep
 #endif
+// Definitions for Windows
+#ifdef _WIN32
+#define strdup _strdup
+#endif
 
 // Definition of functions and classes outside of Main
 class Config
@@ -89,7 +93,7 @@ extern int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.6.1";
+static string version = "v0.6.2";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

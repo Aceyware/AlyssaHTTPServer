@@ -10,5 +10,6 @@ Alyssa is a lightweight, multiplatform, multiconnection HTTP server. It can just
 - [x] Fixup of bugs and issues
 - [x] SSL/TLS support
 - [x] Range requests support
+- [x] Actual keep-alive support
 ### SSL Support
 Compiling with SSL support requires OpenSSL libraries. SSL support is optional and enabled by default, if you want to compile without SSL support and OpenSSL libraries, just remove definition of `COMPILE_OPENSSL` from `Alyssa.h` file.
