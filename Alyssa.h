@@ -10,6 +10,8 @@
 #include <fstream>
 #include <filesystem>//Cpp17
 #include <sstream>
+#include <codecvt>
+#include <locale>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -55,10 +57,10 @@ private:
 };
 class Folder {
 public:
-	static string folder(std::string path);
+	static std::string folder(std::wstring path);
 private:
-	static string getFolder(std::string path);
-	static string HTML(std::string payload, std::string relpath);
+	static std::wstring getFolder(std::wstring path);
+	static std::string HTML(std::wstring payload, std::wstring relpath);
 };
 static string currentTime() {
 	std::ostringstream x;
@@ -66,6 +68,29 @@ static string currentTime() {
 	std::tm* gmt = std::gmtime(&tt);
 	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
 	return x.str();
+}
+static std::wstring s2ws(const std::string& str) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+
+	return converterX.from_bytes(str);
+}
+static std::string ws2s(const std::wstring& wstr) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+
+	return converterX.to_bytes(wstr);
+}
+static std::string URLEncode(std::wstring payload) {
+	string pstr = ws2s(payload); string result = "";
+	for (size_t i = 0; i < pstr.size(); i++) {
+		unsigned char x = pstr[i];
+	}
+}
+static std::string URLEncode(std::string payload) {
+	for (size_t i = 0; i < payload.size(); i++) {
+
+	}
 }
 #ifndef COMPILE_OPENSSL
 typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
@@ -78,12 +103,15 @@ extern bool isCRLF;
 extern char delimiter;
 extern int port;
 extern string htroot;
+extern std::wstring whtroot;
 extern bool foldermode;
 extern bool forbiddenas404;
 extern string whitelist;
 extern bool errorpages;
 extern string respath;
+extern std::wstring wrespath;
 extern string htrespath;
+extern std::wstring whtrespath;
 extern bool logOnScreen;
 #ifdef COMPILE_OPENSSL
 extern string SSLcertpath;
@@ -93,7 +121,8 @@ extern int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.6.2";
+static string version = "v0.7";
+static std::wstring wversion = L"v0.7";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
