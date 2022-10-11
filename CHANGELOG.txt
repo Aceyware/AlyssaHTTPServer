@@ -1,10 +1,6 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
-v0.7 - 09.10.2022
-• Unicode is now supported.
-• Fixes for clients waiting data while all is sent.
-
 v0.6.2 - 02.10.2022
 • Keep-alive is now actually supported.
 	• Now server can reliably get and send multiple data from same TCP connection

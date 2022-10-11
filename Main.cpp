@@ -4,20 +4,18 @@
 using namespace std;
 
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "",
+	string RequestType = "", RequestPath = "",
 		cookies = "", auth = "", otherHeaders = "", hostname = "",
 		payload = "",//HTTP POST/PUT Payload
 		qStr = "";//URL Encoded Query String
-	wstring RequestPath = L"";
 	size_t rstart = 0, rend = 0; // Range request integers.
 	SOCKET sock = INVALID_SOCKET;
-	bool Close = 0;
 #ifdef COMPILE_OPENSSL
 	SSL* ssl = NULL;
 #endif // COMPILE_OPENSSL
 }; 
 
-bool fileExists(wstring filepath) {//This function checks for desired file is exists and is accessible
+bool fileExists(string filepath) {//This function checks for desired file is exists and is accessible
 	ifstream file;
 	file.open(filepath);
 	if (!file.is_open()) return 0;
@@ -35,21 +33,10 @@ bool isWhitelisted(string ip, string wl=whitelist) {
 	}
 	return 0;
 }
-bool isWhitelisted(wstring ip, wstring wl = s2ws(whitelist)) {
-	if (wl[wl.size() - 1] != ';') wl += L";";
-	int x = wl.find(L";");
-	while (x < wl.size()) {
-		if (wl.substr(wl.size() - x - 1, wl.find(L";", x)) == ip) {
-			return 1;
-		}
-		x = wl.find(L";", x + 1);
-	}
-	return 0;
-}
 
 void Send(string payload, SOCKET sock, SSL* ssl, bool isText=1) {
 	size_t size = 0;
-	if (isText) { size = strlen(&payload[0]); }
+	if (isText) size = strlen(&payload[0]);
 	else size = payload.size();
 #ifdef COMPILE_OPENSSL
 	if (ssl != NULL) {
@@ -84,8 +71,11 @@ string serverHeaders(int statusCode,string mime="",int contentlength=0) {//This 
 	switch (statusCode) {
 	case 200:
 		temp += "200 OK\r\n";
+		if (mime != "") {
+			temp += "Content-Type: "; temp += mime; temp += "\r\n"; }
 		if (contentlength > 0) {
 			temp += "Accept-Ranges: bytes\r\n";
+			temp += "Content-Length: "; temp += to_string(contentlength); temp += "\r\n";
 		}
 		break;
 	case 206:
@@ -110,12 +100,6 @@ string serverHeaders(int statusCode,string mime="",int contentlength=0) {//This 
 		temp += "501 Not Implemented\r\n"; break;
 	default:
 		temp += "501 Not Implemented\r\n"; break;
-	}
-	if (statusCode!=206) {
-		if (contentlength > 0 && mime != "") {
-			if(mime[0]>65) temp += "Content-Type: "; temp += mime; temp += "\r\n";
-		}
-		temp += "Content-Length: "; temp += to_string(contentlength); temp += "\r\n";
 	}
 	temp += "Date: "+currentTime()+"\r\n";
 	temp += "Server: Alyssa/"+version+"\r\n";
@@ -164,51 +148,51 @@ string errorPage(int statusCode) {
 		}
 		file.close();
 	}
-	return page.substr(0,strlen(&page[0]));
+	return page;
 }
 
-bool customActions(wstring path, clientInfo cl) {
-	wifstream file; SOCKET sock = cl.sock; SSL* ssl = cl.ssl; wstring action[2] = { L"" }, param[2] = { L"" }, subparam[2] = { L"" }, temp = L""; file.open(path);
+bool customActions(string path, clientInfo cl) {
+	ifstream file; SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string action[2] = { "" }, param[2] = { "" }, subparam[2] = { "" }, temp = ""; file.open(path);
 	while (getline(file, temp)) {//1. Parse the custom actions file
-		int x = temp.find(L" "); 
-		wstring temp2 = temp.substr(0, x);
-		x = temp.find(L" ", x + 1);
-		if (action[0]==L"") {
-			if (temp2 == L"Authenticate" || temp2 == L"Whitelist" || temp2 == L"Blacklist") {
+		int x = temp.find(" "); 
+		string temp2 = temp.substr(0, x);
+		x = temp.find(" ", x + 1);
+		if (action[0]=="") {
+			if (temp2 == "Authenticate" || temp2 == "Whitelist" || temp2 == "Blacklist") {
 				action[0] = temp2;
 				if (x < temp.size()) {
-					param[0] = temp.substr(temp.find(L" " + 1), x - temp.find(L" " + 1));
+					param[0] = temp.substr(temp.find(" " + 1), x - temp.find(" " + 1));
 					subparam[0] = temp.substr(x); continue;
 				}
 				else {
-					param[0] = temp.substr(temp.find(L" ") + 1); continue;
+					param[0] = temp.substr(temp.find(" ") + 1); continue;
 				}
 			}
 		}
-		if (action[1]==L"") {
-			if (temp2 == L"Redirect" || temp2 == L"ExecCGI") {
-				action[1] = temp2; param[1] = temp.substr(temp.find(L" ") + 1); continue;
+		if (action[1]=="") {
+			if (temp2 == "Redirect" || temp2 == "ExecCGI") {
+				action[1] = temp2; param[1] = temp.substr(temp.find(" ") + 1); continue;
 			}
-			else if (temp2 == L"ReturnTeapot") { action[1] = temp2; continue; }
+			else if (temp2 == "ReturnTeapot") { action[1] = temp2; continue; }
 		}
-		wcout << L"Warning: Unknown or redefined option \"" + temp2 + L"\" on file \"" + path + L"\"\n";
+		cout << "Warning: Unknown or redefined option \"" + temp2 + "\" on file \"" + path + "\"\n";
 	}
 	//2. Execute the custom actions by their order
-	if (action[0]!=L"") {
-		if (action[0] == L"Whitelist") {
-			if (!isWhitelisted(s2ws(cl.hostname), param[0])) { closesocket(sock); return 0; }
+	if (action[0]!="") {
+		if (action[0] == "Whitelist") {
+			if (!isWhitelisted(cl.hostname, param[0])) { closesocket(sock); return 0; }
 		}
-		else if (action[0] == L"Blacklist") {
-			if (isWhitelisted(s2ws(cl.hostname), param[0])) { closesocket(sock); return 0; }
+		else if (action[0] == "Blacklist") {
+			if (isWhitelisted(cl.hostname, param[0])) { closesocket(sock); return 0; }
 		}
-		else if (action[0]==L"Authenticate") {
+		else if (action[0]=="Authenticate") {
 			if (cl.auth=="") {
 				Send(serverHeaders(401), cl.sock, cl.ssl); shutdown(sock, 2); closesocket(sock); return 0;
 			}
-			ifstream pwd; if (subparam[0] == L"") { subparam[0] = path.substr(0, path.size() - 9); subparam[0] += L".htpasswd"; }
+			ifstream pwd; if (subparam[0] == "") { subparam[0] = path.substr(0, path.size() - 9); subparam[0] += ".htpasswd"; }
 			pwd.open(subparam[0]);
 			if (!pwd.is_open()) {
-				wcout << L"Error: Failed to open htpasswd file \"" + subparam[0] + L"\" defined on \"" + path + L"\"\n";
+				cout << "Error: Failed to open htpasswd file \"" + subparam[0] + "\" defined on \""+path+"\"\n";
 				Send(serverHeaders(500)+"\r\n", cl.sock, cl.ssl);
 				if (errorpages) { // If custom error pages enabled send the error page
 					Send(errorPage(500), cl.sock, cl.ssl);
@@ -224,40 +208,38 @@ bool customActions(wstring path, clientInfo cl) {
 			}
 			if (!found) {
 				if (!forbiddenas404) {
+					Send(serverHeaders(403) + "\r\n", cl.sock, cl.ssl);
 					if (errorpages) { // If custom error pages enabled send the error page
-						temp = s2ws(errorPage(403));
+						Send(errorPage(403), cl.sock, cl.ssl);
 					}
-					temp = s2ws(serverHeaders(403, "text/html", temp.size()))+L"\r\n"+temp;
 				}
 				else {
+					Send(serverHeaders(404) + "\r\n", cl.sock, cl.ssl);
 					if (errorpages) { // If custom error pages enabled send the error page
-						temp = s2ws(errorPage(404));
+						Send(errorPage(404), cl.sock, cl.ssl);
 					}
-					temp = s2ws(serverHeaders(404, "text/html", temp.size())) + L"\r\n" + temp;
 				}
-				return 0;
+				shutdown(sock, 2); closesocket(sock); return 0;
 			}
 		}
 	}
-	if (action[1]!=L"") {
-		if (action[1] == L"Redirect") {
-			string asd = serverHeaders(302, ws2s(param[1]));
+	if (action[1]!="") {
+		if (action[1] == "Redirect") {
+			string asd = serverHeaders(302, param[1]);
 			Send(asd, sock, ssl);
 			shutdown(sock, 2);
 			closesocket(sock);
 			return 0;
 		}
-		else if (action[1] == L"ExecCGI") {
-			string asd = execCGI(ws2s(param[1]).c_str(), cl);
-			asd = serverHeaders(200, "", [asd](){
-				int x = asd.find("\r\n")+4;
-				return asd.size()-x; }()) + asd;//FIXME: This is a BAD approach for fixing that issue. Need to do a better approach thats more solid and is portable.
+		else if (action[1] == "ExecCGI") {
+			string asd = serverHeaders(200);
+			asd += execCGI(param[1].c_str(), cl);
 			Send(asd, sock, ssl);
 			shutdown(sock, 2);
 			closesocket(sock);
 			return 0;
 		}
-		else if (action[1] == L"ReturnTeapot") {
+		else if (action[1] == "ReturnTeapot") {
 			Send(serverHeaders(418) + "\r\n", sock, ssl);
 			shutdown(sock,2);
 			closesocket(sock);
@@ -271,37 +253,33 @@ class AlyssaHTTP {//This class has main code for responses to client
 public:
 	static void Get(clientInfo cl, bool isHEAD = 0) {
 		ifstream file; string temp = ""; int filesize = 0;
-		SOCKET sock = cl.sock; SSL* ssl = cl.ssl; wstring path = cl.RequestPath;//The old definitions for ease and removing the need of rewriting the code
-		if (path == L"/") {//If server requests for root, we'll handle it specially
-			if (fileExists(whtroot + L"/root.htaccess")) {
-				if (!customActions(whtroot + L"/root.htaccess", cl)) return;
+		SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string path = cl.RequestPath;//The old definitions for ease and removing the need of rewriting the code
+		if (path == "/") {//If server requests for root, we'll handle it specially
+			if (fileExists(htroot + "/root.htaccess")) {
+				if (!customActions(htroot + "/root.htaccess", cl)) return;
 			}
 			//Check for the special rules first
-			else if (fileExists(whtroot + L"/index.html")) { file.open(whtroot + L"/index.html", ios::ate);
-			filesize = file.tellg(); file.close(); file.open(whtroot + L"/index.html"); path += L".html"; } //Check for index.html, which is default filename for webpage on root of any folder.
+			else if (fileExists(htroot + "/index.html")) { file.open(htroot + "/index.html"); } //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
-				string asd = Folder::folder(whtroot + L"/"); 
-				asd = serverHeaders(200, "text/html", asd.size()) + "\r\n" + asd;
+				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, "text/html", asd.size()) + "\r\n" + asd;
 				Send(asd, sock, ssl);
-				return;
 			}
 		}
-		else if (path.substr(0, htrespath.size()) == s2ws(htrespath)) {//Request for a resource
-			if (fileExists(wrespath + L"/" + path.substr(htrespath.size()))) {
-				file.open(wrespath + L"/" + path.substr(htrespath.size()), ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(wrespath + L"/" + path.substr(htrespath.size()), ios::binary);
+		else if (path.substr(0, htrespath.size()) == htrespath) {//Request for a resource
+			if (fileExists(respath + "/" + path.substr(htrespath.size()))) {
+				file.open(respath + "/" + path.substr(htrespath.size()), ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(respath + "/" + path.substr(htrespath.size()), ios::binary);
 			}
 		}
 		else {
-			if (std::filesystem::is_directory(whtroot + path)) {//Check for if path is a folder
-				if (fileExists(whtroot + path + L"/root.htaccess")) {//Check if custom actions exists
-					//if (!customActions(whtroot + path + L"/root.htaccess", cl)) return;
-					terminate();
+			if (std::filesystem::is_directory(htroot + path)) {//Check for if path is a folder
+				if (fileExists(htroot + path + "/root.htaccess")) {//Check if custom actions exists
+					if (!customActions(htroot + path + "/root.htaccess", cl)) return;
 				}
-				else if (fileExists(whtroot + path + L"/index.html")) {//Check for index.html
-					file.open(whtroot + path + L"/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(whtroot + L"/" + path + L"/index.html");
+				else if (fileExists(htroot + path + "/index.html")) {//Check for index.html
+					file.open(htroot + path + "/index.html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + "/index.html");
 				}
 				else {//Send the folder structure if it's enabled
-					string asd = Folder::folder(whtroot + path);
+					string asd = Folder::folder(htroot + path);
 					if (!isHEAD) asd = serverHeaders(200, "text/html", asd.size()) + "\r\n" + asd;
 					else asd = serverHeaders(200, "text/html", asd.size()) + "\r\n";//Refeer to below (if(isHEAD)) part for more info about that.
 					Send(asd, sock, ssl);
@@ -310,34 +288,35 @@ public:
 				}
 			}
 			else {//Path is a file
-				if (fileExists(whtroot + path + L".htaccess")) {//Check for special rules first
-					if (fileExists(whtroot + path)) {//If special rules are not found, check for a file with exact name on request
-						file.open(whtroot + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(whtroot + L"/" + path, ios::binary);
+				if (fileExists(htroot + path + ".htaccess")) {//Check for special rules first
+					if (fileExists(htroot + path)) {//If special rules are not found, check for a file with exact name on request
+						file.open(htroot + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path, ios::binary);
 					}
-					if (!customActions(whtroot + path + L".htaccess", cl)) { file.close(); return; }
+					if (!customActions(htroot + path + ".htaccess", cl)) { file.close(); return; }
 				}
-				else if (fileExists(whtroot + path)) {//If special rules are not found, check for a file with exact name on request
-					file.open(whtroot + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(whtroot + L"/" + path, ios::binary);
+				else if (fileExists(htroot + path)) {//If special rules are not found, check for a file with exact name on request
+					file.open(htroot + path, ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path, ios::binary);
 				}
-				else if (fileExists(whtroot + path + L".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-					file.open(whtroot + path + L".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(whtroot + L"/" + path + L".html");
+				else if (fileExists(htroot + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+					file.open(htroot + path + ".html", ios::binary | ios::ate); filesize = file.tellg(); file.close(); file.open(htroot + "/" + path + ".html");
 				}
 			} //If none is exist, don't open any file so server will return 404.
 		}
 
 		if (isHEAD) { //HTTP HEAD Requests are same as GET, but without response body. So if Request is a HEAD, we'll just send the header and then close the socket and return (stop) the function. Easy.
 			string temp = "";
-			if (file.is_open()) { temp = serverHeaders(200, fileMime(ws2s(path)), filesize) + "\r\n"; }
+			if (file.is_open()) { temp = serverHeaders(200, fileMime(path), filesize) + "\r\n"; }
 			else { temp = serverHeaders(404); }
-			return;
+			Send(temp, sock, ssl);
+			closesocket(sock); return;
 		}
 
 		if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
 			if (!cl.rend) {
-				temp = serverHeaders(200, fileMime(ws2s(path)), filesize) + "\r\n";// Send the HTTP 200 first
+				temp = serverHeaders(200, fileMime(path), filesize) + "\r\n";// Send the HTTP 200 first
 				Send(temp, sock, ssl);
 				temp = ""; bool isText = 0;
-				if (fileMime(ws2s(path)).substr(0, 4) == "text") isText = 1;
+				if (fileMime(path).substr(0, 4) == "text") isText = 1;
 				string filebuf(32768, '\0');
 				while (true) {//Read the file as 32KB blocks in loop
 					file.read(&filebuf[0], 32768);
@@ -347,14 +326,11 @@ public:
 					}
 				}
 				file.close();
-				if (!cl.Close) {
-					shutdown(sock, 2); closesocket(sock);
-				}
 			}
 			else {//Server made a range request. we'll handle it specially
 				temp = serverHeaders(206, to_string(cl.rstart) + "-" + to_string(cl.rend), filesize) + "\r\n";
 				Send(temp, sock, ssl); bool isText = 0;
-				if (fileMime(ws2s(path)).substr(0, 4) == "text") isText = 1;
+				if (fileMime(path).substr(0, 4) == "text") isText = 1;
 				string filebuf(32768, '\0'); int x = cl.rend - cl.rstart; file.seekg(cl.rstart);
 				while (true) {
 					if (x >= 32768) {
@@ -363,6 +339,7 @@ public:
 					}
 					else {
 						file.read(&filebuf[0], x);
+						if (!file.is_open()) abort();
 						Send(filebuf.substr(0, x), sock, ssl, isText);
 						x = 0;
 					}
@@ -370,38 +347,39 @@ public:
 						break;
 					}
 				}
+				shutdown(sock, 2);
+				closesocket(sock);
 			}
 		}
 		else { // Cannot open file, probably doesn't exist so we'll send a 404
+			temp = serverHeaders(404) + "\r\n"; // Send the HTTP 404 Response.
+			Send(temp, sock, ssl);
 			temp = "";
 			if (errorpages) { // If custom error pages enabled send the error page
-				temp = errorPage(404); }
-			temp = serverHeaders(404, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
-			Send(temp, sock, ssl);
+				Send(errorPage(404), sock, ssl);
+			}
+			closesocket(sock);
 			return;
 		}
 	}
 	static void Post(clientInfo cl) {
 		//POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
-		if (std::filesystem::is_directory(whtroot + cl.RequestPath)) {
-			if (fileExists(whtroot + cl.RequestPath + L"/root.htaccess")) {//Check if custom actions exists
-				if (!customActions(whtroot + cl.RequestPath + L"/root.htaccess", cl)) return;
+		if (std::filesystem::is_directory(htroot + cl.RequestPath)) {
+			if (fileExists(htroot + cl.RequestPath + "/root.htaccess")) {//Check if custom actions exists
+				if (!customActions(htroot + cl.RequestPath + "/root.htaccess", cl)) return;
 			}
 		}
 		else {
-			if (fileExists(whtroot + cl.RequestPath + L".htaccess")) {//Check for special rules first
-				if (!customActions(whtroot + cl.RequestPath + L".htaccess", cl)) return;
+			if (fileExists(htroot + cl.RequestPath + ".htaccess")) {//Check for special rules first
+				if (!customActions(htroot + cl.RequestPath + ".htaccess", cl)) return;
 			}
 		}
 		// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
-		string temp = "";
+		Send(serverHeaders(404) + "\r\n", cl.sock, cl.ssl);
 		if (errorpages) { // If custom error pages enabled send the error page
-			temp = errorPage(404);
+			Send(errorPage(404), cl.sock, cl.ssl);
 		}
-		temp = serverHeaders(404, "text/html", temp.size()) + "\r\n" + temp;
-		Send(temp, cl.sock, cl.ssl);
-		
-		return;
+		closesocket(cl.sock);
 	}
 private:
 
@@ -411,7 +389,7 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 	clientInfo cl; string temp = "";
 	cl.sock = sock; cl.ssl = ssl;
 	for (size_t i = 0; buf[i] != 0; i++) {
-		if (buf[i] != '\r' && buf[i]!='\n') {
+		if (buf[i] != '\r') {
 			temp += buf[i];
 		}
 		else if(temp.size()>8){
@@ -419,9 +397,9 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 			if (temp.substr(temp.size()-8,4)=="HTTP")
 			{
 				short x = temp.find(" "); cl.RequestType = temp.substr(0, x);
-				cl.RequestPath=s2ws(temp.substr(x+1,temp.find(" ",x+1)-x-1));
+				cl.RequestPath=temp.substr(x+1,temp.find(" ",x+1)-x-1);
 				if (cl.RequestPath.find('?')<cl.RequestPath.size()) {
-					cl.qStr = ws2s(cl.RequestPath.substr(cl.RequestPath.find('?')+1));
+					cl.qStr = cl.RequestPath.substr(cl.RequestPath.find('?')+1);
 					cl.RequestPath = cl.RequestPath.substr(0, cl.RequestPath.find('?'));
 				}
 			}
@@ -440,14 +418,12 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 						Send(serverHeaders(400), sock, ssl); return;
 					}
 					try {
-						cl.rend = stoull(temp2.substr(y + 1)) + 1;
+						cl.rend = stoull(temp2.substr(y + 1));
 					}
 					catch (const std::invalid_argument) {
-						cl.rend = std::filesystem::file_size(whtroot + cl.RequestPath);
+						cl.rend = std::filesystem::file_size(htroot + cl.RequestPath);
 					}
 				}
-				else if (header == "Connection:")
-					if (value == "close") cl.Close = 1;
 				else cl.otherHeaders += header + " " + value + "\n";
 				temp = "";
 			}
@@ -455,23 +431,21 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 	}
 	if (temp[0] == '\n') temp = temp.substr(2);
 	cl.payload = temp;
-	temp = ws2s(cl.RequestPath);
-	while (temp.find("%") < temp.size()) { //Check for if there's a special character like a space
-		unsigned int y = temp.find("%");//Special characters is identified with %{HEX}, find where % is
-		unsigned char x; string temp2 = "";
-		try { x = stoi(temp.substr(y + 1, 2), nullptr, 16); }//Convert such char from hex to decimal
+	while (cl.RequestPath.find("%") < cl.RequestPath.size()) { //Check for if there's a special character like a space
+		unsigned int y = cl.RequestPath.find("%");//Special characters is identified with %{HEX}, find where % is
+		unsigned char x; string temp = "";
+		try { x = stoi(cl.RequestPath.substr(y + 1, 2), nullptr, 16); }//Convert such char from hex to decimal
 		catch (std::invalid_argument){// %s are identified as % only and not as %25, so stoi will probably fail to convert next two chars to int because of not hex value, because of that percentages has a special rule
-			temp2 = temp.substr(0, y) + "\\PERCENTAGE\\" + temp2 + temp2.substr(y+1); temp=temp2; continue;//We'll replace %s with "\PERCENTAGE\". The reason it starts and ends with \ is it's impossible to exploit because making files with \ in their names is illegal.
+			temp = cl.RequestPath.substr(0, y) + "\\PERCENTAGE\\" + temp += cl.RequestPath.substr(y+1); cl.RequestPath = temp; continue;//We'll replace %s with "\PERCENTAGE\". The reason it starts and ends with \ is it's impossible to exploit because making files with \ in their names is illegal.
 		}
-		temp2+= temp.substr(0, y); temp2 += x; temp2 += temp.substr(y+3);//Save the new converted path string back to clientinfo struct
-		temp = temp2;
+		temp+= cl.RequestPath.substr(0, y); temp += x; temp += cl.RequestPath.substr(y+3);//Save the new converted path string back to clientinfo struct
+		cl.RequestPath = temp;
 	}
-	while (temp.find("\\PERCENTAGE\\") < temp.size()) {//Now we'll convert the \PERCENTAGE\ s we converted earlier to %s if they exist
-		unsigned int y = temp.find("\\PERCENTAGE\\"); string temp2 = "";//Code is mostly same as on % one
-		temp2 += temp.substr(0, y); temp2 += '%'; temp2 += temp.substr(y + 12); 
-		temp = temp2;
+	while (cl.RequestPath.find("\\PERCENTAGE\\") < cl.RequestPath.size()) {//Now we'll convert the \PERCENTAGE\ s we converted earlier to %s if they exist
+		unsigned int y = cl.RequestPath.find("\\PERCENTAGE\\"); string temp = "";//Code is mostly same as on % one
+		temp += cl.RequestPath.substr(0, y); temp += '%'; temp += cl.RequestPath.substr(y + 12); 
+		cl.RequestPath = temp;
 	}
-	cl.RequestPath = s2ws(temp);
 	if (cl.RequestType == "GET") AlyssaHTTP::Get(cl);
 	else if (cl.RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 	else if (cl.RequestType == "POST") AlyssaHTTP::Post(cl);
