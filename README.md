@@ -5,7 +5,7 @@ Alyssa is a lightweight, multiplatform, multiconnection HTTP server. It can just
 - [x] CGI Support
 - [x] Authentication support
 - [x] Extensive custom actions support
-- [ ] Compression support
+- [x] Unicode support
 - [ ] HTTP/2 Support
 - [x] Fixup of bugs and issues
 - [x] SSL/TLS support

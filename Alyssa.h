@@ -10,6 +10,8 @@
 #include <fstream>
 #include <filesystem>//Cpp17
 #include <sstream>
+#include <locale>
+#include <codecvt>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -67,6 +69,24 @@ static string currentTime() {
 	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
 	return x.str();
 }
+static std::wstring s2ws(const std::string& str) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+
+	return converterX.from_bytes(str);
+}
+static std::string ws2s(const std::wstring& wstr) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+
+	return converterX.to_bytes(wstr);
+}
+#ifdef _WIN32
+static std::string s2utf8s(const std::string& str) {
+	std::wstring_convert<std::codecvt_utf8<char>, char> asd;
+	return asd.from_bytes(str);
+}
+#endif
 #ifndef COMPILE_OPENSSL
 typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
 typedef struct ssl_st SSL;
@@ -76,7 +96,7 @@ typedef struct ssl_st SSL;
 // Declaration of variables
 extern bool isCRLF;
 extern char delimiter;
-extern int port;
+extern unsigned int port;
 extern string htroot;
 extern bool foldermode;
 extern bool forbiddenas404;
@@ -86,14 +106,15 @@ extern string respath;
 extern string htrespath;
 extern bool logOnScreen;
 #ifdef COMPILE_OPENSSL
+extern bool enableSSL;
 extern string SSLcertpath;
 extern string SSLkeypath;
-extern int SSLport;
+extern unsigned int SSLport;
 #endif
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.6.2";
+static string version = "v0.7";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

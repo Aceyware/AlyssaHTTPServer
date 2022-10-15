@@ -13,6 +13,12 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
+    <Filter Include="Header\External">
+      <UniqueIdentifier>{29c10196-2acd-495d-bf59-efbcf7896b87}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\External">
+      <UniqueIdentifier>{0c3f5759-515b-4634-9dd9-264a842f9f41}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -25,7 +31,7 @@
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="base64.cpp">
-      <Filter>Source</Filter>
+      <Filter>Source\External</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -33,7 +39,18 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="base64.h">
+      <Filter>Header\External</Filter>
+    </ClInclude>
+    <ClInclude Include="subprocess.h">
+      <Filter>Header\External</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
       <Filter>Header</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Alyssa.rc">
+      <Filter>Resource</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

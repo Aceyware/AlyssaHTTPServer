@@ -20,8 +20,8 @@ string Folder::folder(std::string path) {
 
 std::string Folder::getFolder(std::string path) {
 	std::ostringstream x; 
-	for (const auto& entry : std::filesystem::directory_iterator(path)) {
-		x << entry.path().filename();
+	for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::u8path(path))) {
+		x << entry.path().filename().u8string();
 		std::time_t tt = to_time_t(entry.last_write_time());
 		std::tm* gmt = std::gmtime(&tt);
 		x << separator << std::put_time(gmt, "%a, %d %B %Y %H:%M");
@@ -35,8 +35,9 @@ std::string Folder::getFolder(std::string path) {
 
 std::string Folder::HTML(std::string payload, std::string relpath) {
 	relpath = relpath.substr(htroot.size()); 
+	if (relpath == "") relpath = "/";
 	string folders = ""; string files = ""; //Whole payload will be divided to 2 separate string for listing folders first.
-	string htm = "<head><style>.t {tab-size: 48;} pre {display: inline;} </style><title>Index of '" + relpath + "'</title></head><body><h1>Index of '" + relpath + "'</h1><hr>";
+	string htm = "<head><meta charset=\"utf-8\"><style>.t {tab-size: 48;} pre {display: inline;} </style><title>Index of '" + relpath + "'</title></head><body><h1>Index of '" + relpath + "'</h1><hr>";
 	if (relpath != "/") htm += "<img src=\"" + htrespath + "/folder.png\" height=12 width=15> <a href=\"/..\">/..</a><br>"; //Unless root is requested, add the parent folder entry.
 	string temp = ""; int folderc = 0; int filec = 0; // Folder count and file count
 	for (size_t i = 0; i < payload.size(); i++) {
@@ -48,8 +49,7 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 				else {//When we reach to a separator, we'll use this value to it's belonging place as order of values are fixed. Simple.
 					switch (x) {
 					case 0:
-						name = temp2.substr(1); 
-						name.pop_back(); temp2 = ""; x++; break;
+						name = temp2; temp2 = ""; x++; break;
 					case 1:
 						date = temp2; temp2 = ""; x++; break;
 					default:
@@ -65,7 +65,8 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 			}
 			else {
 				files += "<img src=\"" + htrespath + "/file.png\" height=12 width=15>";
-				files += " <a href=\"" + relpath.substr(1) + "/" + name + "\">" + name + "</a>" + "<pre class=\"t\">	" + date + "	[" + std::to_string(filesize) + "]</pre><br>"; filec++;
+				files += " <a href=\"" + relpath.substr(1) + "/" + name + "\">" + name + "</a>" + "<pre class=\"t\">	" + date + "	[" + std::to_string(filesize) + "]</pre><br>";
+				filec++;
 			}
 			temp = "";
 		}

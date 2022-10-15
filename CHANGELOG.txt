@@ -1,6 +1,23 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.7 - 15.10.2022
+• UTF-8 Unicode support
+	• Paths on code now uses Unicode by default, meaning you can set your htdocs root path to a folder with Unicode name and access files with Unicode names.
+	• Directory index HTML is now UTF-8 encoded with Unicode file names support.
+	• Console output (stdout) is now Unicode supported.
+	• Obviously requests with Unicode characters can be parsed and responded with belonging file.
+	• Config and custom action files also supports Unicode now.
+• SSL support can be disabled from config now, eliminating the necessity of certificate file when compiled with SSL support
+	• Server will run as SSL disabled when certificate/key is invalid, instead of aborting the whole application.
+• Checks added for config
+	• If port is invalid (> 65535 or < 0), server will print "invalid port specified on config" and quit.
+	• If htroot path is invalid, server will try to create the folder on specified path first, and will quit if that fails.
+• Fixed the security flaw that server sends .htaccess and .htpasswd files when requested, now instead server will respond with 403.
+• Added resource data (.rdata/version info) to executable (Windows only).
+• Some other fixes and improvements.
+
+
 v0.6.2 - 02.10.2022
 • Keep-alive is now actually supported.
 	• Now server can reliably get and send multiple data from same TCP connection
