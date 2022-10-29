@@ -1,6 +1,9 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.7.1 - 29.10.2022
+• Performance and memory management improvements. This update does not feature anything new.
+
 v0.7 - 15.10.2022
 • UTF-8 Unicode support
 	• Paths on code now uses Unicode by default, meaning you can set your htdocs root path to a folder with Unicode name and access files with Unicode names.

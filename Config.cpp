@@ -93,7 +93,7 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	SSLcertpath = getValue("SSLcert", "./crt.pem");
 	SSLkeypath = getValue("SSLkey", "./key.key");
 	SSLport = stoi(getValue("SSLport", "443"));
+	if (SSLport > 65535) { wcout << "Error: invalid port specified on config."; exit(-3); }
 #endif
-	if (SSLport>65535) { wcout << "Error: invalid port specified on config."; exit(-3); }
 	return;
 }

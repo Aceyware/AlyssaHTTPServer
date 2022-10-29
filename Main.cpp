@@ -4,22 +4,18 @@
 using std::string;
 
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", URequestPath = u8"",
+	string RequestType = "", RequestPath = "",
 		cookies = "", auth = "", otherHeaders = "", hostname = "",
 		payload = "",//HTTP POST/PUT Payload
 		qStr = "";//URL Encoded Query String
 	size_t rstart = 0, rend = 0; // Range request integers.
 	SOCKET sock = INVALID_SOCKET;
-#ifdef COMPILE_OPENSSL
 	SSL* ssl = NULL;
-#endif // COMPILE_OPENSSL
 }; 
 
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
-	std::ifstream file;
-	file.open(std::filesystem::u8path(filepath));
-	if (!file.is_open()) return 0;
-	else { file.close(); return 1; }
+	if (std::filesystem::exists(std::filesystem::u8path(filepath))) return 1;
+	else { return 0; }
 }
 
 bool isWhitelisted(string ip, string wl=whitelist) {
@@ -95,6 +91,8 @@ string serverHeaders(int statusCode, string mime = "", int contentlength = 0) {/
 		temp += "404 Not Found\r\n"; break;
 	case 418:
 		temp += "418 I'm a teapot\r\n"; break;
+	case 500:
+		temp += "500 Internal Server Error\r\n"; break;
 	case 501:
 		temp += "501 Not Implemented\r\n"; break;
 	default:
@@ -157,47 +155,40 @@ string errorPage(int statusCode) {
 }
 
 bool customActions(string path, clientInfo cl) {
-	std::ifstream file; SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string action[2] = { "" }, param[2] = { "" }, subparam[2] = { "" }, temp = ""; file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	std::ifstream file; SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string action[2] = { "" }, param[2] = { "" }, temp = ""; file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	while (std::getline(file, temp)) {//1. Parse the custom actions file
-		int x = temp.find(" "); 
-		string temp2 = temp.substr(0, x);
-		x = temp.find(" ", x + 1);
+		int x = temp.find(" "); string caction = "";
+		if (x != -1) {
+			caction = temp.substr(0, x); temp = temp.substr(x+1);
+		}
+		else {
+			caction = temp; temp = "";
+		}
 		if (action[0]=="") {
-			if (temp2 == "Authenticate" || temp2 == "Whitelist" || temp2 == "Blacklist") {
-				action[0] = temp2;
-				if (x < temp.size()) {
-					param[0] = temp.substr(temp.find(" " + 1), x - temp.find(" " + 1));
-					subparam[0] = temp.substr(x); continue;
-				}
-				else {
-					param[0] = temp.substr(temp.find(" ") + 1); continue;
-				}
+			if (caction == "Authenticate") {
+				action[0] = caction;
+				if (temp != "") param[0] = temp;
+				continue;
 			}
 		}
 		if (action[1]=="") {
-			if (temp2 == "Redirect" || temp2 == "ExecCGI") {
-				action[1] = temp2; param[1] = temp.substr(temp.find(" ") + 1); continue;
+			if (caction == "Redirect" || caction == "ExecCGI") {
+				action[1] = caction; param[1] = temp; continue;
 			}
-			else if (temp2 == "ReturnTeapot") { action[1] = temp2; continue; }
+			else if (caction == "ReturnTeapot") { action[1] = caction; continue; }
 		}
-		std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(temp2) + L"\" on file \"" + s2ws(path) + L"\"\n";
+		std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(caction) + L"\" on file \"" + s2ws(path) + L"\"\n";
 	}
 	//2. Execute the custom actions by their order
 	if (action[0]!="") {
-		if (action[0] == "Whitelist") {
-			if (!isWhitelisted(cl.hostname, param[0])) { closesocket(sock); return 0; }
-		}
-		else if (action[0] == "Blacklist") {
-			if (isWhitelisted(cl.hostname, param[0])) { closesocket(sock); return 0; }
-		}
-		else if (action[0]=="Authenticate") {
+		if (action[0]=="Authenticate") {
 			if (cl.auth=="") {
 				Send(serverHeaders(401), cl.sock, cl.ssl); shutdown(sock, 2); closesocket(sock); return 0;
 			}
-			std::ifstream pwd; if (subparam[0] == "") { subparam[0] = path.substr(0, path.size() - 9); subparam[0] += ".htpasswd"; }
-			pwd.open(subparam[0]);
+			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
+			pwd.open(param[0]);
 			if (!pwd.is_open()) {
-				std::cout << "Error: Failed to open htpasswd file \"" + subparam[0] + "\" defined on \""+path+"\"\n";
+				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \""+path+"\"\n";
 				Send(serverHeaders(500)+"\r\n", cl.sock, cl.ssl);
 				if (errorpages) { // If custom error pages enabled send the error page
 					Send(errorPage(500), cl.sock, cl.ssl);
@@ -257,13 +248,13 @@ bool customActions(string path, clientInfo cl) {
 class AlyssaHTTP {//This class has main code for responses to client
 public:
 	static void Get(clientInfo cl, bool isHEAD = 0) {
-		std::ifstream file; string temp = ""; int filesize = 0;
+		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768);
 		SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string path = cl.RequestPath;//The old definitions for ease and removing the need of rewriting the code
 		if (path == "/") {//If server requests for root, we'll handle it specially
 			if (fileExists(htroot + "/root.htaccess")) {
 				if (!customActions(htroot + "/root.htaccess", cl)) return;
 			} //Check for the special rules first
-			else if (fileExists(htroot + "/index.html")) { file.open((std::filesystem::u8path(htroot + "/index.html")),std::ios::ate); filesize = file.tellg(); file.close(); file.open((std::filesystem::u8path(htroot + "/index.html")));
+			else if (fileExists(htroot + "/index.html")) { file.open((std::filesystem::u8path(htroot + "/index.html"))); filesize = std::filesystem::file_size((std::filesystem::u8path(htroot + "/index.html")));
 			} //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
 				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, "text/html", asd.size()) + "\r\n" + asd;
@@ -272,7 +263,7 @@ public:
 		}
 		else if (path.substr(0, htrespath.size()) == htrespath) {//Request for a resource
 			if (fileExists(respath + "/" + path.substr(htrespath.size()))) {
-				file.open(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())), std::ios::binary | std::ios::ate); filesize = file.tellg(); file.close(); file.open(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())), std::ios::binary);
+				file.open(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())));
 			}
 		}
 		else {
@@ -281,7 +272,7 @@ public:
 					if (!customActions(htroot + path + "/root.htaccess", cl)) return;
 				}
 				if (fileExists(htroot + path + "/index.html")) {//Check for index.html
-					file.open(std::filesystem::u8path(htroot + path + "/index.html"), std::ios::binary | std::ios::ate); filesize = file.tellg(); file.close(); file.open(std::filesystem::u8path(htroot + path + "/index.html"));
+					file.open(std::filesystem::u8path(htroot + path + "/index.html"), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path + "/index.html"));
 				}
 				else {//Send the folder structure if it's enabled
 					string asd = Folder::folder(htroot + path);
@@ -305,16 +296,15 @@ public:
 					if (!customActions(htroot + path + u8".htaccess", cl)) { file.close(); return; }
 				}
 				if (fileExists(htroot + path)) {//If special rules are not found, check for a file with exact name on request
-					file.open(std::filesystem::u8path(htroot + path), std::ios::binary | std::ios::ate); filesize = file.tellg(); file.close(); file.open(std::filesystem::u8path(htroot + "/" + path), std::ios::binary);
-				}
+					file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
+					}
 				else if (fileExists(htroot + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-					file.open(std::filesystem::u8path(htroot + path + ".html"), std::ios::binary | std::ios::ate); filesize = file.tellg(); file.close(); file.open(std::filesystem::u8path(htroot + path + ".html"));
+					file.open(std::filesystem::u8path(htroot + path + ".html"), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path + ".html"));
 				}
 			} //If none is exist, don't open any file so server will return 404.
 		}
 
 		if (isHEAD) { //HTTP HEAD Requests are same as GET, but without response body. So if Request is a HEAD, we'll just send the header and then close the socket and return (stop) the function. Easy.
-			string temp = "";
 			if (file.is_open()) { temp = serverHeaders(200, fileMime(path), filesize) + "\r\n"; }
 			else { temp = serverHeaders(404); }
 			Send(temp, sock, ssl);
@@ -336,6 +326,8 @@ public:
 					}
 				}
 				file.close();
+				shutdown(sock, 2);
+				closesocket(sock);
 			}
 			else {//Server made a range request. we'll handle it specially
 				temp = serverHeaders(206, std::to_string(cl.rstart) + "-" + std::to_string(cl.rend), filesize) + "\r\n";
@@ -373,14 +365,14 @@ public:
 	}
 	static void Post(clientInfo cl) {
 		//POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
-		if (std::filesystem::is_directory(htroot + cl.URequestPath)) {
-			if (fileExists(htroot + cl.URequestPath + "/root.htaccess")) {//Check if custom actions exists
-				if (!customActions(htroot + cl.URequestPath + "/root.htaccess", cl)) return;
+		if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl.RequestPath))) {
+			if (fileExists(htroot + cl.RequestPath + "/root.htaccess")) {//Check if custom actions exists
+				if (!customActions(htroot + cl.RequestPath + "/root.htaccess", cl)) return;
 			}
 		}
 		else {
-			if (fileExists(htroot + cl.URequestPath + ".htaccess")) {//Check for special rules first
-				if (!customActions(htroot + cl.URequestPath + ".htaccess", cl)) return;
+			if (fileExists(htroot + cl.RequestPath + ".htaccess")) {//Check for special rules first
+				if (!customActions(htroot + cl.RequestPath + ".htaccess", cl)) return;
 			}
 		}
 		// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
@@ -455,11 +447,6 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 		temp += cl.RequestPath.substr(0, y); temp += '%'; temp += cl.RequestPath.substr(y + 12); 
 		cl.RequestPath = temp;
 	}
-#ifdef _WIN32
-	cl.URequestPath = s2utf8s(cl.RequestPath);
-#else
-	cl.URequestPath = cl.RequestPath;
-#endif
 	if (cl.RequestType == "GET") AlyssaHTTP::Get(cl);
 	else if (cl.RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 	else if (cl.RequestType == "POST") AlyssaHTTP::Post(cl);
@@ -480,6 +467,7 @@ void clientConnection(SOCKET sock) {//This is the thread function that gets data
 	for (size_t i = 0; i < tt.size(); i++) {
 		tt[i]->join();
 	}
+	closesocket(sock);
 	return;
 }
 #ifdef COMPILE_OPENSSL
@@ -602,7 +590,7 @@ int main()//This is the main server function that fires up the server and listen
 	}
 #endif // COMPILE_OPENSSL
 
-	std::vector<std::unique_ptr<std::thread>> threadsmaster; std::vector<std::unique_ptr<std::thread>> threads;
+	std::vector<std::unique_ptr<std::thread>> threadsmaster; std::vector<std::shared_ptr<std::thread>> threads; 
 	std::cout << "Alyssa HTTP Server " + version + "\n"; std::cout << "Listening on HTTP: " << port;
 #ifdef COMPILE_OPENSSL
 	if(enableSSL)std::cout << " HTTPS: " << SSLport;
@@ -632,9 +620,9 @@ int main()//This is the main server function that fires up the server and listen
 			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
 			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-			if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
+			if (whitelist == "") { std::thread t((clientConnection), clientSocket); t.detach(); }
 			else if (isWhitelisted(host)) {
-				threads.emplace_back(new std::thread((clientConnection), clientSocket));
+				std::thread t((clientConnection), clientSocket); t.detach();
 			}
 			else {
 				closesocket(clientSocket);
@@ -666,9 +654,11 @@ int main()//This is the main server function that fires up the server and listen
 				inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
-				if (whitelist == "") threads.emplace_back(new std::thread((clientConnection_SSL), clientSocket, ssl));
+				if (whitelist == "") {
+					std::thread t((clientConnection_SSL), clientSocket, ssl); t.detach();
+				}
 				else if (isWhitelisted(host)) {
-					threads.emplace_back(new std::thread((clientConnection_SSL), clientSocket, ssl));
+					std::thread t((clientConnection_SSL), clientSocket, ssl); t.detach();
 				}
 				else {
 					closesocket(clientSocket);
@@ -679,6 +669,6 @@ int main()//This is the main server function that fires up the server and listen
 #endif // COMPILE_OPENSSL
 	while (true)// Dummy while loop for keeping server running
 	{
-		Sleep(1000);
+		Sleep(1);
 	}
 }

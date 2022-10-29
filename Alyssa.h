@@ -82,10 +82,6 @@ static std::string ws2s(const std::wstring& wstr) {
 	return converterX.to_bytes(wstr);
 }
 #ifdef _WIN32
-static std::string s2utf8s(const std::string& str) {
-	std::wstring_convert<std::codecvt_utf8<char>, char> asd;
-	return asd.from_bytes(str);
-}
 #endif
 #ifndef COMPILE_OPENSSL
 typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
@@ -114,7 +110,7 @@ extern unsigned int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.7";
+static string version = "v0.7.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
