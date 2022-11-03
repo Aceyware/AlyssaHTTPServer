@@ -12,6 +12,7 @@
 #include <sstream>
 #include <locale>
 #include <codecvt>
+#include <cstring>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -81,10 +82,26 @@ static std::string ws2s(const std::wstring& wstr) {
 
 	return converterX.to_bytes(wstr);
 }
+static std::string Substring(std::string str, int size, int startPoint=0){
+	string x=""; if(size==0) size=str.size()-startPoint;
+	x.reserve(size);
+	for (int var = 0; var < size; var++) {
+		x+=str[startPoint+var];
+	}
+	return x;
+}
+static std::string Substring(const char* str, int size, int startPoint=0){
+	string x=""; if(size==0) size=strlen(str)-startPoint;
+	x.reserve(size);
+	for (int var = 0; var < size; var++) {
+		x+=str[startPoint+var];
+	}
+	return x;
+}
 #ifdef _WIN32
 #endif
 #ifndef COMPILE_OPENSSL
-typedef struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
+struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
 typedef struct ssl_st SSL;
 #endif // !COMPILE_OPENSSL
 
@@ -110,7 +127,7 @@ extern unsigned int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.7.1";
+static string version = "v0.7.2";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

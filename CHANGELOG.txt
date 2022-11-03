@@ -1,6 +1,14 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v0.7.2 - 03.11.2022
+• Rewritten some of the components for better and faster code.
+• Now server will return "416 Range Not Satisfiable" if client requests for range beyond size of requested file
+• Server is now more HTTP standard compilant and backwards compatible.
+	• Server will now respond with version of client instead of always responding with HTTP/1.1 (compatibility with 1.0)
+	• Server will close connection after response if client is HTTP/1.0 (unless keep-alive is specified)
+• More performance and memory management improvements, bugfixes.
+
 v0.7.1 - 29.10.2022
 • Performance and memory management improvements. This update does not feature anything new.
 
