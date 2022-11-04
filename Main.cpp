@@ -123,18 +123,18 @@ string serverHeaders(int statusCode, string hversion, string mime = "", int cont
 	return temp;
 }
 
-string execCGI(const char* exec, clientInfo cl) {
+string execCGI(const char* exec, clientInfo* cl) {
 #pragma warning(suppress : 4996)
 	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
-	if (cl.qStr != "") payload = cl.qStr;
-	else if (cl.payload != "") payload = cl.payload;
-	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),"GATEWAY_INTERFACE=\"CGI/1.1\"",strdup(string("REQUEST_METHOD=\"" + cl.RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl.qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};// Potential memory leak
+	if (cl->qStr != "") payload = cl->qStr;
+	else if (cl->payload != "") payload = cl->payload;
+	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),"GATEWAY_INTERFACE=\"CGI/1.1\"",strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};// Potential memory leak
 	//Refer to github page of library.
 	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
 	int result = subprocess_create_ex(cmd, 0,environment, &cgi);
 	if (0 != result) {
 		std::cout << "Warning: CGI Failed to execute: " << exec << std::endl;
-		Send(serverHeaders(404, cl.version), cl.sock, cl.ssl);
+		Send(serverHeaders(404, cl->version), cl->sock, cl->ssl);
 		return "";
 	}
 	FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
@@ -167,8 +167,8 @@ string errorPage(int statusCode) {
 	return page;
 }
 
-bool customActions(string path, clientInfo cl) {
-	std::ifstream file; SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string action[2] = { "" }, param[2] = { "" }, temp = ""; file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+bool customActions(string path, clientInfo* cl) {
+	std::ifstream file; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, temp = ""; file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	while (std::getline(file, temp)) {//1. Parse the custom actions file
 		int x = temp.find(" "); string caction = "";
 		if (x != -1) {
@@ -195,37 +195,37 @@ bool customActions(string path, clientInfo cl) {
 	//2. Execute the custom actions by their order
 	if (action[0]!="") {
 		if (action[0]=="Authenticate") {
-			if (cl.auth=="") {
-				Send(serverHeaders(401, cl.version), cl.sock, cl.ssl); shutdown(sock, 2); closesocket(sock); return 0;
+			if (cl->auth=="") {
+				Send(serverHeaders(401, cl->version), cl->sock, cl->ssl); shutdown(sock, 2); closesocket(sock); return 0;
 			}
 			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
 			pwd.open(param[0]);
 			if (!pwd.is_open()) {
 				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \""+path+"\"\n";
-				Send(serverHeaders(500, cl.version)+"\r\n", cl.sock, cl.ssl);
+				Send(serverHeaders(500, cl->version)+"\r\n", cl->sock, cl->ssl);
 				if (errorpages) { // If custom error pages enabled send the error page
-					Send(errorPage(500), cl.sock, cl.ssl);
+					Send(errorPage(500), cl->sock, cl->ssl);
 				}
 				shutdown(sock, 2); closesocket(sock); return 0;
 			}
 			int c = 0; bool found = 0; string tmp = "";
 			while (getline(pwd, tmp)) {
 				if (c > 0 && isCRLF) tmp.erase(0, 1);
-				if (tmp==cl.auth) {
+				if (tmp==cl->auth) {
 					found = 1; pwd.close();
 				}
 			}
 			if (!found) {
 				if (!forbiddenas404) {
-					Send(serverHeaders(403, cl.version) + "\r\n", cl.sock, cl.ssl);
+					Send(serverHeaders(403, cl->version) + "\r\n", cl->sock, cl->ssl);
 					if (errorpages) { // If custom error pages enabled send the error page
-						Send(errorPage(403), cl.sock, cl.ssl);
+						Send(errorPage(403), cl->sock, cl->ssl);
 					}
 				}
 				else {
-					Send(serverHeaders(404, cl.version) + "\r\n", cl.sock, cl.ssl);
+					Send(serverHeaders(404, cl->version) + "\r\n", cl->sock, cl->ssl);
 					if (errorpages) { // If custom error pages enabled send the error page
-						Send(errorPage(404), cl.sock, cl.ssl);
+						Send(errorPage(404), cl->sock, cl->ssl);
 					}
 				}
 				shutdown(sock, 2); closesocket(sock); return 0;
@@ -242,14 +242,14 @@ bool customActions(string path, clientInfo cl) {
 		}
 		else if (action[1] == "ExecCGI") {
 			string asd = execCGI(param[1].c_str(), cl);
-			asd = serverHeaders(200, cl.version,"", asd.size()) + "\r\n" + asd;
+			asd = serverHeaders(200, cl->version,"", asd.size()) + "\r\n" + asd;
 			Send(asd, sock, ssl);
 			shutdown(sock, 2);
 			closesocket(sock);
 			return 0;
 		}
 		else if (action[1] == "ReturnTeapot") {
-			Send(serverHeaders(418, cl.version) + "\r\n", sock, ssl);
+			Send(serverHeaders(418, cl->version) + "\r\n", sock, ssl);
 			shutdown(sock,2);
 			closesocket(sock);
 			return 0;
@@ -260,17 +260,17 @@ bool customActions(string path, clientInfo cl) {
 
 class AlyssaHTTP {//This class has main code for responses to client
 public:
-	static void Get(clientInfo cl, bool isHEAD = 0) {
+	static void Get(clientInfo* cl, bool isHEAD = 0) {
 		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768);
-		SOCKET sock = cl.sock; SSL* ssl = cl.ssl; string path = cl.RequestPath;//The old definitions for ease and removing the need of rewriting the code
+		SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string path = cl->RequestPath;//The old definitions for ease and removing the need of rewriting the code
 		if (path == "/") {//If server requests for root, we'll handle it specially
 			if (fileExists(htroot + "/root.htaccess")) {
-				if (!customActions(htroot + "/root.htaccess", cl)) { if (cl.close) { shutdown(sock, 2); closesocket(sock); } return; }
+				if (!customActions(htroot + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
 			} //Check for the special rules first
 			else if (fileExists(htroot + "/index.html")) { file.open((std::filesystem::u8path(htroot + "/index.html"))); filesize = std::filesystem::file_size((std::filesystem::u8path(htroot + "/index.html")));
 			} //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
-				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl.version, "text/html", asd.size()) + "\r\n" + asd;
+				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl->version, "text/html", asd.size()) + "\r\n" + asd;
 				Send(asd, sock, ssl);
 			} //Send the folder index if enabled.
 		}
@@ -282,17 +282,17 @@ public:
 		else {
 			if (std::filesystem::is_directory(std::filesystem::u8path(htroot + path))) {//Check for if path is a folder
 				if (fileExists(htroot + path + "/root.htaccess")) {//Check if custom actions exists
-					if (!customActions(htroot + path + "/root.htaccess", cl)) { if (cl.close) { shutdown(sock, 2); closesocket(sock); } return; }
+					if (!customActions(htroot + path + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
 				}
 				if (fileExists(htroot + path + "/index.html")) {//Check for index.html
 					file.open(std::filesystem::u8path(htroot + path + "/index.html"), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path + "/index.html"));
 				}
 				else {//Send the folder structure if it's enabled
 					string asd = Folder::folder(htroot + path);
-					if (!isHEAD) asd = serverHeaders(200, cl.version, "text/html", asd.size()) + "\r\n" + asd;
-					else asd = serverHeaders(200, cl.version, "text/html", asd.size()) + "\r\n";//Refeer to below (if(isHEAD)) part for more info about that.
+					if (!isHEAD) asd = serverHeaders(200, cl->version, "text/html", asd.size()) + "\r\n" + asd;
+					else asd = serverHeaders(200, cl->version, "text/html", asd.size()) + "\r\n";//Refeer to below (if(isHEAD)) part for more info about that.
 					Send(asd, sock, ssl);
-					if (cl.close) { shutdown(sock, 2); closesocket(sock); }
+					if (cl->close) { shutdown(sock, 2); closesocket(sock); }
 					return;
 				}
 			}
@@ -300,13 +300,13 @@ public:
 				if (path.size() > 7) {
 					if (path.substr(path.size() - 8) == "htaccess" || path.substr(path.size() - 8) == "htpasswd") {//Send 403 and break if client requested for a .htpasswd/.htaccess file
 						string asd = ""; if (errorpages) asd = errorPage(403);
-						asd = serverHeaders(403, cl.version, "text/html", asd.size()) + "\r\n" + asd;
+						asd = serverHeaders(403, cl->version, "text/html", asd.size()) + "\r\n" + asd;
 						Send(asd, sock, ssl);
-						if (cl.close) { shutdown(sock, 2); closesocket(sock); } return;
+						if (cl->close) { shutdown(sock, 2); closesocket(sock); } return;
 					}
 				}
 				if (fileExists(htroot + path + u8".htaccess")) {//Check for special rules first
-					if (!customActions(htroot + path + u8".htaccess", cl)) { file.close(); if (cl.close) { shutdown(sock, 2); closesocket(sock); } return; }
+					if (!customActions(htroot + path + u8".htaccess", cl)) { file.close(); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
 				}
 				if (fileExists(htroot + path)) {//If special rules are not found, check for a file with exact name on request
 					file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
@@ -318,10 +318,10 @@ public:
 		}
 
 		if (isHEAD) { //HTTP HEAD Requests are same as GET, but without response body. So if Request is a HEAD, we'll just send the header and then close the socket and return (stop) the function. Easy.
-			if (file.is_open()) { temp = serverHeaders(200, cl.version,fileMime(path), filesize) + "\r\n"; }
-			else { temp = serverHeaders(404, cl.version); }
+			if (file.is_open()) { temp = serverHeaders(200, cl->version,fileMime(path), filesize) + "\r\n"; }
+			else { temp = serverHeaders(404, cl->version); }
 			Send(temp, sock, ssl);
-			if (cl.close) {
+			if (cl->close) {
 				shutdown(sock, 2);
 				closesocket(sock);
 			}
@@ -329,11 +329,11 @@ public:
 		}
 
 		if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
-			if(cl.rend) temp = serverHeaders(206, cl.version, std::to_string(cl.rstart) + "-" + std::to_string(cl.rend), filesize) + "\r\n";
-			else { temp = serverHeaders(200, cl.version, fileMime(path), filesize) + "\r\n"; }
+			if(cl->rend) temp = serverHeaders(206, cl->version, std::to_string(cl->rstart) + "-" + std::to_string(cl->rend), filesize) + "\r\n";
+			else { temp = serverHeaders(200, cl->version, fileMime(path), filesize) + "\r\n"; }
 			Send(temp, sock, ssl);
 			bool isText = 0; char filebuf[32768] = { 0 }; if (Substring(fileMime(path),4) == "text") isText = 1;
-			if (cl.rend) { filesize = cl.rend - cl.rstart+1; file.seekg(cl.rstart); }
+			if (cl->rend) { filesize = cl->rend - cl->rstart+1; file.seekg(cl->rstart); }
 			while (true) {
 				if (filesize >= 32768) {
 					file.read(&filebuf[0], 32768); filesize -= 32768;
@@ -347,7 +347,7 @@ public:
 					break;
 				}
 			}
-			if (cl.close || cl.rend) {
+			if (cl->close || cl->rend) {
 				shutdown(sock, 2); closesocket(sock);
 			}
 		}
@@ -356,39 +356,39 @@ public:
 			if (errorpages) { // If custom error pages enabled send the error page
 				temp = errorPage(404);
 			}
-			temp = serverHeaders(404, cl.version, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
+			temp = serverHeaders(404, cl->version, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
 			Send(temp, sock, ssl);
 		}
-		if (cl.close) {
+		if (cl->close) {
 			shutdown(sock, 2);
 			closesocket(sock);
 		}
 	}
-	static void Post(clientInfo cl) {
+	static void Post(clientInfo* cl) {
 		//POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
-		if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl.RequestPath))) {
-			if (fileExists(htroot + cl.RequestPath + "/root.htaccess")) {//Check if custom actions exists
-				if (!customActions(htroot + cl.RequestPath + "/root.htaccess", cl)) return;
+		if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl->RequestPath))) {
+			if (fileExists(htroot + cl->RequestPath + "/root.htaccess")) {//Check if custom actions exists
+				if (!customActions(htroot + cl->RequestPath + "/root.htaccess", cl)) return;
 			}
 		}
 		else {
-			if (fileExists(htroot + cl.RequestPath + ".htaccess")) {//Check for special rules first
-				if (!customActions(htroot + cl.RequestPath + ".htaccess", cl)) return;
+			if (fileExists(htroot + cl->RequestPath + ".htaccess")) {//Check for special rules first
+				if (!customActions(htroot + cl->RequestPath + ".htaccess", cl)) return;
 			}
 		}
 		// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
-		Send(serverHeaders(404, cl.version) + "\r\n", cl.sock, cl.ssl);
+		Send(serverHeaders(404, cl->version) + "\r\n", cl->sock, cl->ssl);
 		if (errorpages) { // If custom error pages enabled send the error page
-			Send(errorPage(404), cl.sock, cl.ssl);
+			Send(errorPage(404), cl->sock, cl->ssl);
 		}
-		closesocket(cl.sock);
+		closesocket(cl->sock);
 	}
 private:
 
 };
 
-void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function reads and parses the Request Header.
-	clientInfo cl; string temp = ""; int x = 0; cl.sock = sock; cl.ssl = ssl; temp.reserve(384);
+void parseHeader(clientInfo* cl,char* buf) {//This function reads and parses the Request Header.
+	string temp = ""; int x = 0; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; temp.reserve(384);
 	for (int var = 0; var < strlen(buf) + 1; var++) {
 		if (buf[var] < 32) {//First read the line
 			string temp2 = "";
@@ -398,61 +398,61 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 						if (x < 3) {
 							switch (x) {
 							case 0:
-								cl.RequestType = temp2; temp2 = ""; x++; break;
+								cl->RequestType = temp2; temp2 = ""; x++; break;
 							case 1:
-								cl.RequestPath = temp2; temp2 = ""; x++; temp += " ";
-								for (size_t i = 0; i < cl.RequestPath.size(); i++) {
-									if (cl.RequestPath[i] == '%') {
+								cl->RequestPath = temp2; temp2 = ""; x++; temp += " ";
+								for (size_t i = 0; i < cl->RequestPath.size(); i++) {
+									if (cl->RequestPath[i] == '%') {
 										try {
-											temp2 += (char)std::stoi(Substring(cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
+											temp2 += (char)std::stoi(Substring(cl->RequestPath, 2, i + 1), NULL, 16); i += 2;
 										}
 										catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
 											temp2 += '%';
 										}
 									}
-									else if (cl.RequestPath[i] == '?') {
-										cl.qStr = Substring(cl.RequestPath, 0, i + 1);
-										cl.RequestPath = Substring(cl.RequestPath, i - 1);
+									else if (cl->RequestPath[i] == '?') {
+										cl->qStr = Substring(cl->RequestPath, 0, i + 1);
+										cl->RequestPath = Substring(cl->RequestPath, i - 1);
 									}
-									else temp2 += cl.RequestPath[i];
+									else temp2 += cl->RequestPath[i];
 								}
-								cl.RequestPath = temp2; temp2 = ""; break;
+								cl->RequestPath = temp2; temp2 = ""; break;
 							case 2:
-								if (Substring(temp2, 4) == "HTTP") cl.version = Substring(temp2, 3, 5);
+								if (Substring(temp2, 4) == "HTTP") cl->version = Substring(temp2, 3, 5);
 								else { closesocket(sock); return; }//If false, that means connection is not a HTTP connection, close it.
 								x++; temp2 = "";
-								if (cl.version == "1.0") cl.close = 1;//HTTP 0.9 is not supported currently.
+								if (cl->version == "1.0") cl->close = 1;//HTTP 0.9 is not supported currently.
 								break;
 							default:
 								break;
 							}
 						}
 						else {
-							if (temp2 == "Cookie:") cl.cookies = Substring(temp, 0, temp2.size());
+							if (temp2 == "Cookie:") cl->cookies = Substring(temp, 0, temp2.size());
 							else if (temp2 == "Authorization:")
-								cl.auth = base64_decode(Substring(temp, 0, 21));
+								cl->auth = base64_decode(Substring(temp, 0, 21));
 							else if (temp2 == "Range:") {
 								temp2 = Substring(temp, 0, 13);
 								short y = temp2.find("-");
 								try {
-									cl.rstart = stoull(Substring(temp2, y));
+									cl->rstart = stoull(Substring(temp2, y));
 								}
 								catch (const std::invalid_argument) {
-									Send(serverHeaders(400, cl.version), sock, ssl); return;
+									Send(serverHeaders(400, cl->version), sock, ssl); return;
 								}
 								try {
-									cl.rend = stoull(Substring(temp2, 0, y + 1));
-									if (cl.rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl.RequestPath))) { Send(serverHeaders(416, cl.version), sock, ssl); return; }
+									cl->rend = stoull(Substring(temp2, 0, y + 1));
+									if (cl->rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath))) { Send(serverHeaders(416, cl->version), sock, ssl); return; }
 								}
 								catch (const std::invalid_argument) {
-									cl.rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.RequestPath));
+									cl->rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath));
 								}
 							}
 							else if (temp2 == "Connection:") {
 								if (Substring(temp, 0, 12) == "close") {
-									cl.close = 1;
+									cl->close = 1;
 								}
-								else cl.close = 0;
+								else cl->close = 0;
 							}
 							break;
 						}
@@ -461,51 +461,61 @@ void parseHeader(const char* buf, SOCKET sock, SSL* ssl=NULL) {//This function r
 				}
 			}
 			else if (buf[var - 1] < 32&&buf[var+2]!=0) {
-				if (buf[var+1]>32) cl.payload = Substring(buf, 0, var + 1);
-				else cl.payload = Substring(buf, 0, var + 2);
+				if (buf[var+1]>32) cl->payload = Substring(buf, 0, var + 1);
+				else cl->payload = Substring(buf, 0, var + 2);
 			}
 			temp = ""; if (buf[var + 1] == '\n') var++; //Increase the iterator again in case of lines are separated with CRLF
 		}
 		else temp += buf[var];
 	}
-	if (cl.RequestType == "GET") AlyssaHTTP::Get(cl);
-	else if (cl.RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-	else if (cl.RequestType == "POST") AlyssaHTTP::Post(cl);
-	else if (cl.RequestType == "PUT") AlyssaHTTP::Post(cl);
-	else {
-		string asd = serverHeaders(501, cl.version); Send(asd, cl.sock, cl.ssl); closesocket(sock);
-	}
+
 }
 
-void clientConnection(SOCKET sock) {//This is the thread function that gets data from client.
+void clientConnection(clientInfo* cl) {//This is the thread function that gets data from client.
 	char buf[4096] = { 0 };
 	// Wait for client to send data
-	while (recv(sock, buf, 4096,0) > 0) {
-		std::thread t([&buf, &sock]() {
-			parseHeader(buf, sock, NULL);
+	while (recv(cl->sock, buf, 4096,0) > 0) {
+		std::thread t([&cl, &buf]() {
+			parseHeader(cl,buf);
+			if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
+			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
+			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+			else {
+				string asd = serverHeaders(501, cl->version); Send(asd, cl->sock, cl->ssl); closesocket(cl->sock);
+			}
 		});
 		t.detach();
 	}
-	closesocket(sock);
+	closesocket(cl->sock);
+	delete cl;
 	return;
 }
 #ifdef COMPILE_OPENSSL
-void clientConnection_SSL(SOCKET sock,SSL* ssl) {
-	char buf[4096] = { 0 }; int bytes = 0; std::vector<std::unique_ptr<std::thread>> tt;
-	if (SSL_accept(ssl) == -1) {    /* do SSL-protocol accept */
+void clientConnection_SSL(clientInfo* cl) {
+	char buf[4096] = { 0 }; int bytes = 0; 
+	if (SSL_accept(cl->ssl) == -1) {    /* do SSL-protocol accept */
 		ERR_print_errors_fp(stderr); return;
 	}
-	while (bytes = SSL_recv(ssl, buf, sizeof(buf))>0 /* get request */) {
-		std::thread t([&buf, &sock, &ssl]() {
-			parseHeader(buf, sock, ssl);
+	while (bytes = SSL_recv(cl->ssl, buf, sizeof(buf)) > 0 /* get request */) {
+		std::thread t([&buf, &cl]() {
+			parseHeader(cl, buf);
+			if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
+			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
+			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+			else {
+				string asd = serverHeaders(501, cl->version); Send(asd, cl->sock, cl->ssl); closesocket(cl->sock);
+			}
 			});
-			t.detach();
+		t.detach();
 	}
 	if (bytes < 0) {
-		ERR_print_errors_fp(stderr); SSL_free(ssl); return;
+		ERR_print_errors_fp(stderr); SSL_free(cl->ssl); return;
 	}
-	SSL_free(ssl);//Delete the SSL object for preventing memory leak
-	closesocket(sock);
+	SSL_free(cl->ssl);//Delete the SSL object for preventing memory leak
+	closesocket(cl->sock);
+	delete cl;
 	return;
 }
 
@@ -629,20 +639,20 @@ int main()//This is the main server function that fires up the server and listen
 			int clientSize = sizeof(client);
 #endif
 			SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
-
+			clientInfo* cl = new clientInfo;
 			char host[NI_MAXHOST] = { 0 };		// Client's remote name
 			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
+			cl->sock = clientSocket; cl->hostname = host;
 			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
 			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-			if (whitelist == "") { std::thread t((clientConnection), clientSocket); t.detach(); }
+			if (whitelist == "") { std::thread t((clientConnection), cl); t.detach(); }
 			else if (isWhitelisted(host)) {
-				std::thread t((clientConnection), clientSocket); t.detach();
+				std::thread t((clientConnection), cl); t.detach();
 			}
 			else {
-				closesocket(clientSocket);
+				closesocket(clientSocket); delete cl;
 			}
 		}
 		}));
@@ -663,22 +673,25 @@ int main()//This is the main server function that fires up the server and listen
 #endif
 				SOCKET clientSocket = accept(HTTPSlistening, (sockaddr*)&client, &clientSize);
 				SSL* ssl;
+				clientInfo* cl = new clientInfo;
 				char host[NI_MAXHOST] = { 0 };		// Client's remote name
 				char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 				ssl = SSL_new(ctx);
 				SSL_set_fd(ssl, clientSocket);
-
 				inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
+				cl->sock = clientSocket; cl->hostname = host; cl->ssl = ssl;
 				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
 				if (whitelist == "") {
-					std::thread t((clientConnection_SSL), clientSocket, ssl); t.detach();
+					std::thread t((clientConnection_SSL), cl); t.detach();
 				}
 				else if (isWhitelisted(host)) {
-					std::thread t((clientConnection_SSL), clientSocket, ssl); t.detach();
+					std::thread t((clientConnection_SSL), cl); t.detach();
 				}
 				else {
 					closesocket(clientSocket);
+					delete cl;
+					SSL_free(ssl);
 				}
 			}
 	}));

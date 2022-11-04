@@ -127,7 +127,7 @@ extern unsigned int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.7.2";
+static string version = "v0.7.3";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
