@@ -1,49 +1,31 @@
 #include "Alyssa.h"
 using namespace std;
 //Redefinition of options
-fstream configfs; string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF = 0; unsigned int port = 80; string htroot = ""; bool foldermode = 0; string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logOnScreen = 0;
+string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF = 0; unsigned int port = 80; string htroot = ""; bool foldermode = 0; string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logOnScreen = 0;
 #ifdef COMPILE_OPENSSL
 unsigned int SSLport; string SSLkeypath; string SSLcertpath; bool enableSSL = 0;
 #endif
 void Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
-	configfs.open("Alyssa.cfg", ios::in); configfs.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
-	if (!configfs) {
-		cout << "Error: cannot open config file. Using default defined values.." << endl; return;
-	}
-	//Determine the newline delimiter on config file
-	while((delimiter=configfs.get())!='\r' && delimiter != '\n'){}
-	if(configfs.get()=='\n') isCRLF=1;
-	configfs.seekg(0);
-	int temp = 0; string stemp, tempie, key, value;
-	while (getline(configfs, stemp,delimiter))
-	{
-		if (stemp[0] == '#') {}//Comment line, discard
-		else if (stemp == "") {}//Blank line, discard
-		else
-		{
-			bool alreadyseparated = 0;
-			for (size_t i = 0; i < (int)stemp.size(); i++)//Parses the lines for keys and values 
-			{
-				if (stemp[i] == ' ')
-				{
-					if (!alreadyseparated)//Checks if value is already separated from the key on the line. If so it wont be separated again so the lines with multiple spaces wont cause problems.
-					{
-						key = tempie; tempie = ""; alreadyseparated = 1;
+	ifstream conf; conf.open("Alyssa.cfg"); conf.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	if (!conf) return;
+	string buf(std::filesystem::file_size("Alyssa.cfg"), '\0');
+	conf.read(&buf[0], std::filesystem::file_size("Alyssa.cfg")); buf += "\1"; string temp = ""; short x = 0;
+	for (size_t i = 0; i < buf.size(); i++) {
+		if (buf[i] < 32) {
+			if (temp[0] == '#') {}//Comment line, discard
+			else if (temp == "") {}//Blank line, discard
+			else {
+				for (size_t i = 0; i < temp.size(); i++) {
+					if (temp[i]==' ') {
+						configcache[x] = Substring(temp, i); configcache_value[x] = Substring(temp, 0, i + 1); x++;
 					}
-					else tempie += stemp[i];//Add the space to value string.
 				}
-				else tempie += stemp[i];
 			}
-			value = tempie;
-			if (stemp == tempie) { tempie = ""; alreadyseparated = 0; }//Invalid, discard
-			else//There's where the values and keys are cached to arrays. And resets the vars in the end and loops again until EOF.
-			{
-				configcache[temp] = key; configcache_value[temp] = value; if(isCRLF && temp>0) configcache[temp].erase(0,1);
-				temp++; tempie = ""; alreadyseparated = 0;
-			}
+			temp = ""; if (buf[i + 1] < 32) i++;//CRLF
 		}
+		else temp += buf[i];
 	}
-	configfs.close();
+	conf.close();
 }
 
 string Config::getValue(std::string key, std::string value) {//Interface function for getting a value from config.

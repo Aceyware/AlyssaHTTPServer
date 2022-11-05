@@ -128,7 +128,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
 	if (cl->qStr != "") payload = cl->qStr;
 	else if (cl->payload != "") payload = cl->payload;
-	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),"GATEWAY_INTERFACE=\"CGI/1.1\"",strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};// Potential memory leak
+	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),strdup("GATEWAY_INTERFACE=\"CGI/1.1\""),strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};
 	//Refer to github page of library.
 	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
 	int result = subprocess_create_ex(cmd, 0,environment, &cgi);
@@ -147,6 +147,9 @@ string execCGI(const char* exec, clientInfo* cl) {
 		rst += buf;
 	}
 	subprocess_destroy(&cgi);
+	for (size_t i = 0; i < 6; i++) {
+		delete[] environment[i];
+	}
 	return rst;
 }
 
@@ -168,30 +171,36 @@ string errorPage(int statusCode) {
 }
 
 bool customActions(string path, clientInfo* cl) {
-	std::ifstream file; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, temp = ""; file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
-	while (std::getline(file, temp)) {//1. Parse the custom actions file
-		int x = temp.find(" "); string caction = "";
-		if (x != -1) {
-			caction = temp.substr(0, x); temp = temp.substr(x+1);
-		}
-		else {
-			caction = temp; temp = "";
-		}
-		if (action[0]=="") {
-			if (caction == "Authenticate") {
-				action[0] = caction;
-				if (temp != "") param[0] = temp;
-				continue;
-			}
-		}
-		if (action[1]=="") {
-			if (caction == "Redirect" || caction == "ExecCGI") {
-				action[1] = caction; param[1] = temp; continue;
-			}
-			else if (caction == "ReturnTeapot") { action[1] = caction; continue; }
-		}
-		std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(caction) + L"\" on file \"" + s2ws(path) + L"\"\n";
+	std::ifstream file; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)),'\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	if (!file) {
+		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
+		Send(serverHeaders(500, cl->version) + "\r\n", cl->sock, cl->ssl); if (errorpages) Send(errorPage(500), cl->sock, cl->ssl); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
 	}
+	file.read(&buf[0], buf.size()); buf += "\1"; string temp = "";
+	for (size_t i = 0; i < buf.size(); i++) {
+		if (buf[i] < 32) {
+			string act, pr; int x = temp.find(" ");
+			if (x != -1) { act = Substring(temp, x); pr = Substring(temp, 0, x + 1); }
+			else act = temp;
+			temp = ""; if (buf[i + 1] < 32) i++;//CRLF
+			if (action[0] == "") {
+				if (act == "Authenticate") {
+					action[0] = act; param[0] = pr;
+					continue;
+				}
+			}
+			if (action[1] == "") {
+				if (act == "Redirect" || act == "ExecCGI") {
+					action[1] = act; param[1] = pr; continue;
+				}
+				else if (act == "ReturnTeapot") { action[1] = act; continue; }
+			}
+			std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(act) + L"\" on file \"" + s2ws(path) + L"\"\n";
+		}
+		else temp += buf[i];
+	}
+	file.close();
+	
 	//2. Execute the custom actions by their order
 	if (action[0]!="") {
 		if (action[0]=="Authenticate") {
@@ -199,21 +208,23 @@ bool customActions(string path, clientInfo* cl) {
 				Send(serverHeaders(401, cl->version), cl->sock, cl->ssl); shutdown(sock, 2); closesocket(sock); return 0;
 			}
 			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
-			pwd.open(param[0]);
+			pwd.open(std::filesystem::u8path(param[0]));
 			if (!pwd.is_open()) {
 				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \""+path+"\"\n";
 				Send(serverHeaders(500, cl->version)+"\r\n", cl->sock, cl->ssl);
 				if (errorpages) { // If custom error pages enabled send the error page
 					Send(errorPage(500), cl->sock, cl->ssl);
 				}
-				shutdown(sock, 2); closesocket(sock); return 0;
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
 			}
-			int c = 0; bool found = 0; string tmp = "";
-			while (getline(pwd, tmp)) {
-				if (c > 0 && isCRLF) tmp.erase(0, 1);
-				if (tmp==cl->auth) {
-					found = 1; pwd.close();
+			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size()); 
+			tmp += "\1"; temp = "";
+			for (size_t i = 0; i < tmp.size(); i++) {
+				if (tmp[i] < 32) {
+					if (cl->auth == temp) { found = 1; break; } temp = "";
+					if (tmp[i + 1] < 32) i++; //CRLF
 				}
+				else temp += tmp[i];
 			}
 			if (!found) {
 				if (!forbiddenas404) {
@@ -228,7 +239,7 @@ bool customActions(string path, clientInfo* cl) {
 						Send(errorPage(404), cl->sock, cl->ssl);
 					}
 				}
-				shutdown(sock, 2); closesocket(sock); return 0;
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
 			}
 		}
 	}
@@ -244,14 +255,12 @@ bool customActions(string path, clientInfo* cl) {
 			string asd = execCGI(param[1].c_str(), cl);
 			asd = serverHeaders(200, cl->version,"", asd.size()) + "\r\n" + asd;
 			Send(asd, sock, ssl);
-			shutdown(sock, 2);
-			closesocket(sock);
+			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
 			return 0;
 		}
 		else if (action[1] == "ReturnTeapot") {
 			Send(serverHeaders(418, cl->version) + "\r\n", sock, ssl);
-			shutdown(sock,2);
-			closesocket(sock);
+			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
 			return 0;
 		}
 	}
@@ -481,8 +490,11 @@ void clientConnection(clientInfo* cl) {//This is the thread function that gets d
 			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
 			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+			else if (cl->RequestType == "OPTIONS") {
+				Send(serverHeaders(200, cl->version)+"Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+			}
 			else {
-				string asd = serverHeaders(501, cl->version); Send(asd, cl->sock, cl->ssl); closesocket(cl->sock);
+				Send(serverHeaders(501, cl->version), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
 			}
 		});
 		t.detach();
@@ -495,7 +507,7 @@ void clientConnection(clientInfo* cl) {//This is the thread function that gets d
 void clientConnection_SSL(clientInfo* cl) {
 	char buf[4096] = { 0 }; int bytes = 0; 
 	if (SSL_accept(cl->ssl) == -1) {    /* do SSL-protocol accept */
-		ERR_print_errors_fp(stderr); return;
+		SSL_free(cl->ssl); closesocket(cl->sock); delete cl; return;
 	}
 	while (bytes = SSL_recv(cl->ssl, buf, sizeof(buf)) > 0 /* get request */) {
 		std::thread t([&buf, &cl]() {
@@ -504,14 +516,14 @@ void clientConnection_SSL(clientInfo* cl) {
 			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
 			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+			else if (cl->RequestType == "OPTIONS") {
+				Send(serverHeaders(200, cl->version) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock); //This should work as response to an OPTIONS request, untested.
+			}
 			else {
-				string asd = serverHeaders(501, cl->version); Send(asd, cl->sock, cl->ssl); closesocket(cl->sock);
+				Send(serverHeaders(501, cl->version), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
 			}
 			});
 		t.detach();
-	}
-	if (bytes < 0) {
-		ERR_print_errors_fp(stderr); SSL_free(cl->ssl); return;
 	}
 	SSL_free(cl->ssl);//Delete the SSL object for preventing memory leak
 	closesocket(cl->sock);

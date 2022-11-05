@@ -50,7 +50,6 @@ typedef int SOCKET;
 class Config
 {
 public:
-	static char getDelimiter(std::fstream fs);
 	static string getValue(std::string key, std::string value);
 	static void initialRead();
 private:
@@ -127,7 +126,7 @@ extern unsigned int SSLport;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v0.7.3";
+static string version = "v1.0";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

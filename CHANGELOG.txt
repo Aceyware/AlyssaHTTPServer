@@ -1,6 +1,13 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v1.0 (Initial Release) - 05.11.2022
+• Rewritten code related to file operations (config, custom actions and it's part of authencation system that reads credentials from file)
+	• Now code reads file at once as block and does operations on RAM, resulting with better performance
+	• Server is now newline-delimiter-agnostic, means you can use any file written on any operating system on another operating system (ex: running server on Unix and using files written on NT and vice-versa)
+• Fixed the memory leaking on CGI
+• Added HTTP OPTIONS support
+
 v0.7.3 (Release Candidate 1) - 04.11.2022
 • Renewed code for preparition to HTTP/2 support in the future, and for better memory management and slightly better performance.
 
