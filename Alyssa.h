@@ -23,7 +23,9 @@
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
 #endif
+
 #define COMPILE_OPENSSL//Define that if you want to compile with SSL support
+
 #ifdef COMPILE_OPENSSL
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
@@ -97,6 +99,16 @@ static std::string Substring(const char* str, int size, int startPoint=0){
 	}
 	return x;
 }
+static std::string ToLower(string str) {
+	string x = ""; x.reserve(str.size());
+	for (size_t i = 0; i < str.size(); i++) {
+		if (str[i] < 91 && str[i] > 64) {
+			str[i] += 32;
+		}
+		x += str[i];
+	}
+	return x;
+}
 #ifdef _WIN32
 #endif
 #ifndef COMPILE_OPENSSL
@@ -117,16 +129,19 @@ extern bool errorpages;
 extern string respath;
 extern string htrespath;
 extern bool logOnScreen;
+extern string defaultCorsAllowOrigin; extern bool corsEnabled;
+extern string CSPConnectSrc; extern bool CSPEnabled;
 #ifdef COMPILE_OPENSSL
 extern bool enableSSL;
 extern string SSLcertpath;
 extern string SSLkeypath;
 extern unsigned int SSLport;
+extern bool HSTS;
 #endif
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.0";
+static string version = "v1.0.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff

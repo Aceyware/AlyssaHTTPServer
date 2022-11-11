@@ -1,6 +1,11 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v1.0.1 - 11.11.2022
+• Initial support for CORS and CSP ("Access-Control-Allow-Origin" and "Content-Security-Policy: connect-url" headers). Can be configured from config file.
+• Keys on config and custom actions files are now case-insensitive (values are still case-sensitive).
+• HSTS support, can be enabled from config.
+
 v1.0 (Initial Release) - 05.11.2022
 • Rewritten code related to file operations (config, custom actions and it's part of authencation system that reads credentials from file)
 	• Now code reads file at once as block and does operations on RAM, resulting with better performance
