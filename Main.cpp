@@ -1,7 +1,5 @@
 #include "Alyssa.h"
-#include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
-#include "subprocess.h"//https://github.com/sheredom/subprocess.h
-using std::string;
+using std::string; using std::cout;
 
 struct clientInfo {//This structure has the information from client request.
 	string RequestType = "", RequestPath = "", version="", host="",
@@ -290,6 +288,8 @@ public:
 			else if (foldermode) {
 				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
 				Send(asd, sock, ssl);
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); }
+				return;
 			} //Send the folder index if enabled.
 		}
 		else if (path.substr(0, htrespath.size()) == htrespath) {//Request for a resource
@@ -480,65 +480,49 @@ void parseHeader(clientInfo* cl,char* buf) {//This function reads and parses the
 					else temp2 += temp[var];
 				}
 			}
-			else if (buf[var - 1] < 32&&buf[var+2]!=0) {
-				if (buf[var+1]>32) cl->payload = Substring(buf, 0, var + 1);
-				else cl->payload = Substring(buf, 0, var + 2);
-			}
 			temp = ""; if (buf[var + 1] == '\n') var++; //Increase the iterator again in case of lines are separated with CRLF
 		}
 		else temp += buf[var];
 	}
-
+	cl->payload = temp;
+	if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
+	else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
+	else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+	else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+	else if (cl->RequestType == "OPTIONS") {
+		Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+	}
+	else {
+		Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+	}
 }
 
-void clientConnection(clientInfo* cl) {//This is the thread function that gets data from client.
+void clientConnection(clientInfo cl) {//This is the thread function that gets data from client.
 	char buf[4096] = { 0 };
 	// Wait for client to send data
-	while (recv(cl->sock, buf, 4096,0) > 0) {
-		std::thread t([&cl, &buf]() {
-			parseHeader(cl,buf);
-			if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
-			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "OPTIONS") {
-				Send(serverHeaders(200, cl)+"Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
-			}
-			else {
-				Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
-			}
-		});
-		t.detach();
-	}
-	closesocket(cl->sock);
-	delete cl;
-	return;
-}
-#ifdef COMPILE_OPENSSL
-void clientConnection_SSL(clientInfo* cl) {
-	char buf[4096] = { 0 }; int bytes = 0; 
-	if (SSL_accept(cl->ssl) == -1) {    /* do SSL-protocol accept */
-		SSL_free(cl->ssl); closesocket(cl->sock); delete cl; return;
-	}
-	while (bytes = SSL_recv(cl->ssl, buf, sizeof(buf)) > 0 /* get request */) {
-		std::thread t([&buf, &cl]() {
-			parseHeader(cl, buf);
-			if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
-			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "OPTIONS") {
-				Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock); //This should work as response to an OPTIONS request, untested.
-			}
-			else {
-				Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
-			}
+	while (recv(cl.sock, buf, 4096,0) > 0) {
+		std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+			parseHeader((clientInfo*)&cl, (char*)&buf);
 			});
 		t.detach();
 	}
-	SSL_free(cl->ssl);//Delete the SSL object for preventing memory leak
-	closesocket(cl->sock);
-	delete cl;
+	closesocket(cl.sock);
+	return;
+}
+#ifdef COMPILE_OPENSSL
+void clientConnection_SSL(clientInfo cl) {
+	char buf[4096] = { 0 };
+	if (SSL_accept(cl.ssl) == -1) {    /* do SSL-protocol accept */
+		SSL_free(cl.ssl); closesocket(cl.sock); return;
+	}
+	while (SSL_recv(cl.ssl, buf, sizeof(buf)) > 0 /* get request */) {
+		std::thread t([buf, cl]() {
+			parseHeader((clientInfo*)&cl, (char*)&buf);
+			});
+		t.detach();
+	}
+	SSL_free(cl.ssl);//Delete the SSL object for preventing memory leak
+	closesocket(cl.sock);
 	return;
 }
 
@@ -568,11 +552,27 @@ void LoadCertificates(SSL_CTX* ctx, char* CertFile, char* KeyFile)
 		enableSSL = 0;
 	}
 }
+
+SSL_CTX* InitServerCTX(void) {
+	OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
+	SSL_load_error_strings();   /* load all error messages */
+	SSL_CTX* ctx;
+#pragma warning(suppress : 4996)
+	const SSL_METHOD* method = TLSv1_2_server_method();  /* create new server-method instance */
+	ctx = SSL_CTX_new(method);   /* create new context from method */
+	if (ctx == NULL)
+	{
+		ERR_print_errors_fp(stderr);
+		abort();
+	}
+	return ctx;
+}
 #endif // COMPILE_OPENSSL
 
 int main()//This is the main server function that fires up the server and listens for connections.
 {
-	//Set the locale to UTF
+	std::ios_base::sync_with_stdio(false);
+	//Set the locale and stdout to Unicode
 	fwide(stdout, 0);
 	setlocale(LC_ALL, "");
 	//Read the config file
@@ -619,7 +619,7 @@ int main()//This is the main server function that fires up the server and listen
 	inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr); 
 	socklen_t len = sizeof(hint);
 	bind(listening, (sockaddr*)&hint, sizeof(hint));
-	if (getsockname(listening, (struct sockaddr *)&hint, &len) == -1) {
+	if (getsockname(listening, (struct sockaddr *)&hint, &len) == -1) {//Cannot reserve socket
 		std::cout << "Error binding socket on port " << port << std::endl << "Make sure port is not in use by another program."; return -2;
 	}
 	//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
@@ -662,23 +662,26 @@ int main()//This is the main server function that fires up the server and listen
 			int clientSize = sizeof(client);
 #endif
 			SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
-			clientInfo* cl = new clientInfo;
-			char host[NI_MAXHOST] = { 0 };		// Client's remote name
-			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-			cl->sock = clientSocket; cl->clhostname = host;
-			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
+			std::thread t([&client,&clientSocket]() {
+				clientInfo cl;
+				char host[NI_MAXHOST] = { 0 };		// Client's remote name
+				char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+				inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
+				cl.sock = clientSocket;
+				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
-			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-			if (whitelist == "") { std::thread t((clientConnection), cl); t.detach(); }
-			else if (isWhitelisted(host)) {
-				std::thread t((clientConnection), cl); t.detach();
-			}
-			else {
-				closesocket(clientSocket); delete cl;
-			}
+				//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
+				if (whitelist == "") { clientConnection(cl); }
+				else if (isWhitelisted(host)) {
+					std::thread t((clientConnection), cl); t.detach();
+				}
+				else {
+					closesocket(clientSocket);
+				}
+			});
+			t.detach();
 		}
-		}));
+	}));
 #ifdef COMPILE_OPENSSL //HTTPS listening thread below
 	if (enableSSL) {
 		threadsmaster.emplace_back(new std::thread([&]() {
@@ -696,28 +699,27 @@ int main()//This is the main server function that fires up the server and listen
 #endif
 				SOCKET clientSocket = accept(HTTPSlistening, (sockaddr*)&client, &clientSize);
 				SSL* ssl;
-				clientInfo* cl = new clientInfo;
-				char host[NI_MAXHOST] = { 0 };		// Client's remote name
-				char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 				ssl = SSL_new(ctx);
 				SSL_set_fd(ssl, clientSocket);
-				inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-				cl->sock = clientSocket; cl->clhostname = host; cl->ssl = ssl;
-				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
+				std::thread t([&client, &clientSocket, &ssl]() {
+					clientInfo cl;
+					char host[NI_MAXHOST] = { 0 };		// Client's remote name
+					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host; cl.ssl = ssl;
+					cl.sock = clientSocket;
+					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
-				if (whitelist == "") {
-					std::thread t((clientConnection_SSL), cl); t.detach();
-				}
-				else if (isWhitelisted(host)) {
-					std::thread t((clientConnection_SSL), cl); t.detach();
-				}
-				else {
-					closesocket(clientSocket);
-					delete cl;
-					SSL_free(ssl);
-				}
+					//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
+					if (whitelist == "") { clientConnection(cl); }
+					else if (isWhitelisted(host)) {
+						std::thread t((clientConnection), cl); t.detach();
+					}
+					else {
+						closesocket(clientSocket); SSL_free(ssl);
+					}
+				});
 			}
-	}));
+		}));
 	}
 #endif // COMPILE_OPENSSL
 	while (true)// Dummy while loop for keeping server running

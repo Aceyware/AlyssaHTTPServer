@@ -3,6 +3,8 @@
 #pragma warning(disable : 4996)
 
 // Includes
+#include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
+#include "subprocess.h"//https://github.com/sheredom/subprocess.h
 #include <iostream>
 #include <string>
 #include <thread>
@@ -30,7 +32,7 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#define SSL_recv SSL_read // Definitions for making SSL identical to code I used to know
+#define SSL_recv SSL_read // Definitions for making SSL code similar to plain sockets code.
 #define SSL_send SSL_write
 #endif
 using std::string;
@@ -85,6 +87,7 @@ static std::string ws2s(const std::wstring& wstr) {
 }
 static std::string Substring(std::string str, int size, int startPoint=0){
 	string x=""; if(size==0) size=str.size()-startPoint;
+	if (size > str.size() - startPoint) throw std::out_of_range("Size argument is larger than input string.");
 	x.reserve(size);
 	for (int var = 0; var < size; var++) {
 		x+=str[startPoint+var];
@@ -93,6 +96,7 @@ static std::string Substring(std::string str, int size, int startPoint=0){
 }
 static std::string Substring(const char* str, int size, int startPoint=0){
 	string x=""; if(size==0) size=strlen(str)-startPoint;
+	if (size > strlen(str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
 	x.reserve(size);
 	for (int var = 0; var < size; var++) {
 		x+=str[startPoint+var];
@@ -116,8 +120,7 @@ struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with
 typedef struct ssl_st SSL;
 #endif // !COMPILE_OPENSSL
 
-
-// Declaration of variables
+// Declaration of config variables
 extern bool isCRLF;
 extern char delimiter;
 extern unsigned int port;
@@ -141,25 +144,12 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.0.1";
+static string version = "v1.0.2";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
 #define	QLEN		  32	/* maximum connection queue length	*/
 #define	BUFSIZE		4096
 #define MAXCLI      100
-static SSL_CTX* InitServerCTX(void) {
-	OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
-	SSL_load_error_strings();   /* load all error messages */
-	SSL_CTX* ctx;
-#pragma warning(suppress : 4996)
-	const SSL_METHOD* method = TLSv1_2_server_method();  /* create new server-method instance */
-	ctx = SSL_CTX_new(method);   /* create new context from method */
-	if (ctx == NULL)
-	{
-		ERR_print_errors_fp(stderr);
-		abort();
-	}
-	return ctx;
-}
+
 #endif

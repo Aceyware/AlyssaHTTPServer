@@ -76,8 +76,7 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 	if (folderc > 1) htm += "s";// If plural, add "s"
 	}
 	if (filec > 0) {
-		if (folderc > 0) { htm += " and "; }
-		htm += std::to_string(filec) + " file";
+		if (folderc > 0) { htm += " and " + std::to_string(filec) + " file"; }
 		if (filec > 1) htm += "s";// If plural, add "s"
 	}
 	if (folderc > 0 || filec > 0) htm += "<br>"; // Only add a break when any item exists, for eliminating the empty line before version if folder is empty.
