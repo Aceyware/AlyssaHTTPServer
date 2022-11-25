@@ -294,7 +294,9 @@ public:
 			if (fileExists(htroot + "/root.htaccess")) {
 				if (!customActions(htroot + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
 			} //Check for the special rules first
-			else if (fileExists(htroot + "/index.html")) { file.open((std::filesystem::u8path(htroot + "/index.html"))); filesize = std::filesystem::file_size((std::filesystem::u8path(htroot + "/index.html")));
+			else if (fileExists(htroot + "/index.html")) {
+				path = "/index.html";
+				file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
 			} //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
 				string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
@@ -314,7 +316,8 @@ public:
 					if (!customActions(htroot + path + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
 				}
 				if (fileExists(htroot + path + "/index.html")) {//Check for index.html
-					file.open(std::filesystem::u8path(htroot + path + "/index.html"), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path + "/index.html"));
+					path += "/index.html";
+					file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
 				}
 				else {//Send the folder structure if it's enabled
 					string asd = Folder::folder(htroot + path);
@@ -341,7 +344,8 @@ public:
 					file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
 					}
 				else if (fileExists(htroot + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-					file.open(std::filesystem::u8path(htroot + path + ".html"), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path + ".html"));
+					path += ".html";
+					file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
 				}
 			} //If none is exist, don't open any file so server will return 404.
 		}

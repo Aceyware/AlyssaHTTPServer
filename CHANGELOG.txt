@@ -1,6 +1,10 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v1.1.1 - 25.11.2022
+• Fixed bugs related to requests to root of any folder and responses with index.html files on that folders (infinite page loadings, browser pretending as binary files and downloads it and etc.).
+• Fixed missing file count on directory indexes when there is only one file.
+
 v1.1 - 25.11.2022
 • Added basic logging support.
 • Fixed the CGI which got broken on previous update.

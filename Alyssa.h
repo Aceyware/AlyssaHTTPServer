@@ -146,7 +146,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.1";
+static string version = "v1.1.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
