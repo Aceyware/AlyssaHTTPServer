@@ -274,6 +274,17 @@ bool customActions(string path, clientInfo* cl) {
 	return 1;
 }
 
+std::ofstream Log; std::mutex logMutex;
+void Logging(clientInfo* cl) {
+	// A very basic logging implementation
+	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
+	logMutex.lock();
+	Log << "[" << currentTime() << "] " << cl->clhostname << " - " << cl->RequestPath; 
+	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
+	Log << std::endl;
+	logMutex.unlock();
+}
+
 class AlyssaHTTP {//This class has main code for responses to client
 public:
 	static void Get(clientInfo* cl, bool isHEAD = 0) {
@@ -480,11 +491,15 @@ void parseHeader(clientInfo* cl,char* buf) {//This function reads and parses the
 					else temp2 += temp[var];
 				}
 			}
+			else {
+				if (buf[var + 1] == '\n') var++;
+				if(strlen(buf)>var) cl->payload = Substring(buf, 0, var + 1);
+			}
 			temp = ""; if (buf[var + 1] == '\n') var++; //Increase the iterator again in case of lines are separated with CRLF
 		}
 		else temp += buf[var];
 	}
-	cl->payload = temp;
+	if (logging) Logging(cl); 
 	if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
 	else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 	else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
@@ -577,6 +592,15 @@ int main()//This is the main server function that fires up the server and listen
 	setlocale(LC_ALL, "");
 	//Read the config file
 	Config::initialRead();
+	if (logging) {
+		Log.open("Alyssa.log", std::ios::app);
+		if (!Log.is_open()) {
+			cout << "Error: cannot open log file, logging is disabled." << std::endl; logging = 0;
+		}
+		else {
+			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() << " - Version: " << version << " -----"<<std::endl;
+		}
+	}
 
 #ifdef COMPILE_OPENSSL
 	SSL_CTX* ctx;

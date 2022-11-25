@@ -15,6 +15,7 @@
 #include <locale>
 #include <codecvt>
 #include <cstring>
+#include <mutex>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -85,7 +86,7 @@ static std::string ws2s(const std::wstring& wstr) {
 
 	return converterX.to_bytes(wstr);
 }
-static std::string Substring(std::string str, int size, int startPoint=0){
+static std::string Substring(std::string str, unsigned int size, unsigned int startPoint=0){
 	string x=""; if(size==0) size=str.size()-startPoint;
 	if (size > str.size() - startPoint) throw std::out_of_range("Size argument is larger than input string.");
 	x.reserve(size);
@@ -94,7 +95,7 @@ static std::string Substring(std::string str, int size, int startPoint=0){
 	}
 	return x;
 }
-static std::string Substring(const char* str, int size, int startPoint=0){
+static std::string Substring(const char* str, unsigned int size, unsigned int startPoint=0){
 	string x=""; if(size==0) size=strlen(str)-startPoint;
 	if (size > strlen(str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
 	x.reserve(size);
@@ -134,6 +135,7 @@ extern string htrespath;
 extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
+extern bool logging;
 #ifdef COMPILE_OPENSSL
 extern bool enableSSL;
 extern string SSLcertpath;
@@ -144,7 +146,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.0.2";
+static string version = "v1.1";
 
 #ifdef COMPILE_OPENSSL
 // SSL stuff
