@@ -27,7 +27,7 @@
 #pragma comment (lib, "ws2_32.lib")
 #endif
 
-#define COMPILE_OPENSSL//Define that if you want to compile with SSL support
+//#define COMPILE_OPENSSL//Define that if you want to compile with SSL support
 
 #ifdef COMPILE_OPENSSL
 #include <openssl/rand.h>
@@ -36,7 +36,23 @@
 #define SSL_recv SSL_read // Definitions for making SSL code similar to plain sockets code.
 #define SSL_send SSL_write
 #endif
+
 using std::string;
+
+#define Compile_WolfSSL
+#ifdef Compile_WolfSSL
+#ifndef _WIN32
+#include <wolfssl/options.h>
+#else
+#define WOLFSSL_USER_SETTINGS
+#define CYASSL_USER_SETTINGS
+#endif
+#include <cyassl/ctaocrypt/settings.h>
+#include <cyassl/ssl.h>
+#include <wolfssl/ssl.h>
+#define SSL_recv wolfSSL_read
+#define SSL_send wolfSSL_write
+#endif //Compile_WolfSSL
 
 // Definitions for non-Windows platforms
 #ifndef _WIN32
@@ -116,10 +132,6 @@ static std::string ToLower(string str) {
 }
 #ifdef _WIN32
 #endif
-#ifndef COMPILE_OPENSSL
-struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
-typedef struct ssl_st SSL;
-#endif // !COMPILE_OPENSSL
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -136,7 +148,7 @@ extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
 extern bool logging;
-#ifdef COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
 extern bool enableSSL;
 extern string SSLcertpath;
 extern string SSLkeypath;
@@ -148,10 +160,3 @@ extern bool HSTS;
 static char separator = 1;
 static string version = "v1.1.2";
 
-#ifdef COMPILE_OPENSSL
-// SSL stuff
-#define	QLEN		  32	/* maximum connection queue length	*/
-#define	BUFSIZE		4096
-#define MAXCLI      100
-
-#endif

@@ -9,7 +9,7 @@ struct clientInfo {//This structure has the information from client request.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	SOCKET sock = INVALID_SOCKET;
-	SSL* ssl = NULL;
+	WOLFSSL* ssl = NULL;
 }; 
 
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
@@ -29,29 +29,29 @@ bool isWhitelisted(string ip, string wl=whitelist) {
 	return 0;
 }
 
-void Send(string payload, SOCKET sock, SSL* ssl, bool isText=1) {
+void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1) {
 	size_t size = 0;
 	if (isText)
 		size = strlen(&payload[0]);
 	else size = payload.size();
-#ifdef COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
 	if (ssl != NULL) {
 		SSL_send(ssl, payload.c_str(), size);
 	}
 	else { send(sock, payload.c_str(), size, 0); }
 #else
 	send(sock, payload.c_str(), size, 0);
-#endif // COMPILE_OPENSSL
+#endif // Compile_WolfSSL
 }
-void Send(char* payload, SOCKET sock, SSL* ssl, size_t size) {
-	#ifdef COMPILE_OPENSSL
+void Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
+	#ifdef Compile_WolfSSL
 	if (ssl != NULL) {
 		SSL_send(ssl, payload, size);
 	}
 	else { send(sock, payload, size, 0); }
 #else
 	send(sock, payload, size, 0);
-#endif // COMPILE_OPENSSL
+#endif // Compile_WolfSSL
 }
 
 string fileMime(string filename) {//This function returns the MIME type from file extension.
@@ -178,7 +178,7 @@ string errorPage(int statusCode) {
 }
 
 bool customActions(string path, clientInfo* cl) {
-	std::ifstream file; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)),'\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	std::ifstream file; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)),'\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	if (!file) {
 		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
 		Send(serverHeaders(500, cl) + "\r\n", cl->sock, cl->ssl); if (errorpages) Send(errorPage(500), cl->sock, cl->ssl); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
@@ -289,7 +289,7 @@ class AlyssaHTTP {//This class has main code for responses to client
 public:
 	static void Get(clientInfo* cl, bool isHEAD = 0) {
 		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768);
-		SOCKET sock = cl->sock; SSL* ssl = cl->ssl; string path = cl->RequestPath;//The old definitions for ease and removing the need of rewriting the code
+		SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string path = cl->RequestPath;//The old definitions for ease and removing the need of rewriting the code
 		if (path == "/") {//If server requests for root, we'll handle it specially
 			if (fileExists(htroot + "/root.htaccess")) {
 				if (!customActions(htroot + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
@@ -421,7 +421,7 @@ private:
 };
 
 void parseHeader(clientInfo* cl,char* buf) {//This function reads and parses the Request Header.
-	string temp = ""; int x = 0; SOCKET sock = cl->sock; SSL* ssl = cl->ssl; temp.reserve(384);
+	string temp = ""; int x = 0; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; temp.reserve(384);
 	for (int var = 0; var < strlen(buf) + 1; var++) {
 		if (buf[var] < 32) {//First read the line
 			string temp2 = "";
@@ -528,6 +528,22 @@ void clientConnection(clientInfo cl) {//This is the thread function that gets da
 	closesocket(cl.sock);
 	return;
 }
+#ifdef Compile_WolfSSL
+void clientConnection_SSL(clientInfo cl) {
+	char buf[4096] = { 0 };
+	if (wolfSSL_accept(cl.ssl)!=SSL_SUCCESS) {
+		wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+	}
+	while (SSL_recv(cl.ssl, buf, sizeof buf) > 0) {
+		std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+			parseHeader((clientInfo*)&cl, (char*)&buf);
+		});
+		t.detach();
+	}
+	closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
+	}
+#endif // Compile_WolfSSL
+
 #ifdef COMPILE_OPENSSL
 void clientConnection_SSL(clientInfo cl) {
 	char buf[4096] = { 0 };
@@ -588,6 +604,7 @@ SSL_CTX* InitServerCTX(void) {
 }
 #endif // COMPILE_OPENSSL
 
+
 int main()//This is the main server function that fires up the server and listens for connections.
 {
 	std::ios_base::sync_with_stdio(false);
@@ -615,6 +632,22 @@ int main()//This is the main server function that fires up the server and listen
 		LoadCertificates(ctx, c1, c2);
 	}
 #endif
+#ifdef Compile_WolfSSL
+	wolfSSL_Init();
+	WOLFSSL_CTX* ctx;
+	if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL)
+	{
+		fprintf(stderr, "wolfSSL_CTX_new error.\n");
+		exit(EXIT_FAILURE);
+	}
+	if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS){
+		std::terminate();
+	}
+	if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+		std::terminate();
+	}
+#endif // Compile_WolfSSL
+
 	#ifdef _WIN32
 	// Initialze winsock
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
@@ -631,7 +664,7 @@ int main()//This is the main server function that fires up the server and listen
 		std::cerr << "Can't create a socket! Quitting" << std::endl;
 		return -1;
 	}
-#ifdef COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
 	SOCKET HTTPSlistening = socket(AF_INET, SOCK_STREAM, 0);
 	if (enableSSL) {
 		if (HTTPSlistening == INVALID_SOCKET) {
@@ -639,7 +672,7 @@ int main()//This is the main server function that fires up the server and listen
 			return -1;
 		}
 	}
-#endif // COMPILE_OPENSSL
+#endif // Compile_WolfSSL
 	 // Bind the ip address and port to sockets
 	sockaddr_in hint; 
 	hint.sin_family = AF_INET; 
@@ -653,7 +686,7 @@ int main()//This is the main server function that fires up the server and listen
 	//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 	else if(port!=ntohs(hint.sin_port)) {std::cout << "Error binding socket on port " << port << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;}
 
-#ifdef COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
 	sockaddr_in HTTPShint;
 	if (enableSSL) {
 		HTTPShint.sin_family = AF_INET;
@@ -666,11 +699,11 @@ int main()//This is the main server function that fires up the server and listen
 		}
 		else if (SSLport != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 	}
-#endif // COMPILE_OPENSSL
+#endif // Compile_WolfSSL
 
 	std::vector<std::unique_ptr<std::thread>> threadsmaster;
 	std::cout << "Alyssa HTTP Server " << version << std::endl << "Listening on HTTP: " << port;
-#ifdef COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
 	if(enableSSL)std::cout << " HTTPS: " << SSLport;
 #endif
 	std::cout << std::endl;
@@ -751,6 +784,51 @@ int main()//This is the main server function that fires up the server and listen
 		}));
 	}
 #endif // COMPILE_OPENSSL
+#ifdef Compile_WolfSSL
+	if (enableSSL) {
+		threadsmaster.emplace_back(new std::thread([&]() {
+			while (true) {
+				// Tell Winsock the socket is for listening 
+				listen(HTTPSlistening, SOMAXCONN);
+
+				// Wait for a connection
+				sockaddr_in client;
+#ifndef _WIN32
+				unsigned int clientSize = sizeof(client);
+#else
+				int clientSize = sizeof(client);
+#endif
+				SOCKET clientSocket = accept(HTTPSlistening, (sockaddr*)&client, &clientSize);
+				WOLFSSL* ssl;
+				if ((ssl = wolfSSL_new(ctx)) == NULL) {
+					std::terminate();
+				}
+				wolfSSL_set_fd(ssl, clientSocket); char alpn[] = "http/1.1,http/1.0";
+				wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+				
+				std::thread t([&client, &clientSocket, ssl]() {
+					clientInfo cl;
+					char host[NI_MAXHOST] = { 0 };		// Client's remote name
+					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
+					cl.sock = clientSocket; cl.ssl = ssl;
+					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
+					if (whitelist == "") { std::thread t((clientConnection_SSL), cl); t.detach(); }
+					else if (isWhitelisted(host)) {
+						std::thread t((clientConnection_SSL), cl); t.detach();
+					}
+					else {
+						closesocket(clientSocket); wolfSSL_free(ssl);
+					}
+					
+					
+					
+				}); t.detach();
+			}
+		}));
+	}
+#endif // Compile_WolfSSL
+
 	while (true)// Dummy while loop for keeping server running
 	{
 		Sleep(1);
