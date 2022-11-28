@@ -729,7 +729,7 @@ int main()//This is the main server function that fires up the server and listen
 				SSL* ssl;
 				ssl = SSL_new(ctx);
 				SSL_set_fd(ssl, clientSocket);
-				std::thread t([&client, &clientSocket, &ssl]() {
+				std::thread t([&client, &clientSocket, ssl]() {
 					clientInfo cl;
 					char host[NI_MAXHOST] = { 0 };		// Client's remote name
 					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
@@ -738,14 +738,15 @@ int main()//This is the main server function that fires up the server and listen
 					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
 					//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-					if (whitelist == "") { clientConnection(cl); }
+					if (whitelist == "") { std::thread t((clientConnection_SSL), cl); t.detach(); }
 					else if (isWhitelisted(host)) {
-						std::thread t((clientConnection), cl); t.detach();
+						std::thread t((clientConnection_SSL), cl); t.detach();
 					}
 					else {
 						closesocket(clientSocket); SSL_free(ssl);
 					}
 				});
+				t.detach();
 			}
 		}));
 	}
