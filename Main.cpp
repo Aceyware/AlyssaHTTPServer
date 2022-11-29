@@ -10,6 +10,7 @@ struct clientInfo {//This structure has the information from client request.
 	size_t rstart = 0, rend = 0; // Range request integers.
 	SOCKET sock = INVALID_SOCKET;
 	WOLFSSL* ssl = NULL;
+	char* ALPN = NULL; unsigned short ALPNSize = 0;
 }; 
 
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
@@ -72,93 +73,8 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	return "application/octet-stream";
 }
 
-string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0) {//This is the HTTP Response Header function. Status code is obviously mandatory. 
-	//As of now the "mime" variable is used for everything else as a string parameter. Same for "contentlength" if it's required at all.
-	string temp = "HTTP/"+cl->version+" ";
-	switch (statusCode) {
-	case 200:
-		temp += "200 OK\r\n";
-		if (contentlength > 0) {
-			temp += "Accept-Ranges: bytes\r\n";
-		}
-		break;
-	case 206:
-		temp += "206 Partial Content\r\nContent-Range: bytes ";
-		temp += mime; temp += "/";
-		if (contentlength > 0) temp += std::to_string(contentlength);
-		else temp += "*";
-		temp += "\r\n"; break;
-	case 302:
-		temp += "302 Found\r\nLocation: " + mime + "\r\n"; break;
-	case 400:
-		temp += "400 Bad Request\r\n"; break;
-	case 401:
-		temp += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
-	case 403:
-		temp += "403 Forbiddden\r\n"; break;
-	case 404:
-		temp += "404 Not Found\r\n"; break;
-	case 416:
-		temp+="416 Range Not Satisfiable";break;
-	case 418:
-		temp += "418 I'm a teapot\r\n"; break;
-	case 500:
-		temp += "500 Internal Server Error\r\n"; break;
-	case 501:
-		temp += "501 Not Implemented\r\n"; break;
-	default:
-		temp += "501 Not Implemented\r\n"; break;
-	}
-	if (statusCode != 206) {
-		if (contentlength > 0 && mime != "") {
-			if (mime[0] > 65) {temp += "Content-Type: "; temp += mime; temp += "\r\n";}
-		}
-		temp += "Content-Length: "; temp += std::to_string(contentlength); temp += "\r\n";
-	}
-	temp += "Date: " + currentTime() + "\r\n";
-	temp += "Server: Alyssa/" + version + "\r\n";
-#ifdef COMPILE_OPENSSL
-	if (HSTS) temp += "Strict-Transport-Security: max-age=31536000\r\n";
-#endif // COMPILE_OPENSSL
-	if (corsEnabled) {
-		temp += "Access-Control-Allow-Origin: " + defaultCorsAllowOrigin+"\r\n";
-	}
-	if (CSPEnabled) {
-		temp += "Content-Security-Policy: connect-src " + CSPConnectSrc + "\r\n";
-	}
-	//As of now there's no empty line that's indicating metadata is done. This change has been made for extending the flexibility (especially for CGI) but at the cost you have to make sure there will be a empty line after this function has been called. 
-	return temp;
-}
-
-string execCGI(const char* exec, clientInfo* cl) {
-#pragma warning(suppress : 4996)
-	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
-	if (cl->qStr != "") payload = cl->qStr;
-	else if (cl->payload != "") payload = cl->payload;
-	const char * environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()),strdup("GATEWAY_INTERFACE=\"CGI/1.1\""),strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH="+pathstr).c_str()),NULL};
-	//Refer to github page of library.
-	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
-	int result = subprocess_create_ex(cmd, 0,environment, &cgi);
-	if (0 != result) {
-		std::cout << "Warning: CGI Failed to execute: " << exec << std::endl;
-		Send(serverHeaders(404, cl), cl->sock, cl->ssl);
-		return "";
-	}
-	FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
-	if (payload != "") {
-		payload += "\r\n";
-		fputs(payload.c_str(), in);
-		fflush(in);
-	}
-	while (fgets(buf, 4096, out) != nullptr) {
-		rst += buf;
-	}
-	subprocess_destroy(&cgi);
-	for (size_t i = 0; i < 6; i++) {
-		delete[] environment[i];
-	}
-	return rst;
-}
+string execCGI(const char* exec, clientInfo* cl);// Prototypes of functions that moved below AlyssaHTTP class.
+bool customActions(string path, clientInfo* cl);
 
 string errorPage(int statusCode) {
 	std::ifstream file; string page = "";
@@ -177,103 +93,6 @@ string errorPage(int statusCode) {
 	return page;
 }
 
-bool customActions(string path, clientInfo* cl) {
-	std::ifstream file; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)),'\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
-	if (!file) {
-		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
-		Send(serverHeaders(500, cl) + "\r\n", cl->sock, cl->ssl); if (errorpages) Send(errorPage(500), cl->sock, cl->ssl); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
-	}
-	file.read(&buf[0], buf.size()); buf += "\1"; string temp = "";
-	for (size_t i = 0; i < buf.size(); i++) {
-		if (buf[i] < 32) {
-			string act, pr; int x = temp.find(" ");
-			if (x != -1) { act = ToLower(Substring(temp, x)); pr = Substring(temp, 0, x + 1); }
-			else act = temp;
-			temp = ""; if (buf[i + 1] < 32) i++;//CRLF
-			if (action[0] == "") {
-				if (act == "authenticate") {
-					action[0] = act; param[0] = pr;
-					continue;
-				}
-			}
-			if (action[1] == "") {
-				if (act == "redirect" || act == "execcgi") {
-					action[1] = act; param[1] = pr; continue;
-				}
-				else if (act == "returnteapot") { action[1] = act; continue; }
-			}
-			std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(act) + L"\" on file \"" + s2ws(path) + L"\"\n";
-		}
-		else temp += buf[i];
-	}
-	file.close();
-	
-	//2. Execute the custom actions by their order
-	if (action[0]!="") {
-		if (action[0]=="authenticate") {
-			if (cl->auth=="") {
-				Send(serverHeaders(401, cl), cl->sock, cl->ssl); shutdown(sock, 2); closesocket(sock); return 0;
-			}
-			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
-			pwd.open(std::filesystem::u8path(param[0]));
-			if (!pwd.is_open()) {
-				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \""+path+"\"\n";
-				Send(serverHeaders(500, cl)+"\r\n", cl->sock, cl->ssl);
-				if (errorpages) { // If custom error pages enabled send the error page
-					Send(errorPage(500), cl->sock, cl->ssl);
-				}
-				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
-			}
-			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size()); 
-			tmp += "\1"; temp = "";
-			for (size_t i = 0; i < tmp.size(); i++) {
-				if (tmp[i] < 32) {
-					if (cl->auth == temp) { found = 1; break; } temp = "";
-					if (tmp[i + 1] < 32) i++; //CRLF
-				}
-				else temp += tmp[i];
-			}
-			if (!found) {
-				if (!forbiddenas404) {
-					Send(serverHeaders(403, cl) + "\r\n", cl->sock, cl->ssl);
-					if (errorpages) { // If custom error pages enabled send the error page
-						Send(errorPage(403), cl->sock, cl->ssl);
-					}
-				}
-				else {
-					Send(serverHeaders(404, cl) + "\r\n", cl->sock, cl->ssl);
-					if (errorpages) { // If custom error pages enabled send the error page
-						Send(errorPage(404), cl->sock, cl->ssl);
-					}
-				}
-				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
-			}
-		}
-	}
-	if (action[1]!="") {
-		if (action[1] == "redirect") {
-			string asd = serverHeaders(302, cl, param[1]);
-			Send(asd, sock, ssl);
-			shutdown(sock, 2);
-			closesocket(sock);
-			return 0;
-		}
-		else if (action[1] == "execcgi") {
-			string asd = execCGI(param[1].c_str(), cl);
-			asd = serverHeaders(200, cl,"", asd.size()) + "\r\n" + asd;
-			Send(asd, sock, ssl);
-			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
-			return 0;
-		}
-		else if (action[1] == "returnteapot") {
-			Send(serverHeaders(418, cl) + "\r\n", sock, ssl);
-			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
-			return 0;
-		}
-	}
-	return 1;
-}
-
 std::ofstream Log; std::mutex logMutex;
 void Logging(clientInfo* cl) {
 	// A very basic logging implementation
@@ -287,6 +106,159 @@ void Logging(clientInfo* cl) {
 
 class AlyssaHTTP {//This class has main code for responses to client
 public:
+	static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0) {//This is the HTTP Response Header function. Status code is obviously mandatory. 
+	//As of now the "mime" variable is used for everything else as a string parameter. Same for "contentlength" if it's required at all.
+		string temp = "HTTP/" + cl->version + " ";
+		switch (statusCode) {
+		case 200:
+			temp += "200 OK\r\n";
+			if (contentlength > 0) {
+				temp += "Accept-Ranges: bytes\r\n";
+			}
+			break;
+		case 206:
+			temp += "206 Partial Content\r\nContent-Range: bytes ";
+			temp += mime; temp += "/";
+			if (contentlength > 0) temp += std::to_string(contentlength);
+			else temp += "*";
+			temp += "\r\n"; break;
+		case 302:
+			temp += "302 Found\r\nLocation: " + mime + "\r\n"; break;
+		case 400:
+			temp += "400 Bad Request\r\n"; break;
+		case 401:
+			temp += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
+		case 403:
+			temp += "403 Forbiddden\r\n"; break;
+		case 404:
+			temp += "404 Not Found\r\n"; break;
+		case 416:
+			temp += "416 Range Not Satisfiable"; break;
+		case 418:
+			temp += "418 I'm a teapot\r\n"; break;
+		case 500:
+			temp += "500 Internal Server Error\r\n"; break;
+		case 501:
+			temp += "501 Not Implemented\r\n"; break;
+		default:
+			temp += "501 Not Implemented\r\n"; break;
+		}
+		if (statusCode != 206) {
+			if (contentlength > 0 && mime != "") {
+				if (mime[0] > 65) { temp += "Content-Type: "; temp += mime; temp += "\r\n"; }
+			}
+			temp += "Content-Length: "; temp += std::to_string(contentlength); temp += "\r\n";
+		}
+		temp += "Date: " + currentTime() + "\r\nServer: Alyssa/" + version + "\r\n";
+#ifdef Compile_WolfSSL
+		if (HSTS) temp += "Strict-Transport-Security: max-age=31536000\r\n";
+#endif // Compile_WolfSSL
+		if (corsEnabled) {
+			temp += "Access-Control-Allow-Origin: " + defaultCorsAllowOrigin + "\r\n";
+		}
+		if (CSPEnabled) {
+			temp += "Content-Security-Policy: connect-src " + CSPConnectSrc + "\r\n";
+		}
+		//As of now there's no empty line that's indicating metadata is done. This change has been made for extending the flexibility (especially for CGI) but at the cost you have to make sure there will be a empty line after this function has been called. 
+		return temp;
+	}
+
+	static void parseHeader(clientInfo* cl, char* buf) {//This function reads and parses the Request Header.
+		string temp = ""; int x = 0; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; temp.reserve(384);
+		for (int var = 0; var < strlen(buf) + 1; var++) {
+			if (buf[var] < 32) {//First read the line
+				string temp2 = "";
+				if (temp.size() > 0) {
+					for (int var = 0; var < temp.size(); var++) {
+						if (temp[var] == ' ') {
+							if (x < 3) {
+								switch (x) {
+								case 0:
+									cl->RequestType = temp2; temp2 = ""; x++; break;
+								case 1:
+									cl->RequestPath = temp2; temp2 = ""; x++; temp += " ";
+									for (size_t i = 0; i < cl->RequestPath.size(); i++) {
+										if (cl->RequestPath[i] == '%') {
+											try {
+												temp2 += (char)std::stoi(Substring(cl->RequestPath, 2, i + 1), NULL, 16); i += 2;
+											}
+											catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
+												temp2 += '%';
+											}
+										}
+										else if (cl->RequestPath[i] == '?') {
+											cl->qStr = Substring(cl->RequestPath, 0, i + 1);
+											cl->RequestPath = Substring(cl->RequestPath, i - 1);
+										}
+										else temp2 += cl->RequestPath[i];
+									}
+									cl->RequestPath = temp2; temp2 = ""; break;
+								case 2:
+									if (Substring(temp2, 4) == "HTTP") cl->version = Substring(temp2, 3, 5);
+									else { closesocket(sock); return; }//If false, that means connection is not a HTTP connection, close it.
+									x++; temp2 = "";
+									if (cl->version == "1.0") cl->close = 1;//HTTP 0.9 is not supported currently.
+									break;
+								default:
+									break;
+								}
+							}
+							else {
+								if (temp2 == "Cookie:") cl->cookies = Substring(temp, 0, temp2.size());
+								else if (temp2 == "Authorization:")
+									cl->auth = base64_decode(Substring(temp, 0, 21));
+								else if (temp2 == "Range:") {
+									temp2 = Substring(temp, 0, 13);
+									short y = temp2.find("-");
+									try {
+										cl->rstart = stoull(Substring(temp2, y));
+									}
+									catch (const std::invalid_argument) {
+										Send(serverHeaders(400, cl), sock, ssl); return;
+									}
+									try {
+										cl->rend = stoull(Substring(temp2, 0, y + 1));
+										if (cl->rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath))) { Send(serverHeaders(416, cl), sock, ssl); return; }
+									}
+									catch (const std::invalid_argument) {
+										cl->rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath));
+									}
+								}
+								else if (temp2 == "Connection:") {
+									if (Substring(temp, 0, 12) == "close") {
+										cl->close = 1;
+									}
+									else cl->close = 0;
+								}
+								else if (temp2 == "Host:")
+									cl->host = Substring(temp, 0, temp2.size());
+								break;
+							}
+						}
+						else temp2 += temp[var];
+					}
+				}
+				else {
+					if (buf[var + 1] == '\n') var++;
+					if (strlen(buf) > var) cl->payload = Substring(buf, 0, var + 1);
+				}
+				temp = ""; if (buf[var + 1] == '\n') var++; //Increase the iterator again in case of lines are separated with CRLF
+			}
+			else temp += buf[var];
+		}
+		if (logging) Logging(cl);
+		if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
+		else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
+		else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+		else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+		else if (cl->RequestType == "OPTIONS") {
+			Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+		}
+		else {
+			Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+		}
+	}
+
 	static void Get(clientInfo* cl, bool isHEAD = 0) {
 		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768);
 		SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string path = cl->RequestPath;//The old definitions for ease and removing the need of rewriting the code
@@ -420,190 +392,167 @@ private:
 
 };
 
-void parseHeader(clientInfo* cl,char* buf) {//This function reads and parses the Request Header.
-	string temp = ""; int x = 0; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; temp.reserve(384);
-	for (int var = 0; var < strlen(buf) + 1; var++) {
-		if (buf[var] < 32) {//First read the line
-			string temp2 = "";
-			if (temp.size() > 0) {
-				for (int var = 0; var < temp.size(); var++) {
-					if (temp[var] == ' ') {
-						if (x < 3) {
-							switch (x) {
-							case 0:
-								cl->RequestType = temp2; temp2 = ""; x++; break;
-							case 1:
-								cl->RequestPath = temp2; temp2 = ""; x++; temp += " ";
-								for (size_t i = 0; i < cl->RequestPath.size(); i++) {
-									if (cl->RequestPath[i] == '%') {
-										try {
-											temp2 += (char)std::stoi(Substring(cl->RequestPath, 2, i + 1), NULL, 16); i += 2;
-										}
-										catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
-											temp2 += '%';
-										}
-									}
-									else if (cl->RequestPath[i] == '?') {
-										cl->qStr = Substring(cl->RequestPath, 0, i + 1);
-										cl->RequestPath = Substring(cl->RequestPath, i - 1);
-									}
-									else temp2 += cl->RequestPath[i];
-								}
-								cl->RequestPath = temp2; temp2 = ""; break;
-							case 2:
-								if (Substring(temp2, 4) == "HTTP") cl->version = Substring(temp2, 3, 5);
-								else { closesocket(sock); return; }//If false, that means connection is not a HTTP connection, close it.
-								x++; temp2 = "";
-								if (cl->version == "1.0") cl->close = 1;//HTTP 0.9 is not supported currently.
-								break;
-							default:
-								break;
-							}
-						}
-						else {
-							if (temp2 == "Cookie:") cl->cookies = Substring(temp, 0, temp2.size());
-							else if (temp2 == "Authorization:")
-								cl->auth = base64_decode(Substring(temp, 0, 21));
-							else if (temp2 == "Range:") {
-								temp2 = Substring(temp, 0, 13);
-								short y = temp2.find("-");
-								try {
-									cl->rstart = stoull(Substring(temp2, y));
-								}
-								catch (const std::invalid_argument) {
-									Send(serverHeaders(400, cl), sock, ssl); return;
-								}
-								try {
-									cl->rend = stoull(Substring(temp2, 0, y + 1));
-									if (cl->rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath))) { Send(serverHeaders(416, cl), sock, ssl); return; }
-								}
-								catch (const std::invalid_argument) {
-									cl->rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl->RequestPath));
-								}
-							}
-							else if (temp2 == "Connection:") {
-								if (Substring(temp, 0, 12) == "close") {
-									cl->close = 1;
-								}
-								else cl->close = 0;
-							}
-							else if (temp2 == "Host:")
-								cl->host = Substring(temp, 0, temp2.size());
-							break;
-						}
-					}
-					else temp2 += temp[var];
+string execCGI(const char* exec, clientInfo* cl) {
+#pragma warning(suppress : 4996)
+	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
+	if (cl->qStr != "") payload = cl->qStr;
+	else if (cl->payload != "") payload = cl->payload;
+	const char* environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/" + version).c_str()),strdup("GATEWAY_INTERFACE=\"CGI/1.1\""),strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH=" + pathstr).c_str()),NULL };
+	//Refer to github page of library.
+	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
+	int result = subprocess_create_ex(cmd, 0, environment, &cgi);
+	if (0 != result) {
+		std::cout << "Warning: CGI Failed to execute: " << exec << std::endl;
+		Send(AlyssaHTTP::serverHeaders(404, cl), cl->sock, cl->ssl);
+		return "";
+	}
+	FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
+	if (payload != "") {
+		payload += "\r\n";
+		fputs(payload.c_str(), in);
+		fflush(in);
+	}
+	while (fgets(buf, 4096, out) != nullptr) {
+		rst += buf;
+	}
+	subprocess_destroy(&cgi);
+	for (size_t i = 0; i < 6; i++) {
+		delete[] environment[i];
+	}
+	return rst;
+}
+
+bool customActions(string path, clientInfo* cl) {
+	std::ifstream file; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)), '\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	if (!file) {
+		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
+		Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->sock, cl->ssl); if (errorpages) Send(errorPage(500), cl->sock, cl->ssl); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
+	}
+	file.read(&buf[0], buf.size()); buf += "\1"; string temp = "";
+	for (size_t i = 0; i < buf.size(); i++) {
+		if (buf[i] < 32) {
+			string act, pr; int x = temp.find(" ");
+			if (x != -1) { act = ToLower(Substring(temp, x)); pr = Substring(temp, 0, x + 1); }
+			else act = temp;
+			temp = ""; if (buf[i + 1] < 32) i++;//CRLF
+			if (action[0] == "") {
+				if (act == "authenticate") {
+					action[0] = act; param[0] = pr;
+					continue;
 				}
 			}
-			else {
-				if (buf[var + 1] == '\n') var++;
-				if(strlen(buf)>var) cl->payload = Substring(buf, 0, var + 1);
+			if (action[1] == "") {
+				if (act == "redirect" || act == "execcgi") {
+					action[1] = act; param[1] = pr; continue;
+				}
+				else if (act == "returnteapot") { action[1] = act; continue; }
 			}
-			temp = ""; if (buf[var + 1] == '\n') var++; //Increase the iterator again in case of lines are separated with CRLF
+			std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(act) + L"\" on file \"" + s2ws(path) + L"\"\n";
 		}
-		else temp += buf[var];
+		else temp += buf[i];
 	}
-	if (logging) Logging(cl); 
-	if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
-	else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-	else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
-	else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
-	else if (cl->RequestType == "OPTIONS") {
-		Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+	file.close();
+
+	//2. Execute the custom actions by their order
+	if (action[0] != "") {
+		if (action[0] == "authenticate") {
+			if (cl->auth == "") {
+				Send(AlyssaHTTP::serverHeaders(401, cl), cl->sock, cl->ssl); shutdown(sock, 2); closesocket(sock); return 0;
+			}
+			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
+			pwd.open(std::filesystem::u8path(param[0]));
+			if (!pwd.is_open()) {
+				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \"" + path + "\"\n";
+				Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->sock, cl->ssl);
+				if (errorpages) { // If custom error pages enabled send the error page
+					Send(errorPage(500), cl->sock, cl->ssl);
+				}
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
+			}
+			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size());
+			tmp += "\1"; temp = "";
+			for (size_t i = 0; i < tmp.size(); i++) {
+				if (tmp[i] < 32) {
+					if (cl->auth == temp) { found = 1; break; } temp = "";
+					if (tmp[i + 1] < 32) i++; //CRLF
+				}
+				else temp += tmp[i];
+			}
+			if (!found) {
+				if (!forbiddenas404) {
+					Send(AlyssaHTTP::serverHeaders(403, cl) + "\r\n", cl->sock, cl->ssl);
+					if (errorpages) { // If custom error pages enabled send the error page
+						Send(errorPage(403), cl->sock, cl->ssl);
+					}
+				}
+				else {
+					Send(AlyssaHTTP::serverHeaders(404, cl) + "\r\n", cl->sock, cl->ssl);
+					if (errorpages) { // If custom error pages enabled send the error page
+						Send(errorPage(404), cl->sock, cl->ssl);
+					}
+				}
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
+			}
+		}
 	}
-	else {
-		Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+	if (action[1] != "") {
+		if (action[1] == "redirect") {
+			string asd = AlyssaHTTP::serverHeaders(302, cl, param[1]);
+			Send(asd, sock, ssl);
+			shutdown(sock, 2);
+			closesocket(sock);
+			return 0;
+		}
+		else if (action[1] == "execcgi") {
+			string asd = execCGI(param[1].c_str(), cl);
+			asd = AlyssaHTTP::serverHeaders(200, cl, "", asd.size()) + "\r\n" + asd;
+			Send(asd, sock, ssl);
+			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
+			return 0;
+		}
+		else if (action[1] == "returnteapot") {
+			Send(AlyssaHTTP::serverHeaders(418, cl) + "\r\n", sock, ssl);
+			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
+			return 0;
+		}
 	}
+	return 1;
 }
 
 void clientConnection(clientInfo cl) {//This is the thread function that gets data from client.
 	char buf[4096] = { 0 };
-	// Wait for client to send data
-	while (recv(cl.sock, buf, 4096,0) > 0) {
-		std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
-			parseHeader((clientInfo*)&cl, (char*)&buf);
-			});
-		t.detach();
-	}
-	closesocket(cl.sock);
-	return;
-}
 #ifdef Compile_WolfSSL
-void clientConnection_SSL(clientInfo cl) {
-	char buf[4096] = { 0 };
-	if (wolfSSL_accept(cl.ssl)!=SSL_SUCCESS) {
-		wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+	if (cl.ssl != NULL) { // Do the SSL Handshake
+		if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
+			wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+		}
 	}
-	while (SSL_recv(cl.ssl, buf, sizeof buf) > 0) {
-		std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
-			parseHeader((clientInfo*)&cl, (char*)&buf);
-		});
-		t.detach();
-	}
-	closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
-	}
+	wolfSSL_ALPN_GetPeerProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
 #endif // Compile_WolfSSL
-
-#ifdef COMPILE_OPENSSL
-void clientConnection_SSL(clientInfo cl) {
-	char buf[4096] = { 0 };
-	if (SSL_accept(cl.ssl) == -1) {    /* do SSL-protocol accept */
-		SSL_free(cl.ssl); closesocket(cl.sock); return;
+	
+#ifdef Compile_WolfSSL // Wait for client to send data
+	if (cl.ssl != NULL) {
+		while (SSL_recv(cl.ssl, buf, sizeof buf) > 0) {
+			std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+				AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
+				});
+			t.detach();
+		}
 	}
-	while (SSL_recv(cl.ssl, buf, sizeof(buf)) > 0 /* get request */) {
-		std::thread t([buf, cl]() {
-			parseHeader((clientInfo*)&cl, (char*)&buf);
-			});
-		t.detach();
-	}
-	SSL_free(cl.ssl);//Delete the SSL object for preventing memory leak
+	else {
+#endif // Compile_WolfSSL
+		while (recv(cl.sock, buf, 4096, 0) > 0) {
+			std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+				AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
+				});
+			t.detach();
+		}
+#ifdef Compile_WolfSSL
+	} wolfSSL_free(cl.ssl);
+#endif
 	closesocket(cl.sock);
 	return;
 }
-
-void LoadCertificates(SSL_CTX* ctx, char* CertFile, char* KeyFile)
-{
-	if (SSL_CTX_load_verify_locations(ctx, CertFile, KeyFile) != 1)
-		ERR_print_errors_fp(stderr);
-
-	if (SSL_CTX_set_default_verify_paths(ctx) != 1)
-		ERR_print_errors_fp(stderr);
-
-	/* set the local certificate from CertFile */
-	if (SSL_CTX_use_certificate_file(ctx, CertFile, SSL_FILETYPE_PEM) <= 0) {
-		std::cout << "Error while loading SSL certificate, SSL is disabled. More detailed info:" << std::endl;
-		ERR_print_errors_fp(stderr);
-		enableSSL = 0;
-	}
-	/* set the private key from KeyFile (may be the same as CertFile) */
-	if (SSL_CTX_use_PrivateKey_file(ctx, KeyFile, SSL_FILETYPE_PEM) <= 0) {
-		std::cout << "Error while loading SSL certificate, SSL is disabled. More detailed info:" << std::endl;
-		ERR_print_errors_fp(stderr);
-		enableSSL = 0;
-	}
-	/* verify private key */
-	if (!SSL_CTX_check_private_key(ctx)) {
-		std::cout << "Error while verifying private key." << std::endl;
-		enableSSL = 0;
-	}
-}
-
-SSL_CTX* InitServerCTX(void) {
-	OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
-	SSL_load_error_strings();   /* load all error messages */
-	SSL_CTX* ctx;
-#pragma warning(suppress : 4996)
-	const SSL_METHOD* method = TLSv1_2_server_method();  /* create new server-method instance */
-	ctx = SSL_CTX_new(method);   /* create new context from method */
-	if (ctx == NULL)
-	{
-		ERR_print_errors_fp(stderr);
-		abort();
-	}
-	return ctx;
-}
-#endif // COMPILE_OPENSSL
-
 
 int main()//This is the main server function that fires up the server and listens for connections.
 {
@@ -623,28 +572,17 @@ int main()//This is the main server function that fires up the server and listen
 		}
 	}
 
-#ifdef COMPILE_OPENSSL
-	SSL_CTX* ctx;
-	if (enableSSL) {
-		// Initialze SSL
-		SSL_library_init();
-		ctx = InitServerCTX(); char* c1 = &SSLcertpath[0]; char* c2 = &SSLkeypath[0];
-		LoadCertificates(ctx, c1, c2);
-	}
-#endif
 #ifdef Compile_WolfSSL
 	wolfSSL_Init();
 	WOLFSSL_CTX* ctx;
-	if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL)
-	{
-		fprintf(stderr, "wolfSSL_CTX_new error.\n");
-		exit(EXIT_FAILURE);
+	if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
+		cout << "Error: internal error occured with SSL (wolfSSL_CTX_new error), SSL is disabled."; enableSSL = 0;
 	}
 	if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS){
-		std::terminate();
+		cout << "Error: failed to load SSL certificate file, SSL is disabled." << std::endl; enableSSL = 0;
 	}
 	if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-		std::terminate();
+		cout << "Error: failed to load SSL private key file, SSL is disabled." << std::endl; enableSSL = 0;
 	}
 #endif // Compile_WolfSSL
 
@@ -673,7 +611,8 @@ int main()//This is the main server function that fires up the server and listen
 		}
 	}
 #endif // Compile_WolfSSL
-	 // Bind the ip address and port to sockets
+
+	// Bind the ip address and port to sockets
 	sockaddr_in hint; 
 	hint.sin_family = AF_INET; 
 	hint.sin_port = htons(port); 
@@ -707,6 +646,9 @@ int main()//This is the main server function that fires up the server and listen
 	if(enableSSL)std::cout << " HTTPS: " << SSLport;
 #endif
 	std::cout << std::endl;
+
+	// Warning message for indicating this builds are work-in-progress builds and not recommended. To be removed when development of h2 is complete.
+	cout << std::endl << "WARNING: This build is from work-in-progress experimental 'http2' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
 	// Lambda threads for listening ports
 	threadsmaster.emplace_back(new std::thread([&]() {
@@ -743,47 +685,6 @@ int main()//This is the main server function that fires up the server and listen
 			t.detach();
 		}
 	}));
-#ifdef COMPILE_OPENSSL //HTTPS listening thread below
-	if (enableSSL) {
-		threadsmaster.emplace_back(new std::thread([&]() {
-			while (true)
-			{
-				// Tell Winsock the socket is for listening 
-				listen(HTTPSlistening, SOMAXCONN);
-
-				// Wait for a connection
-				sockaddr_in client;
-#ifndef _WIN32
-				unsigned int clientSize = sizeof(client);
-#else
-				int clientSize = sizeof(client);
-#endif
-				SOCKET clientSocket = accept(HTTPSlistening, (sockaddr*)&client, &clientSize);
-				SSL* ssl;
-				ssl = SSL_new(ctx);
-				SSL_set_fd(ssl, clientSocket);
-				std::thread t([&client, &clientSocket, ssl]() {
-					clientInfo cl;
-					char host[NI_MAXHOST] = { 0 };		// Client's remote name
-					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host; cl.ssl = ssl;
-					cl.sock = clientSocket;
-					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
-
-					//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-					if (whitelist == "") { std::thread t((clientConnection_SSL), cl); t.detach(); }
-					else if (isWhitelisted(host)) {
-						std::thread t((clientConnection_SSL), cl); t.detach();
-					}
-					else {
-						closesocket(clientSocket); SSL_free(ssl);
-					}
-				});
-				t.detach();
-			}
-		}));
-	}
-#endif // COMPILE_OPENSSL
 #ifdef Compile_WolfSSL
 	if (enableSSL) {
 		threadsmaster.emplace_back(new std::thread([&]() {
@@ -813,16 +714,13 @@ int main()//This is the main server function that fires up the server and listen
 					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
 					cl.sock = clientSocket; cl.ssl = ssl;
 					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
-					if (whitelist == "") { std::thread t((clientConnection_SSL), cl); t.detach(); }
+					if (whitelist == "") { std::thread t((clientConnection), cl); t.detach(); }
 					else if (isWhitelisted(host)) {
-						std::thread t((clientConnection_SSL), cl); t.detach();
+						std::thread t((clientConnection), cl); t.detach();
 					}
 					else {
 						closesocket(clientSocket); wolfSSL_free(ssl);
 					}
-					
-					
-					
 				}); t.detach();
 			}
 		}));

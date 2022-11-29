@@ -26,20 +26,9 @@
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
 #endif
-
-//#define COMPILE_OPENSSL//Define that if you want to compile with SSL support
-
-#ifdef COMPILE_OPENSSL
-#include <openssl/rand.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#define SSL_recv SSL_read // Definitions for making SSL code similar to plain sockets code.
-#define SSL_send SSL_write
-#endif
-
 using std::string;
 
-#define Compile_WolfSSL
+//#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
 #ifndef _WIN32
 #include <wolfssl/options.h>
@@ -54,6 +43,10 @@ using std::string;
 #define SSL_send wolfSSL_write
 #endif //Compile_WolfSSL
 
+#ifndef Compile_WolfSSL
+typedef struct WOLFSSL {};
+#endif
+
 // Definitions for non-Windows platforms
 #ifndef _WIN32
 #define SOCKET_ERROR -1
@@ -67,7 +60,7 @@ typedef int SOCKET;
 #define strdup _strdup
 #endif
 
-// Definition of functions and classes outside of Main
+// Definition/declaration of functions and classes outside of Main
 class Config
 {
 public:
@@ -130,8 +123,6 @@ static std::string ToLower(string str) {
 	}
 	return x;
 }
-#ifdef _WIN32
-#endif
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -158,5 +149,5 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.1.2";
+static string version = "v9.9.9";
 
