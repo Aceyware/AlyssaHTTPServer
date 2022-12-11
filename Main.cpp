@@ -1,18 +1,6 @@
 #include "Alyssa.h"
 using std::string; using std::cout;
 
-struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", version="", host="",
-		cookies = "", auth = "", clhostname = "",
-		payload = "",//HTTP POST/PUT Payload
-		qStr = "";//URL Encoded Query String
-	bool close = 0;
-	size_t rstart = 0, rend = 0; // Range request integers.
-	SOCKET sock = INVALID_SOCKET;
-	WOLFSSL* ssl = NULL;
-	char* ALPN = NULL; unsigned short ALPNSize = 0;
-}; 
-
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
 	if (std::filesystem::exists(std::filesystem::u8path(filepath))) return 1;
 	else { return 0; }
@@ -388,6 +376,83 @@ public:
 		}
 		closesocket(cl->sock);
 	}
+
+	static void clientConnection(clientInfo cl) {//This is the thread function that gets data from client.
+		char buf[4096] = { 0 };
+#ifdef Compile_WolfSSL // Wait for client to send data
+		if (cl.ssl != NULL) {
+			while (SSL_recv(cl.ssl, buf, sizeof buf) > 0) {
+				std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+					AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
+					});
+				t.detach();
+			}
+		}
+		else {
+#endif // Compile_WolfSSL
+			while (recv(cl.sock, buf, 4096, 0) > 0) {
+				std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
+					AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
+					});
+				t.detach();
+			}
+#ifdef Compile_WolfSSL
+		} wolfSSL_free(cl.ssl);
+#endif
+		closesocket(cl.sock);
+		return;
+	}
+private:
+
+};
+
+
+
+class AlyssaH2
+{
+public:
+	static void clientConnectionH2(clientInfo cl) {
+		unsigned char buf[16600] = { 0 }; clientInfoH2 hcl; hcl.cl = &cl;
+		SSL_recv(cl.ssl, buf, 16600); //Receive data once for HTTP/2 Preface
+		if (!strcmp((char*)buf,"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) {
+			Send("\0\0\0\4\0\0\0\0\0", cl.sock, cl.ssl); int Received = 0;
+			while ((Received=SSL_recv(cl.ssl, buf, 16600))>0){
+				unsigned int size = 0, pos = 0, StreamId = 0; std::vector<unsigned char> Frame;
+				while (pos<Received) { //These code below is partly BROKEN.
+					size = Convert24to32(&pos[buf]); 
+					Frame.resize(size);
+					pos += 3; unsigned char Type = buf[pos];
+					pos++; 
+					memcpy(&StreamId, &buf[pos], 4);
+					pos += 4;
+					memcpy(&Frame[0], &buf[pos], size);
+					pos += size+1;
+					switch (Type)
+					{
+					case 1:
+						HPack::ParseHPack(&Frame[0],&hcl);
+						[&]() { // Dummy temporary hardcoded response function.
+							unsigned char Resp[] = "\0\0\24\1\4"//Length, type "HEADERS" and flag "END_HEADERS"
+								"\0\0\0\1"
+								"\x48\3"
+								"200"
+								"\x76\15"
+								"Alyssa/v9.9.9"
+								"\0\0\45\0\1\0\0\0\1"//Length, type "DATA" and flag "END_STREAM"
+								"<!DOCTYPE html><h1>Hello from HTTP/2!";
+							SSL_send(cl.ssl, Resp, 75);
+							SSL_shutdown(cl.ssl);
+						}();
+					default:
+						break;
+					}
+				}
+			}
+		}
+		else {//Preface not recieved, shutdown the connection.
+			closesocket(cl.sock); SSL_free(cl.ssl); return;
+		}
+	}
 private:
 
 };
@@ -519,41 +584,6 @@ bool customActions(string path, clientInfo* cl) {
 	return 1;
 }
 
-void clientConnection(clientInfo cl) {//This is the thread function that gets data from client.
-	char buf[4096] = { 0 };
-#ifdef Compile_WolfSSL
-	if (cl.ssl != NULL) { // Do the SSL Handshake
-		if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
-			wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
-		}
-	}
-	wolfSSL_ALPN_GetPeerProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
-#endif // Compile_WolfSSL
-	
-#ifdef Compile_WolfSSL // Wait for client to send data
-	if (cl.ssl != NULL) {
-		while (SSL_recv(cl.ssl, buf, sizeof buf) > 0) {
-			std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
-				AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
-				});
-			t.detach();
-		}
-	}
-	else {
-#endif // Compile_WolfSSL
-		while (recv(cl.sock, buf, 4096, 0) > 0) {
-			std::thread t([buf, cl]() {//Reason of why lambda used here is it provides an easy way for creating copy on memory
-				AlyssaHTTP::parseHeader((clientInfo*)&cl, (char*)&buf);
-				});
-			t.detach();
-		}
-#ifdef Compile_WolfSSL
-	} wolfSSL_free(cl.ssl);
-#endif
-	closesocket(cl.sock);
-	return;
-}
-
 int main()//This is the main server function that fires up the server and listens for connections.
 {
 	std::ios_base::sync_with_stdio(false);
@@ -674,9 +704,9 @@ int main()//This is the main server function that fires up the server and listen
 				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 
 				//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-				if (whitelist == "") { clientConnection(cl); }
+				if (whitelist == "") { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
 				else if (isWhitelisted(host)) {
-					std::thread t((clientConnection), cl); t.detach();
+					std::thread t((AlyssaHTTP::clientConnection), cl); t.detach();
 				}
 				else {
 					closesocket(clientSocket);
@@ -704,7 +734,7 @@ int main()//This is the main server function that fires up the server and listen
 				if ((ssl = wolfSSL_new(ctx)) == NULL) {
 					std::terminate();
 				}
-				wolfSSL_set_fd(ssl, clientSocket); char alpn[] = "http/1.1,http/1.0";
+				wolfSSL_set_fd(ssl, clientSocket); char alpn[] = "h2,http/1.1,http/1.0";
 				wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
 				
 				std::thread t([&client, &clientSocket, ssl]() {
@@ -713,10 +743,24 @@ int main()//This is the main server function that fires up the server and listen
 					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
 					cl.sock = clientSocket; cl.ssl = ssl;
+					if (cl.ssl != NULL) { // Do the SSL Handshake
+						if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
+							wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+						}
+					}
+					wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
 					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
-					if (whitelist == "") { std::thread t((clientConnection), cl); t.detach(); }
+					if (whitelist == "") {
+						if (!strcmp(cl.ALPN,"h2")) {
+							std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+						}
+						else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+					}
 					else if (isWhitelisted(host)) {
-						std::thread t((clientConnection), cl); t.detach();
+						if (cl.ALPN == "h2") {
+							std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+						}
+						else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
 					}
 					else {
 						closesocket(clientSocket); wolfSSL_free(ssl);

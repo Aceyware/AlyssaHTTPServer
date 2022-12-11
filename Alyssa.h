@@ -28,7 +28,7 @@
 #endif
 using std::string;
 
-//#define Compile_WolfSSL //Define that if you want to compile with SSL support
+#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
 #ifndef _WIN32
 #include <wolfssl/options.h>
@@ -60,7 +60,22 @@ typedef int SOCKET;
 #define strdup _strdup
 #endif
 
-// Definition/declaration of functions and classes outside of Main
+// Definition/declaration of functions and classes
+typedef struct clientInfo {//This structure has the information from client request.
+	string RequestType = "", RequestPath = "", version = "", host = "", // "Host" header
+		cookies = "", auth = "", clhostname = "", // IP of client
+		payload = "",//HTTP POST/PUT Payload
+		qStr = "";//URL Encoded Query String
+	bool close = 0;
+	size_t rstart = 0, rend = 0; // Range request integers.
+	SOCKET sock = INVALID_SOCKET;
+	WOLFSSL* ssl = NULL;
+	char* ALPN = NULL; unsigned short ALPNSize = 0;
+};
+typedef struct clientInfoH2 {
+	clientInfo* cl;
+	std::vector<std::string> dynIndexHeaders;
+};
 class Config
 {
 public:
@@ -76,6 +91,13 @@ private:
 	static string getFolder(std::string path);
 	static string HTML(std::string payload, std::string relpath);
 };
+class HPack {
+public:
+	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2);
+private:
+	static string DecodeHuffman(char* huffstr);
+};
+
 static string currentTime() {
 	std::ostringstream x;
 	std::time_t tt = time(0);
@@ -113,6 +135,18 @@ static std::string Substring(const char* str, unsigned int size, unsigned int st
 	}
 	return x;
 }
+static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
+	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
+	if (size > strlen((char*)str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
+	x.reserve(size);
+	for (int var = 0; var < size; var++) {
+		x += str[startPoint + var];
+	}
+	return x;
+}
+//static void Substring(const char* Source,const char* Dest, unsigned int Size) {//Overload of Substring() that makes memory copying instead of iteration.
+//
+//}
 static std::string ToLower(string str) {
 	string x = ""; x.reserve(str.size());
 	for (size_t i = 0; i < str.size(); i++) {
@@ -122,6 +156,33 @@ static std::string ToLower(string str) {
 		x += str[i];
 	}
 	return x;
+}
+static size_t btoull(string str, int size) {
+	size_t out = 0;
+	for (int i = str.size(); size >= 0; i--) {
+		if (str[i] == '1') {
+			out += pow(2, size);
+		}
+		size--;
+	}
+	return out;
+}
+static size_t btoull_r(string str, int size) {
+	size_t out = 0;
+	for (int i = 0; size >= 0; i++) {
+		if (str[i] == '1') {
+			out += pow(2, size);
+		}
+		size--;
+	}
+	return out;
+}
+static unsigned int Convert24to32(unsigned char* Source) {
+	return (
+		(Source[0] << 24)
+		| (Source[1] << 16)
+		| (Source[2] << 8)
+		) >> 8;
 }
 
 // Declaration of config variables
