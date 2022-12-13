@@ -419,18 +419,30 @@ public:
 			while ((Received=SSL_recv(cl.ssl, buf, 16600))>0){
 				unsigned int size = 0, pos = 0, StreamId = 0; std::vector<unsigned char> Frame;
 				while (pos<Received) { //These code below is partly BROKEN.
-					size = Convert24to32(&pos[buf]); 
-					Frame.resize(size);
+					size = Convert24to32(&buf[pos]); 
 					pos += 3; unsigned char Type = buf[pos];
-					pos++; 
+					pos++;
+					std::bitset<8> Flags = buf[pos];
 					memcpy(&StreamId, &buf[pos], 4);
 					pos += 4;
+					switch (Type) {//Some frames has additional header data, set the pos and size according to situation.
+					case 1:
+						bool hasPriority;
+						if (Flags[2]) hasPriority = 1;
+						if (hasPriority) {
+							pos += 6; size -= 5;
+						}
+						break;
+					default:
+						break;
+					}
+					Frame.resize(size);
 					memcpy(&Frame[0], &buf[pos], size);
 					pos += size+1;
 					switch (Type)
 					{
 					case 1:
-						HPack::ParseHPack(&Frame[0],&hcl);
+						HPack::ParseHPack(&Frame[0],&hcl,size);
 						[&]() { // Dummy temporary hardcoded response function.
 							unsigned char Resp[] = "\0\0\24\1\4"//Length, type "HEADERS" and flag "END_HEADERS"
 								"\0\0\0\1"
@@ -443,6 +455,7 @@ public:
 							SSL_send(cl.ssl, Resp, 75);
 							SSL_shutdown(cl.ssl);
 						}();
+						break;
 					default:
 						break;
 					}

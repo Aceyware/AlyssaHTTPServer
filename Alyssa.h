@@ -16,6 +16,7 @@
 #include <codecvt>
 #include <cstring>
 #include <mutex>
+#include <bitset>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -72,9 +73,13 @@ typedef struct clientInfo {//This structure has the information from client requ
 	WOLFSSL* ssl = NULL;
 	char* ALPN = NULL; unsigned short ALPNSize = 0;
 };
+typedef struct HPackIndex {
+	int Key = 0;
+	string Value = "";
+};
 typedef struct clientInfoH2 {
 	clientInfo* cl;
-	std::vector<std::string> dynIndexHeaders;
+	std::vector<HPackIndex> dynIndexHeaders;
 };
 class Config
 {
@@ -93,9 +98,10 @@ private:
 };
 class HPack {
 public:
-	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2);
+	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size);
 private:
 	static string DecodeHuffman(char* huffstr);
+	static void ExecDynIndex(clientInfoH2* cl, int pos);
 };
 
 static string currentTime() {
@@ -137,7 +143,8 @@ static std::string Substring(const char* str, unsigned int size, unsigned int st
 }
 static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
 	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
-	if (size > strlen((char*)str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
+	if (size > strlen((char*)str) - startPoint) 
+		//throw std::out_of_range("Size argument is larger than input string.");
 	x.reserve(size);
 	for (int var = 0; var < size; var++) {
 		x += str[startPoint + var];
