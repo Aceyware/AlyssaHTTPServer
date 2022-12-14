@@ -78,8 +78,9 @@ typedef struct HPackIndex {
 	string Value = "";
 };
 typedef struct clientInfoH2 {
-	clientInfo* cl;
+	clientInfo cl;
 	std::vector<HPackIndex> dynIndexHeaders;
+	unsigned char StreamIdent[4] = {0};
 };
 class Config
 {
@@ -174,22 +175,21 @@ static size_t btoull(string str, int size) {
 	}
 	return out;
 }
-static size_t btoull_r(string str, int size) {
-	size_t out = 0;
-	for (int i = 0; size >= 0; i++) {
-		if (str[i] == '1') {
-			out += pow(2, size);
-		}
-		size--;
-	}
-	return out;
-}
 static unsigned int Convert24to32(unsigned char* Source) {
 	return (
 		(Source[0] << 24)
 		| (Source[1] << 16)
 		| (Source[2] << 8)
 		) >> 8;
+}
+static size_t Append(unsigned char* Source,unsigned char* Destination,size_t Position,size_t Size=0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
 }
 
 // Declaration of config variables

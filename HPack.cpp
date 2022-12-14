@@ -80,11 +80,11 @@ string HPack::DecodeHuffman(char* huffstr) {
 void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
 	switch (cl->dynIndexHeaders[pos].Key) {
 	case 1:
-		cl->cl->host = cl->dynIndexHeaders[pos].Value; break;
+		cl->cl.host = cl->dynIndexHeaders[pos].Value; break;
 	case 2:
-		cl->cl->RequestType = cl->dynIndexHeaders[pos].Value; break;
+		cl->cl.RequestType = cl->dynIndexHeaders[pos].Value; break;
 	case 4:
-		cl->cl->RequestPath = cl->dynIndexHeaders[pos].Value; break;
+		cl->cl.RequestPath = cl->dynIndexHeaders[pos].Value; break;
 	default:
 		break;
 	}
@@ -101,13 +101,13 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 				switch (HStatic)
 				{
 				case 2:
-					cl2->cl->RequestType = "GET"; cout << ":method: GET\n"; break;
+					cl2->cl.RequestType = "GET"; cout << ":method: GET\n"; break;
 				case 3:
-					cl2->cl->RequestType = "POST"; cout << ":method: POST\n"; break;
+					cl2->cl.RequestType = "POST"; cout << ":method: POST\n"; break;
 				case 4:
-					cl2->cl->RequestPath = "/"; cout << ":path: /\n"; break;
+					cl2->cl.RequestPath = "/"; cout << ":path: /\n"; break;
 				case 5:
-					cl2->cl->RequestPath = "/index.html"; cout << ":path: /index.html\n"; break;
+					cl2->cl.RequestPath = "/index.html"; cout << ":path: /index.html\n"; break;
 				default:
 					cout << "Key: static table: " << HStatic << "\n"; break;
 				}
@@ -161,11 +161,11 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 				i += Size;
 				switch (HDynamic) {
 				case 1:
-					cl2->cl->host = Value; break; 
+					cl2->cl.host = Value; break; 
 				case 2:
-					cl2->cl->RequestType = Value; break;
+					cl2->cl.RequestType = Value; break;
 				case 4:
-					cl2->cl->RequestPath = Value; break;
+					cl2->cl.RequestPath = Value; break;
 				default:
 					break;
 				}

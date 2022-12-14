@@ -411,8 +411,124 @@ private:
 class AlyssaH2
 {
 public:
+	static void InitialHeaders(clientInfoH2 cl) {//This function sends the initial constant headers such as serer version and etc.
+		unsigned char Payload[512] = { 0 }; int Position = 11;
+		Payload[3] = 9;//Type: HEADERS
+		Payload[4] = 4;//No flags
+		Append(cl.StreamIdent, Payload, 5, 4);
+		Payload[9] = '\x76'; Payload[10] = '\15';
+		Position += Append((unsigned char*)"Alyssa/", Payload, Position);
+		Position+=Append((unsigned char*)version.c_str(), Payload, Position);
+		Position -= 9;
+		Payload[0] = (Position >> 16) & 0xFF;
+		Payload[1] = (Position >> 8) & 0xFF;
+		Payload[2] = (Position >> 0) & 0xFF;
+		Send((char*)&Payload,cl.cl.sock, cl.cl.ssl, Position+9);
+	}
+	static void serverHeaders(clientInfoH2 cl, int statusCode,int fileSize) {
+		unsigned char Payload[512] = { 0 }; int Position = 9; std::vector<unsigned char> Temp; unsigned char T2=0;
+		Payload[3] = 1;//Type: CONTINUATION (We have to send the rest of the headers as a CONTINUATION frame as the HTTP/2 semantics)
+		Payload[4] = 0;//Flag: END_HEADERS
+		Append(cl.StreamIdent, Payload, 5, 4);
+		switch (statusCode) {
+		default:
+			Position += Append((unsigned char*)"\x48\3", Payload, Position);
+			for (size_t i = 0; i < 3; i++) {
+				T2 = (statusCode % 10)+'\x30';
+				Temp.insert(Temp.begin(), T2);
+				statusCode /= 10;
+			}
+			Position += Append(&Temp[0], Payload, Position, 3);
+			Temp.clear();
+		}
+		if(!fileSize){
+			Temp.emplace_back('\x30');
+		}
+		else {
+			while (fileSize > 0) {
+				T2 = (fileSize % 10) + '\x30';
+				Temp.insert(Temp.begin(), T2);
+				fileSize /= 10;
+			}
+		}
+		Payload[Position] = '\134'; Payload[Position + 1] = Temp.size(); Position += 2;
+		Position += Append(&Temp[0], Payload, Position, Temp.size());
+		Position -= 9;
+		Payload[0] = (Position >> 16) & 0xFF;
+		Payload[1] = (Position >> 8) & 0xFF;
+		Payload[2] = (Position >> 0) & 0xFF;
+		Send((char*)Payload, cl.cl.sock, cl.cl.ssl, Position + 9);
+		InitialHeaders(cl);
+	}
+	static void Get(clientInfoH2 cl) {
+		//This get is pretty identical to get on AlyssaHTTP class, they will be merged to a single function when everything for HTTP/2 is implemented.
+		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768); unsigned char FrameHeader[9] = { 0 };
+		if (cl.cl.RequestPath == "/") {//If server requests for root, we'll handle it specially
+			//Custom actions for HTTP/2 is not implemented yet.
+			if (fileExists(htroot + "/index.html")) {
+				cl.cl.RequestPath = "/index.html";
+				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+			} //Check for index.html, which is default filename for webpage on root of any folder.
+			else if (foldermode) {
+				/*string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
+				Send(asd, sock, ssl);
+				if (cl->close) { shutdown(sock, 2); closesocket(sock); }
+				return;*/
+			}//Send the folder index if enabled.
+		}
+		else if (cl.cl.RequestPath.substr(0, htrespath.size()) == htrespath) {//Request for a resource
+			if (fileExists(respath + "/" + cl.cl.RequestPath.substr(htrespath.size()))) {
+				file.open(std::filesystem::u8path(respath + "/" + cl.cl.RequestPath.substr(htrespath.size())), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(respath + "/" + cl.cl.RequestPath.substr(htrespath.size())));
+			}
+		}
+		else {//Path is a file
+			if (fileExists(htroot + cl.cl.RequestPath)) {//If special rules are not found, check for a file with exact name on request
+				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+			}
+			else if (fileExists(htroot + cl.cl.RequestPath + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+				cl.cl.RequestPath += ".html";
+				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+			}
+		}
+
+		if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
+			//temp = serverHeaders(200, cl, fileMime(path), filesize) + "\r\n";
+			//Send(temp, sock, ssl);
+			serverHeaders(cl, 200, filesize);
+			FrameHeader[0] = (filesize >> 16) & 0xFF;
+			FrameHeader[1] = (filesize >> 8) & 0xFF;
+			FrameHeader[2] = (filesize >> 0) & 0xFF;
+			FrameHeader[4] = 1;
+			Append(cl.StreamIdent, FrameHeader, 5, 4);
+			Send((char*)&FrameHeader, cl.cl.sock, cl.cl.ssl, 9);
+			bool isText = 0; char filebuf[32768] = { 0 }; if (Substring(fileMime(cl.cl.RequestPath), 4) == "text") isText = 1;
+			while (true) {
+				if (filesize >= 32768) {
+					file.read(&filebuf[0], 32768); filesize -= 32768;
+					Send(filebuf, cl.cl.sock, cl.cl.ssl, 32768);
+				}
+				else {
+					file.read(&filebuf[0], filesize);
+					if (isText) Send(filebuf, cl.cl.sock, cl.cl.ssl, strlen(filebuf));
+					else { Send(filebuf, cl.cl.sock, cl.cl.ssl, filesize); }
+					filesize = 0;
+					break;
+				}
+			}
+		}
+		else { // Cannot open file, probably doesn't exist so we'll send a 404
+			temp = "";
+			if (errorpages) { // If custom error pages enabled send the error page
+				temp = errorPage(404);
+			}
+			//temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
+			//Send(temp, cl.cl.sock, cl.cl.ssl);
+			serverHeaders(cl, 404, 0);
+		}
+	}
 	static void clientConnectionH2(clientInfo cl) {
-		unsigned char buf[16600] = { 0 }; clientInfoH2 hcl; hcl.cl = &cl;
+		unsigned char buf[16600] = { 0 }; clientInfoH2 hcl;
+		hcl.cl = cl;
 		SSL_recv(cl.ssl, buf, 16600); //Receive data once for HTTP/2 Preface
 		if (!strcmp((char*)buf,"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) {
 			Send("\0\0\0\4\0\0\0\0\0", cl.sock, cl.ssl); int Received = 0;
@@ -423,14 +539,16 @@ public:
 					pos += 3; unsigned char Type = buf[pos];
 					pos++;
 					std::bitset<8> Flags = buf[pos];
+					pos++;
 					memcpy(&StreamId, &buf[pos], 4);
+					memcpy(&hcl.StreamIdent, &buf[pos], 4);
 					pos += 4;
 					switch (Type) {//Some frames has additional header data, set the pos and size according to situation.
 					case 1:
 						bool hasPriority;
 						if (Flags[2]) hasPriority = 1;
 						if (hasPriority) {
-							pos += 6; size -= 5;
+							pos += 5; size -= 5;
 						}
 						break;
 					default:
@@ -443,23 +561,35 @@ public:
 					{
 					case 1:
 						HPack::ParseHPack(&Frame[0],&hcl,size);
-						[&]() { // Dummy temporary hardcoded response function.
-							unsigned char Resp[] = "\0\0\24\1\4"//Length, type "HEADERS" and flag "END_HEADERS"
-								"\0\0\0\1"
-								"\x48\3"
-								"200"
-								"\x76\15"
-								"Alyssa/v9.9.9"
-								"\0\0\45\0\1\0\0\0\1"//Length, type "DATA" and flag "END_STREAM"
-								"<!DOCTYPE html><h1>Hello from HTTP/2!";
-							SSL_send(cl.ssl, Resp, 75);
-							SSL_shutdown(cl.ssl);
-						}();
+						//[&]() { // Dummy temporary hardcoded response function.
+						//	unsigned char Resp[] = "\0\0\24\1\4"//Length, type "HEADERS" and flag "END_HEADERS"
+						//		"\0\0\0\1"
+						//		"\x48\3"
+						//		"200"
+						//		"\x76\15"
+						//		"Alyssa/v9.9.9"
+						//		"\0\0\45\0\1\0\0\0\1"//Length, type "DATA" and flag "END_STREAM"
+						//		"<!DOCTYPE html><h1>Hello from HTTP/2!";
+						//	SSL_send(cl.ssl, Resp, 75);
+						//	SSL_shutdown(cl.ssl);
+						//}();
 						break;
 					default:
 						break;
 					}
 				}
+				//InitialHeaders(hcl);
+				if (hcl.cl.RequestType == "GET") { Get(hcl); }
+				/*else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
+				else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+				else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
+				else if (cl->RequestType == "OPTIONS") {
+					Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+				}*/
+				else {
+					//Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+				}
+				//SSL_shutdown(cl.ssl);
 			}
 		}
 		else {//Preface not recieved, shutdown the connection.
