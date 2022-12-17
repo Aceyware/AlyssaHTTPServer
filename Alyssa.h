@@ -80,7 +80,7 @@ typedef struct HPackIndex {
 typedef struct clientInfoH2 {
 	clientInfo cl;
 	std::vector<HPackIndex> dynIndexHeaders;
-	unsigned char StreamIdent[4] = {0};
+	char StreamIdent[4] = {0};
 };
 class Config
 {
@@ -183,6 +183,15 @@ static unsigned int Convert24to32(unsigned char* Source) {
 		) >> 8;
 }
 static size_t Append(unsigned char* Source,unsigned char* Destination,size_t Position,size_t Size=0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
+}
+static size_t Append(char* Source, char* Destination, size_t Position, size_t Size = 0) {
 	if (Size == 0) { Size = strlen((const char*)Source); }
 	size_t i = 0;
 	for (; i < Size; i++) {

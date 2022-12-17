@@ -352,10 +352,6 @@ public:
 			temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
 			Send(temp, sock, ssl);
 		}
-		if (cl->close) {
-			shutdown(sock, 2);
-			closesocket(sock);
-		}
 	}
 	static void Post(clientInfo* cl) {
 		//POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
@@ -406,33 +402,17 @@ private:
 
 };
 
-
-
 class AlyssaH2
 {
 public:
-	static void InitialHeaders(clientInfoH2 cl) {//This function sends the initial constant headers such as serer version and etc.
-		unsigned char Payload[512] = { 0 }; int Position = 11;
-		Payload[3] = 9;//Type: HEADERS
-		Payload[4] = 4;//No flags
-		Append(cl.StreamIdent, Payload, 5, 4);
-		Payload[9] = '\x76'; Payload[10] = '\15';
-		Position += Append((unsigned char*)"Alyssa/", Payload, Position);
-		Position+=Append((unsigned char*)version.c_str(), Payload, Position);
-		Position -= 9;
-		Payload[0] = (Position >> 16) & 0xFF;
-		Payload[1] = (Position >> 8) & 0xFF;
-		Payload[2] = (Position >> 0) & 0xFF;
-		Send((char*)&Payload,cl.cl.sock, cl.cl.ssl, Position+9);
-	}
 	static void serverHeaders(clientInfoH2 cl, int statusCode,int fileSize) {
-		unsigned char Payload[512] = { 0 }; int Position = 9; std::vector<unsigned char> Temp; unsigned char T2=0;
+		char Payload[512] = { 0 }; int Position = 9; std::basic_string<char> Temp; unsigned char T2=0;
 		Payload[3] = 1;//Type: CONTINUATION (We have to send the rest of the headers as a CONTINUATION frame as the HTTP/2 semantics)
-		Payload[4] = 0;//Flag: END_HEADERS
+		Payload[4] = 4;//Flag: END_HEADERS
 		Append(cl.StreamIdent, Payload, 5, 4);
 		switch (statusCode) {
 		default:
-			Position += Append((unsigned char*)"\x48\3", Payload, Position);
+			Position += Append((char*)"\x48\3", Payload, Position);
 			for (size_t i = 0; i < 3; i++) {
 				T2 = (statusCode % 10)+'\x30';
 				Temp.insert(Temp.begin(), T2);
@@ -441,8 +421,9 @@ public:
 			Position += Append(&Temp[0], Payload, Position, 3);
 			Temp.clear();
 		}
+		Payload[Position] = '\134'; Position++;
 		if(!fileSize){
-			Temp.emplace_back('\x30');
+			Payload[Position] = 1; Payload[Position + 1] = '0'; Position += 2; Payload[4]++;//Set flag END_STREAM
 		}
 		else {
 			while (fileSize > 0) {
@@ -450,15 +431,31 @@ public:
 				Temp.insert(Temp.begin(), T2);
 				fileSize /= 10;
 			}
+			Payload[Position] = Temp.size(); Position++;
+			Position += Append(&Temp[0], Payload, Position, Temp.size());
+			Temp=fileMime(cl.cl.RequestPath);
+			Payload[Position] = 95; Payload[Position + 1] = Temp.size(); Position += 2;//Index:31(content-type), Size variable.
+			Position += Append(&Temp[0], Payload, Position, Temp.size());
 		}
-		Payload[Position] = '\134'; Payload[Position + 1] = Temp.size(); Position += 2;
-		Position += Append(&Temp[0], Payload, Position, Temp.size());
+		Payload[Position] = '\x76'; Position++; Payload[Position] = '\15'; Position++;
+		Position += Append((char*)"Alyssa/", Payload, Position);
+		Position += Append((char*)version.c_str(), Payload, Position);
+		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
+		Position += Append((char*)currentTime().c_str(), Payload, Position);
 		Position -= 9;
 		Payload[0] = (Position >> 16) & 0xFF;
 		Payload[1] = (Position >> 8) & 0xFF;
 		Payload[2] = (Position >> 0) & 0xFF;
-		Send((char*)Payload, cl.cl.sock, cl.cl.ssl, Position + 9);
-		InitialHeaders(cl);
+		Send(Payload, cl.cl.sock, cl.cl.ssl, Position + 9);
+	}
+	static void UpdWindow(WOLFSSL* ssl, char* StreamIdent, int WndSize){
+		char Payload[13]="\0\0\4\x8\0\0\0\0\0\0\0\0";
+		Append(StreamIdent, Payload, 5, 4);
+		Payload[9] = (WndSize >> 24) & 0xFF;
+		Payload[10] = (WndSize >> 16) & 0xFF;
+		Payload[11] = (WndSize >> 8) & 0xFF;
+		Payload[12] = (WndSize >> 0) & 0xFF;
+		Send(Payload, NULL, ssl, 13);
 	}
 	static void Get(clientInfoH2 cl) {
 		//This get is pretty identical to get on AlyssaHTTP class, they will be merged to a single function when everything for HTTP/2 is implemented.
@@ -470,10 +467,16 @@ public:
 				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
 			} //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
-				/*string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
-				Send(asd, sock, ssl);
-				if (cl->close) { shutdown(sock, 2); closesocket(sock); }
-				return;*/
+				string asd = Folder::folder(htroot + "/");
+				serverHeaders(cl, 200, asd.size());
+				FrameHeader[0] = (asd.size() >> 16) & 0xFF;
+				FrameHeader[1] = (asd.size() >> 8) & 0xFF;
+				FrameHeader[2] = (asd.size() >> 0) & 0xFF;
+				FrameHeader[4] = 1;
+				Append((unsigned char*)cl.StreamIdent, FrameHeader, 5, 4);
+				Send((char*)&FrameHeader, cl.cl.sock, cl.cl.ssl, 9);
+				Send(&asd[0], cl.cl.sock, cl.cl.ssl, asd.size());
+				return;
 			}//Send the folder index if enabled.
 		}
 		else if (cl.cl.RequestPath.substr(0, htrespath.size()) == htrespath) {//Request for a resource
@@ -495,32 +498,33 @@ public:
 			//temp = serverHeaders(200, cl, fileMime(path), filesize) + "\r\n";
 			//Send(temp, sock, ssl);
 			serverHeaders(cl, 200, filesize);
-			FrameHeader[0] = (filesize >> 16) & 0xFF;
-			FrameHeader[1] = (filesize >> 8) & 0xFF;
-			FrameHeader[2] = (filesize >> 0) & 0xFF;
-			FrameHeader[4] = 1;
-			Append(cl.StreamIdent, FrameHeader, 5, 4);
-			Send((char*)&FrameHeader, cl.cl.sock, cl.cl.ssl, 9);
-			bool isText = 0; char filebuf[32768] = { 0 }; if (Substring(fileMime(cl.cl.RequestPath), 4) == "text") isText = 1;
+			bool isText = 0; char filebuf[16393] = { 0 }; if (Substring(fileMime(cl.cl.RequestPath), 4) == "text") isText = 1;
+			Append(cl.StreamIdent, filebuf, 5, 4);
+			filebuf[0] = (16384 >> 16) & 0xFF;
+			filebuf[1] = (16384 >> 8) & 0xFF;
+			filebuf[2] = (16384 >> 0) & 0xFF;
 			while (true) {
-				if (filesize >= 32768) {
-					file.read(&filebuf[0], 32768); filesize -= 32768;
-					Send(filebuf, cl.cl.sock, cl.cl.ssl, 32768);
+				if (filesize >= 16384) {
+					file.read(&filebuf[9], 16384); filesize -= 16384;
+					Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, 16393);
 				}
 				else {
-					file.read(&filebuf[0], filesize);
-					if (isText) Send(filebuf, cl.cl.sock, cl.cl.ssl, strlen(filebuf));
-					else { Send(filebuf, cl.cl.sock, cl.cl.ssl, filesize); }
+					filebuf[4] = 1;
+					filebuf[0] = (filesize >> 16) & 0xFF;
+					filebuf[1] = (filesize >> 8) & 0xFF;
+					filebuf[2] = (filesize >> 0) & 0xFF;
+					file.read(&filebuf[9], filesize);
+					Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, filesize+9); 
 					filesize = 0;
 					break;
 				}
 			}
 		}
 		else { // Cannot open file, probably doesn't exist so we'll send a 404
-			temp = "";
-			if (errorpages) { // If custom error pages enabled send the error page
-				temp = errorPage(404);
-			}
+			//temp = "";
+			//if (errorpages) { // If custom error pages enabled send the error page
+			//	temp = errorPage(404);
+			//}
 			//temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
 			//Send(temp, cl.cl.sock, cl.cl.ssl);
 			serverHeaders(cl, 404, 0);
@@ -561,18 +565,6 @@ public:
 					{
 					case 1:
 						HPack::ParseHPack(&Frame[0],&hcl,size);
-						//[&]() { // Dummy temporary hardcoded response function.
-						//	unsigned char Resp[] = "\0\0\24\1\4"//Length, type "HEADERS" and flag "END_HEADERS"
-						//		"\0\0\0\1"
-						//		"\x48\3"
-						//		"200"
-						//		"\x76\15"
-						//		"Alyssa/v9.9.9"
-						//		"\0\0\45\0\1\0\0\0\1"//Length, type "DATA" and flag "END_STREAM"
-						//		"<!DOCTYPE html><h1>Hello from HTTP/2!";
-						//	SSL_send(cl.ssl, Resp, 75);
-						//	SSL_shutdown(cl.ssl);
-						//}();
 						break;
 					default:
 						break;

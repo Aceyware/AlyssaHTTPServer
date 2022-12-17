@@ -78,6 +78,7 @@ string HPack::DecodeHuffman(char* huffstr) {
 }
 
 void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
+	if (pos >= cl->dynIndexHeaders.size()) return;
 	switch (cl->dynIndexHeaders[pos].Key) {
 	case 1:
 		cl->cl.host = cl->dynIndexHeaders[pos].Value; break;
