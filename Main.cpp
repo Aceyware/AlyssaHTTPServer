@@ -44,7 +44,6 @@ void Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
 }
 
 string fileMime(string filename) {//This function returns the MIME type from file extension.
-	if (filename == "/") return "text/html";
 	string extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "bin", "bmp", "bz", "bz2", "cda", "csh", "css", "csv", "doc", "docx", "eot", "epub", "gz", "gif", "htm", "html", "ico", "ics", "jar", "jpeg", "jpg", "js", "json", "jsonld", "mid", "midi", "mjs", "mp3", "mp4", "mpeg", "mpkg", "odp", "ods", "odt", "oga", "ogv", "ogx", "opus", "otf", "png", "pdf", "php", "ppt", "pptx", "rar", "rtf", "sh", "svg", "tar", "tif", "tiff", "ts", "ttf", "txt", "vsd", "wav", "weba", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xml", "xul", "zip", "3gp", "3g2", "7z" };
 	string mimes[] = { "audio/aac", "application/x-abiword", "application/x-freearc", "image/avif", "video/x-msvideo", "application/vnd.amazon.ebook", "application/octet-stream", "image/bmp", "application/x-bzip", "application/x-bzip2", "application/x-cdf", "application/x-csh", "text/css", "text/csv", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-fontobject", "application/epub+zip", "application/gzip", "image/gif", "text/html", "text/html", "image/vnd.microsoft.icon", "text/calendar", "application/java-archive", "image/jpeg", "image/jpeg", "text/javascript", "application/json", "application/ld+json", "audio/midi", "audio/midi", "text/javascript", "audio/mpeg", "video/mp4", "video/mpeg", "application/vnd.apple.installer+xml", "application/vnd.oasis.opendocument.presentation", "application/vnd.oasis.opendocument.spreadsheet", "application/vnd.oasis.opendocument.text", "audio/ogg", "video/ogg", "application/ogg", "audio/opus", "font/otf", "image/png", "application/pdf", "application/x-httpd-php", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.rar", "application/rtf", "application/x-sh", "image/svg+xml", "application/x-tar", "image/tiff", "image/tiff", "video/mp2t", "font/ttf", "text/plain", "application/vnd.visio", "audio/wav", "audio/webm", "video/webm", "image/webp", "font/woff", "font/woff2", "application/xhtml+xml", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/xml", "application/vnd.mozilla.xul+xml", "application/zip", "video/3gpp", "video/3gpp2", "application/x-7z-compressed" };
 	bool hasExtension = 0; string ext = "";
@@ -405,70 +404,78 @@ private:
 class AlyssaH2
 {
 public:
-	static void serverHeaders(clientInfoH2 cl, int statusCode,int fileSize) {
+	static void serverHeaders(clientInfoH2 cl, int statusCode,int fileSize, string _StrArg="") {
 		char Payload[512] = { 0 }; int Position = 9; std::basic_string<char> Temp; unsigned char T2=0;
-		Payload[3] = 1;//Type: CONTINUATION (We have to send the rest of the headers as a CONTINUATION frame as the HTTP/2 semantics)
+		Payload[3] = 1;//Type: HEADERS
 		Payload[4] = 4;//Flag: END_HEADERS
 		Append(cl.StreamIdent, Payload, 5, 4);
+		Position += Append((char*)"\x48\3", Payload, Position); //Type: "status" and length 3
+		Position+=3;//Leave here empty because we need to add status to beginning i guess.
 		switch (statusCode) {
-		default:
-			Position += Append((char*)"\x48\3", Payload, Position);
-			for (size_t i = 0; i < 3; i++) {
-				T2 = (statusCode % 10)+'\x30';
-				Temp.insert(Temp.begin(), T2);
-				statusCode /= 10;
-			}
-			Position += Append(&Temp[0], Payload, Position, 3);
-			Temp.clear();
+				case 302:
+					Payload[Position]=110; Payload[Position+1]=_StrArg.length(); Position+=2;
+					Position+=Append((char*)_StrArg.c_str(), Payload, Position, Payload[Position-1]);
+					break;
+				default:
+					Payload[Position] = '\134'; Position++;//Type: "content-length"
+					if (!fileSize) {
+						Payload[Position] = 1; Payload[Position + 1] = '0'; Position += 2; Payload[4]++; //Content-length=0 and set flag END_STREAM
+					} else {//Content length>0, add the type too.
+						while (fileSize > 0) {
+							T2 = (fileSize % 10) + '\x30';
+							Temp.insert(Temp.begin(), T2);
+							fileSize /= 10;
+						}
+						Payload[Position] = Temp.size(); Position++;
+						Position += Append(&Temp[0], Payload, Position, Temp.size());
+						Payload[Position] = 95;////Index:31(content-type)
+						if (_StrArg == "") {
+							Temp = fileMime(cl.cl.RequestPath);
+							Payload[Position + 1] = Temp.size(); Position += 2; //Size variable.
+							Position += Append(&Temp[0], Payload, Position, Temp.size());
+							Temp.clear();
+						} else {
+							Payload[Position + 1] = _StrArg.size(); Position += 2;
+							Position += Append(&_StrArg[0], Payload, Position, _StrArg.size());
+						}
+					}
+					break;
+				}
+		//Add the status code to space we left
+		for (size_t i = 0; i < 3; i++) {
+			T2 = (statusCode % 10)+'\x30';
+			Temp.insert(Temp.begin(), T2);
+			statusCode /= 10;
 		}
-		Payload[Position] = '\134'; Position++;
-		if(!fileSize){
-			Payload[Position] = 1; Payload[Position + 1] = '0'; Position += 2; Payload[4]++;//Set flag END_STREAM
-		}
-		else {
-			while (fileSize > 0) {
-				T2 = (fileSize % 10) + '\x30';
-				Temp.insert(Temp.begin(), T2);
-				fileSize /= 10;
-			}
-			Payload[Position] = Temp.size(); Position++;
-			Position += Append(&Temp[0], Payload, Position, Temp.size());
-			Temp=fileMime(cl.cl.RequestPath);
-			Payload[Position] = 95; Payload[Position + 1] = Temp.size(); Position += 2;//Index:31(content-type), Size variable.
-			Position += Append(&Temp[0], Payload, Position, Temp.size());
-		}
-		Payload[Position] = '\x76'; Position++; Payload[Position] = '\15'; Position++;
+		Append(&Temp[0], Payload, 11, 3);
+		Temp.clear();
+		Payload[Position] = '\x76'; Position++; Payload[Position] = '\15'; Position++;//"server" header
 		Position += Append((char*)"Alyssa/", Payload, Position);
 		Position += Append((char*)version.c_str(), Payload, Position);
 		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
 		Position += Append((char*)currentTime().c_str(), Payload, Position);
 		Position -= 9;
-		Payload[0] = (Position >> 16) & 0xFF;
+		Payload[0] = (Position >> 16) & 0xFF;//Frame size
 		Payload[1] = (Position >> 8) & 0xFF;
 		Payload[2] = (Position >> 0) & 0xFF;
 		Send(Payload, cl.cl.sock, cl.cl.ssl, Position + 9);
-	}
-	static void UpdWindow(WOLFSSL* ssl, char* StreamIdent, int WndSize){
-		char Payload[13]="\0\0\4\x8\0\0\0\0\0\0\0\0";
-		Append(StreamIdent, Payload, 5, 4);
-		Payload[9] = (WndSize >> 24) & 0xFF;
-		Payload[10] = (WndSize >> 16) & 0xFF;
-		Payload[11] = (WndSize >> 8) & 0xFF;
-		Payload[12] = (WndSize >> 0) & 0xFF;
-		Send(Payload, NULL, ssl, 13);
 	}
 	static void Get(clientInfoH2 cl) {
 		//This get is pretty identical to get on AlyssaHTTP class, they will be merged to a single function when everything for HTTP/2 is implemented.
 		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768); unsigned char FrameHeader[9] = { 0 };
 		if (cl.cl.RequestPath == "/") {//If server requests for root, we'll handle it specially
 			//Custom actions for HTTP/2 is not implemented yet.
+			if (fileExists(htroot+"/root.htaccess")) {
+				serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+				return;
+			}
 			if (fileExists(htroot + "/index.html")) {
 				cl.cl.RequestPath = "/index.html";
 				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
 			} //Check for index.html, which is default filename for webpage on root of any folder.
 			else if (foldermode) {
 				string asd = Folder::folder(htroot + "/");
-				serverHeaders(cl, 200, asd.size());
+				serverHeaders(cl, 200, asd.size(),"text/html");
 				FrameHeader[0] = (asd.size() >> 16) & 0xFF;
 				FrameHeader[1] = (asd.size() >> 8) & 0xFF;
 				FrameHeader[2] = (asd.size() >> 0) & 0xFF;
@@ -484,13 +491,41 @@ public:
 				file.open(std::filesystem::u8path(respath + "/" + cl.cl.RequestPath.substr(htrespath.size())), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(respath + "/" + cl.cl.RequestPath.substr(htrespath.size())));
 			}
 		}
-		else {//Path is a file
-			if (fileExists(htroot + cl.cl.RequestPath)) {//If special rules are not found, check for a file with exact name on request
-				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+		else {
+			if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl.cl.RequestPath))) {
+				if (fileExists(htroot + cl.cl.RequestPath + "/root.htaccess")) {
+					serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+					return;
+				}
+				if (fileExists(htroot + cl.cl.RequestPath + "/index.html")) {
+					cl.cl.RequestPath += "/index.html";
+					file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+				}
+				else if (foldermode) {
+					string asd = Folder::folder(htroot + cl.cl.RequestPath);
+					serverHeaders(cl, 200, asd.size(),"text/html");
+					FrameHeader[0] = (asd.size() >> 16) & 0xFF;
+					FrameHeader[1] = (asd.size() >> 8) & 0xFF;
+					FrameHeader[2] = (asd.size() >> 0) & 0xFF;
+					FrameHeader[4] = 1;
+					Append((unsigned char*)cl.StreamIdent, FrameHeader, 5, 4);
+					Send((char*)&FrameHeader, cl.cl.sock, cl.cl.ssl, 9);
+					Send(&asd[0], cl.cl.sock, cl.cl.ssl, asd.size());
+					return;
+				}
 			}
-			else if (fileExists(htroot + cl.cl.RequestPath + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-				cl.cl.RequestPath += ".html";
-				file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+			else {//Path is a file
+				if (fileExists(htroot + cl.cl.RequestPath + ".htaccess")) {
+					serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+					return;
+				}
+				if (fileExists(htroot + cl.cl.RequestPath)) {//If special rules are not found, check for a file with exact name on request
+					file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+				}
+				else if (fileExists(htroot + cl.cl.RequestPath + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
+					cl.cl.RequestPath += ".html";
+					file.open(std::filesystem::u8path(htroot + cl.cl.RequestPath), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + cl.cl.RequestPath));
+				}
 			}
 		}
 
@@ -549,9 +584,7 @@ public:
 					pos += 4;
 					switch (Type) {//Some frames has additional header data, set the pos and size according to situation.
 					case 1:
-						bool hasPriority;
-						if (Flags[2]) hasPriority = 1;
-						if (hasPriority) {
+						if (Flags[2]) {
 							pos += 5; size -= 5;
 						}
 						break;
@@ -561,16 +594,37 @@ public:
 					Frame.resize(size);
 					memcpy(&Frame[0], &buf[pos], size);
 					pos += size+1;
-					switch (Type)
-					{
-					case 1:
+					switch (Type) {
+					case 0:
+						hcl.cl.payload.resize(size);
+						memcpy(&hcl.cl.payload, &Frame[0], size);
+						pos += size;
+						break;
+					case 1:	
 						HPack::ParseHPack(&Frame[0],&hcl,size);
+						{string temp2;
+						for (size_t i = 0; i < hcl.cl.RequestPath.size(); i++) {
+							if (hcl.cl.RequestPath[i] == '%') {
+								try {
+									temp2 += (char)std::stoi(Substring(hcl.cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
+								}
+								catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
+									temp2 += '%';
+								}
+							}
+							else if (hcl.cl.RequestPath[i] == '?') {
+								hcl.cl.qStr = Substring(hcl.cl.RequestPath, 0, i + 1);
+								hcl.cl.RequestPath = Substring(hcl.cl.RequestPath, i - 1);
+							}
+							else temp2 += hcl.cl.RequestPath[i];
+						}
+						hcl.cl.RequestPath = temp2;
+						}
 						break;
 					default:
 						break;
 					}
 				}
-				//InitialHeaders(hcl);
 				if (hcl.cl.RequestType == "GET") { Get(hcl); }
 				/*else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
 				else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
@@ -583,9 +637,10 @@ public:
 				}
 				//SSL_shutdown(cl.ssl);
 			}
+			closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
 		}
 		else {//Preface not recieved, shutdown the connection.
-			closesocket(cl.sock); SSL_free(cl.ssl); return;
+			closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
 		}
 	}
 private:

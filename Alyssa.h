@@ -17,6 +17,7 @@
 #include <cstring>
 #include <mutex>
 #include <bitset>
+#include <math.h>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -38,7 +39,6 @@ using std::string;
 #define CYASSL_USER_SETTINGS
 #endif
 #include <cyassl/ctaocrypt/settings.h>
-#include <cyassl/ssl.h>
 #include <wolfssl/ssl.h>
 #define SSL_recv wolfSSL_read
 #define SSL_send wolfSSL_write
