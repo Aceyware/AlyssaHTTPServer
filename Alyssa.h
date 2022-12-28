@@ -1,6 +1,7 @@
 // Header file for Alyssa
 #pragma once
 #pragma warning(disable : 4996)
+#define AlyssaHeader
 
 // Includes
 #include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
@@ -24,6 +25,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #else
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
@@ -55,6 +57,9 @@ typedef struct WOLFSSL {};
 typedef int SOCKET;
 #define closesocket close
 #define Sleep sleep
+static void sigpipe_handler(int unused)
+{
+}
 #endif
 // Definitions for Windows
 #ifdef _WIN32
@@ -152,9 +157,6 @@ static std::string Substring(const unsigned char* str, unsigned int size, unsign
 	}
 	return x;
 }
-//static void Substring(const char* Source,const char* Dest, unsigned int Size) {//Overload of Substring() that makes memory copying instead of iteration.
-//
-//}
 static std::string ToLower(string str) {
 	string x = ""; x.reserve(str.size());
 	for (size_t i = 0; i < str.size(); i++) {
@@ -200,6 +202,15 @@ static size_t Append(char* Source, char* Destination, size_t Position, size_t Si
 	}
 	return i;
 }
+static size_t Append(const char* Source, char* Destination, size_t Position, size_t Size = 0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
+}
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -226,5 +237,5 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v9.9.9";
+static string version = "v1.2.0";
 

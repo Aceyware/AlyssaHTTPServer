@@ -151,7 +151,7 @@ public:
 	}
 
 	static void parseHeader(clientInfo* cl, char* buf) {//This function reads and parses the Request Header.
-		string temp = ""; int x = 0; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; temp.reserve(384);
+		string temp = ""; int x = 0; SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; temp.reserve(384); char PathDepth = -1;
 		for (int var = 0; var < strlen(buf) + 1; var++) {
 			if (buf[var] < 32) {//First read the line
 				string temp2 = "";
@@ -176,6 +176,29 @@ public:
 										else if (cl->RequestPath[i] == '?') {
 											cl->qStr = Substring(cl->RequestPath, 0, i + 1);
 											cl->RequestPath = Substring(cl->RequestPath, i - 1);
+										}
+										// The latter is mitigation for the vulnerability that server can actually access and send any file outside of htroot if it runs with sufficient permissions
+										// How it was working is requesting a path with "../" which means "go to parent directory". This type of requests can be done with raw TCP clients like telnet, rather than a HTTP client.
+										// What this code does is decreasing the value of "PathDepth" when there is a "../" on the path, increasing it when there is a only / and keeping it still when there is a "./" which means "current directory"
+										// Maybe this is a bad solution but looks like it should do the job enough to me. If you have a better solution, feel free to do a pull request.
+										else if (cl->RequestPath[i] == '/') { PathDepth++; temp2 += cl->RequestPath[i]; }
+										else if (cl->RequestPath[i] == '.') {
+											temp2 += cl->RequestPath[i]; i++;
+											if (cl->RequestPath[i] == '.') {
+												temp2 += cl->RequestPath[i]; i++;
+												if (cl->RequestPath[i] == '/') {
+													PathDepth--;
+													if (PathDepth<0) {
+														cl->version = "1.1"; //This one is temporary.
+														temp = serverHeaders(400, cl, "", 0);
+														Send(temp, cl->sock, cl->ssl, temp.size());
+														return;
+													}
+													temp2 += cl->RequestPath[i];
+												}
+											}
+											else if (cl->RequestPath[i] == '/') { temp2 += cl->RequestPath[i]; i++; }
+											else { temp2 += cl->RequestPath[i]; }
 										}
 										else temp2 += cl->RequestPath[i];
 									}
@@ -411,10 +434,56 @@ public:
 		Append(cl.StreamIdent, Payload, 5, 4);
 		Position += Append((char*)"\x48\3", Payload, Position); //Type: "status" and length 3
 		Position+=3;//Leave here empty because we need to add status to beginning i guess.
+		if (_StrArg[0]<32) {
+			switch (_StrArg[0]) {
+			case 1://HEAD Response, Set this frame as last frame of stream.
+				Payload[4]++; break;
+			default:
+				break;
+			}
+			_StrArg.clear();
+		}
 		switch (statusCode) {
+				case 204://Lazy but effective way for implementing OPTIONS.
+					Payload[Position] = 86; Payload[Position + 1] = 16; Position += 2;
+					Append("GET,HEAD,OPTIONS", Payload, Position, 16);
+					break;
+				case 206:
+					Payload[Position] = 94; Payload[Position + 1] = 6; Position += 2;
+					Position+=Append("bytes ", Payload, Position, 6);
+					{
+						int temp = 0, pos = Position - 1;
+						temp = cl.cl.rstart;
+						while (temp > 0) {
+							T2 = (temp % 10) + '\x30';
+							Temp.insert(Temp.begin(), T2);
+							temp /= 10;
+							Payload[pos]++;
+						}
+						Payload[Position] = '-'; Position++; Payload[pos]++;
+						temp = cl.cl.rend;
+						while (temp > 0) {
+							T2 = (temp % 10) + '\x30';
+							Temp.insert(Temp.begin(), T2);
+							temp /= 10;
+							Payload[pos]++;
+						}
+						Payload[Position] = '/'; Position++; Payload[pos]++;
+						while (fileSize > 0) {
+							T2 = (fileSize % 10) + '\x30';
+							Temp.insert(Temp.begin(), T2);
+							fileSize /= 10;
+							Payload[pos]++;
+						}
+					}
+					break;
 				case 302:
 					Payload[Position]=110; Payload[Position+1]=_StrArg.length(); Position+=2;
 					Position+=Append((char*)_StrArg.c_str(), Payload, Position, Payload[Position-1]);
+					break;
+				case 401:
+					Payload[Position] = 125; Payload[Position + 1] = 5; Position += 2;
+					Append("Basic", Payload, Position, 5);
 					break;
 				default:
 					Payload[Position] = '\134'; Position++;//Type: "content-length"
@@ -439,6 +508,8 @@ public:
 							Position += Append(&_StrArg[0], Payload, Position, _StrArg.size());
 						}
 					}
+					Payload[Position] = 82; Payload[Position + 1] = 5; Position += 2;//Type "accept-ranges"
+					Position+=Append("bytes", Payload, Position, 5);
 					break;
 				}
 		//Add the status code to space we left
@@ -449,24 +520,223 @@ public:
 		}
 		Append(&Temp[0], Payload, 11, 3);
 		Temp.clear();
-		Payload[Position] = '\x76'; Position++; Payload[Position] = '\15'; Position++;//"server" header
+		Payload[Position] = '\x76'; Payload[Position+1] = '\15'; Position+=2;//"server" header
 		Position += Append((char*)"Alyssa/", Payload, Position);
 		Position += Append((char*)version.c_str(), Payload, Position);
 		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
 		Position += Append((char*)currentTime().c_str(), Payload, Position);
+		if (corsEnabled) {
+			Payload[Position] = 84; Payload[Position + 1] = defaultCorsAllowOrigin.length(); Position += 2;//"access-control-allow-origin" header
+			Position+=Append(&defaultCorsAllowOrigin[0], Payload, Position);
+		}
 		Position -= 9;
 		Payload[0] = (Position >> 16) & 0xFF;//Frame size
 		Payload[1] = (Position >> 8) & 0xFF;
 		Payload[2] = (Position >> 0) & 0xFF;
 		Send(Payload, cl.cl.sock, cl.cl.ssl, Position + 9);
 	}
+	static void serverHeaders(clientInfoH2* cl, int statusCode, int fileSize, string _StrArg = "") {//Overload of the function above that takes pointer as argument.
+		char Payload[512] = { 0 }; int Position = 9; std::basic_string<char> Temp; unsigned char T2 = 0;
+		Payload[3] = 1;//Type: HEADERS
+		Payload[4] = 4;//Flag: END_HEADERS
+		Append(cl->StreamIdent, Payload, 5, 4);
+		Position += Append((char*)"\x48\3", Payload, Position); //Type: "status" and length 3
+		Position += 3;//Leave here empty because we need to add status to beginning i guess.
+		if (_StrArg[0] < 32) {
+			switch (_StrArg[0]) {
+			case 1://HEAD Response, Set this frame as last frame of stream.
+				Payload[4]++; break;
+			default:
+				break;
+			}
+			_StrArg.clear();
+		}
+		switch (statusCode) {
+		case 204://Lazy but effective way for implementing OPTIONS.
+			Payload[Position] = 86; Payload[Position + 1] = 16; Position += 2;
+			Append("GET,HEAD,OPTIONS", Payload, Position, 16);
+			break;
+		case 206:
+			Payload[Position] = 94; Payload[Position + 1] = 6; Position += 2;
+			Position += Append("bytes ", Payload, Position, 6);
+			{
+				int temp = 0, pos = Position - 1;
+				temp = cl->cl.rstart;
+				while (temp > 0) {
+					T2 = (temp % 10) + '\x30';
+					Temp.insert(Temp.begin(), T2);
+					temp /= 10;
+					Payload[pos]++;
+				}
+				Payload[Position] = '-'; Position++; Payload[pos]++;
+				temp = cl->cl.rend;
+				while (temp > 0) {
+					T2 = (temp % 10) + '\x30';
+					Temp.insert(Temp.begin(), T2);
+					temp /= 10;
+					Payload[pos]++;
+				}
+				Payload[Position] = '/'; Position++; Payload[pos]++;
+				while (fileSize > 0) {
+					T2 = (fileSize % 10) + '\x30';
+					Temp.insert(Temp.begin(), T2);
+					fileSize /= 10;
+					Payload[pos]++;
+				}
+			}
+			break;
+		case 302:
+			Payload[Position] = 110; Payload[Position + 1] = _StrArg.length(); Position += 2;
+			Position += Append((char*)_StrArg.c_str(), Payload, Position, Payload[Position - 1]);
+			break;
+		case 401:
+			Payload[Position] = 125; Payload[Position + 1] = 5; Position += 2;
+			Append("Basic", Payload, Position, 5);
+			break;
+		default:
+			Payload[Position] = '\134'; Position++;//Type: "content-length"
+			if (!fileSize) {
+				Payload[Position] = 1; Payload[Position + 1] = '0'; Position += 2; Payload[4]++; //Content-length=0 and set flag END_STREAM
+			}
+			else {//Content length>0, add the type too.
+				while (fileSize > 0) {
+					T2 = (fileSize % 10) + '\x30';
+					Temp.insert(Temp.begin(), T2);
+					fileSize /= 10;
+				}
+				Payload[Position] = Temp.size(); Position++;
+				Position += Append(&Temp[0], Payload, Position, Temp.size());
+				Payload[Position] = 95;////Index:31(content-type)
+				if (_StrArg == "") {
+					Temp = fileMime(cl->cl.RequestPath);
+					Payload[Position + 1] = Temp.size(); Position += 2; //Size variable.
+					Position += Append(&Temp[0], Payload, Position, Temp.size());
+					Temp.clear();
+				}
+				else {
+					Payload[Position + 1] = _StrArg.size(); Position += 2;
+					Position += Append(&_StrArg[0], Payload, Position, _StrArg.size());
+				}
+			}
+			Payload[Position] = 82; Payload[Position + 1] = 5; Position += 2;//Type "accept-ranges"
+			Position+=Append("bytes", Payload, Position, 5);
+			break;
+		}
+		//Add the status code to space we left
+		for (size_t i = 0; i < 3; i++) {
+			T2 = (statusCode % 10) + '\x30';
+			Temp.insert(Temp.begin(), T2);
+			statusCode /= 10;
+		}
+		Append(&Temp[0], Payload, 11, 3);
+		Temp.clear();
+		Payload[Position] = '\x76'; Payload[Position + 1] = '\15'; Position += 2;//"server" header
+		Position += Append((char*)"Alyssa/", Payload, Position);
+		Position += Append((char*)version.c_str(), Payload, Position);
+		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
+		Position += Append((char*)currentTime().c_str(), Payload, Position);
+		if (corsEnabled) {
+			Payload[Position] = 84; Payload[Position + 1] = defaultCorsAllowOrigin.length(); Position += 2;//"access-control-allow-origin" header
+			Position += Append(&defaultCorsAllowOrigin[0], Payload, Position);
+		}
+		Position -= 9;
+		Payload[0] = (Position >> 16) & 0xFF;//Frame size
+		Payload[1] = (Position >> 8) & 0xFF;
+		Payload[2] = (Position >> 0) & 0xFF;
+		Send(Payload, cl->cl.sock, cl->cl.ssl, Position + 9);
+	}
+	static bool customActions(string path, clientInfoH2* cl) {
+		std::ifstream file; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)), '\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+		if (!file) {
+			std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
+			serverHeaders(cl, 500, 0, ""); return 0;
+		}
+		file.read(&buf[0], buf.size()); buf += "\1"; string temp = ""; file.close();
+		for (size_t i = 0; i < buf.size(); i++) {
+			if (buf[i] < 32) {
+				string act, pr; int x = temp.find(" ");
+				if (x != -1) { act = ToLower(Substring(temp, x)); pr = Substring(temp, 0, x + 1); }
+				else act = temp;
+				temp = ""; if (buf[i + 1] < 32) i++;//CRLF
+				if (action[0] == "") {
+					if (act == "authenticate") {
+						action[0] = act; param[0] = pr;
+						continue;
+					}
+				}
+				if (action[1] == "") {
+					if (act == "redirect") {
+						action[1] = act; param[1] = pr; continue;
+					}
+					else if (act == "returnteapot") { action[1] = act; continue; }
+				}
+				std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(act) + L"\" on file \"" + s2ws(path) + L"\"\n";
+			}
+			else temp += buf[i];
+		}
+		file.close();
+
+		//2. Execute the custom actions by their order
+		if (action[0] != "") {
+			if (action[0] == "authenticate") {
+				if (cl->cl.auth == "") {
+					serverHeaders(cl, 401, 0); return 0;
+				}
+				std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
+				pwd.open(std::filesystem::u8path(param[0]));
+				if (!pwd.is_open()) {
+					std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \"" + path + "\"\n";
+					serverHeaders(cl, 500, 0);
+					//if (errorpages) { // If custom error pages enabled send the error page
+					//	Send(errorPage(500), cl->sock, cl->ssl);
+					//}
+					return 0;
+				}
+				bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size()); pwd.close();
+				tmp += "\1"; temp = "";
+				for (size_t i = 0; i < tmp.size(); i++) {
+					if (tmp[i] < 32) {
+						if (cl->cl.auth == temp) { found = 1; break; } temp = "";
+						if (tmp[i + 1] < 32) i++; //CRLF
+					}
+					else temp += tmp[i];
+				}
+				if (!found) {
+					if (!forbiddenas404) {
+						serverHeaders(cl, 403, 0);;
+						//if (errorpages) { // If custom error pages enabled send the error page
+						//	Send(errorPage(403), cl->sock, cl->ssl);
+						//}
+					}
+					else {
+						serverHeaders(cl, 404, 0);
+						//if (errorpages) { // If custom error pages enabled send the error page
+						//	Send(errorPage(404), cl->sock, cl->ssl);
+						//}
+					}
+					return 0;
+				}
+			}
+		}
+		if (action[1] != "") {
+			if (action[1] == "redirect") {
+				serverHeaders(cl,302,0,param[1]);
+				return 0;
+			}
+			else if (action[1] == "returnteapot") {
+				serverHeaders(cl, 408, 0);
+				return 0;
+			}
+		}
+		return 1;
+	}
 	static void Get(clientInfoH2 cl) {
 		//This get is pretty identical to get on AlyssaHTTP class, they will be merged to a single function when everything for HTTP/2 is implemented.
-		std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768); unsigned char FrameHeader[9] = { 0 };
+		std::ifstream file; int filesize = 0; unsigned char FrameHeader[9] = { 0 };
 		if (cl.cl.RequestPath == "/") {//If server requests for root, we'll handle it specially
 			//Custom actions for HTTP/2 is not implemented yet.
 			if (fileExists(htroot+"/root.htaccess")) {
-				serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+				if (!customActions(htroot + "/root.htaccess", &cl)) return;
 				return;
 			}
 			if (fileExists(htroot + "/index.html")) {
@@ -492,10 +762,15 @@ public:
 			}
 		}
 		else {
+			if (cl.cl.RequestPath.size() > 7) {
+				if (cl.cl.RequestPath.substr(cl.cl.RequestPath.size() - 8) == "htaccess" || cl.cl.RequestPath.substr(cl.cl.RequestPath.size() - 8) == "htpasswd") {//Send 403 and break if client requested for a .htpasswd/.htaccess file
+					serverHeaders(cl, 403, 0);
+					return;
+				}
+			}
 			if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl.cl.RequestPath))) {
 				if (fileExists(htroot + cl.cl.RequestPath + "/root.htaccess")) {
-					serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-					return;
+					if(!customActions(htroot + cl.cl.RequestPath + "/root.htaccess",&cl)) return;
 				}
 				if (fileExists(htroot + cl.cl.RequestPath + "/index.html")) {
 					cl.cl.RequestPath += "/index.html";
@@ -516,7 +791,7 @@ public:
 			}
 			else {//Path is a file
 				if (fileExists(htroot + cl.cl.RequestPath + ".htaccess")) {
-					serverHeaders(cl, 302, 0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+					if (!customActions(htroot + cl.cl.RequestPath + ".htaccess", &cl)) return;
 					return;
 				}
 				if (fileExists(htroot + cl.cl.RequestPath)) {//If special rules are not found, check for a file with exact name on request
@@ -529,10 +804,22 @@ public:
 			}
 		}
 
+		if (cl.cl.RequestType == "HEAD") {
+			if (file.is_open()){ serverHeaders(cl, 200, filesize,"\1"); }
+			else { serverHeaders(cl, 404, filesize, "\1"); }
+			return;
+		}
+
 		if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
 			//temp = serverHeaders(200, cl, fileMime(path), filesize) + "\r\n";
 			//Send(temp, sock, ssl);
-			serverHeaders(cl, 200, filesize);
+			if (cl.cl.rstart || cl.cl.rend) {
+				serverHeaders(cl, 206, filesize);
+				file.seekg(cl.cl.rstart);
+				filesize = cl.cl.rend - cl.cl.rstart;
+				file.seekg(cl.cl.rstart);
+			}
+			else serverHeaders(cl, 200, filesize);
 			bool isText = 0; char filebuf[16393] = { 0 }; if (Substring(fileMime(cl.cl.RequestPath), 4) == "text") isText = 1;
 			Append(cl.StreamIdent, filebuf, 5, 4);
 			filebuf[0] = (16384 >> 16) & 0xFF;
@@ -602,40 +889,21 @@ public:
 						break;
 					case 1:	
 						HPack::ParseHPack(&Frame[0],&hcl,size);
-						{string temp2;
-						for (size_t i = 0; i < hcl.cl.RequestPath.size(); i++) {
-							if (hcl.cl.RequestPath[i] == '%') {
-								try {
-									temp2 += (char)std::stoi(Substring(hcl.cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
-								}
-								catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
-									temp2 += '%';
-								}
-							}
-							else if (hcl.cl.RequestPath[i] == '?') {
-								hcl.cl.qStr = Substring(hcl.cl.RequestPath, 0, i + 1);
-								hcl.cl.RequestPath = Substring(hcl.cl.RequestPath, i - 1);
-							}
-							else temp2 += hcl.cl.RequestPath[i];
-						}
-						hcl.cl.RequestPath = temp2;
-						}
 						break;
 					default:
 						break;
 					}
 				}
-				if (hcl.cl.RequestType == "GET") { Get(hcl); }
-				/*else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-				else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
-				else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
-				else if (cl->RequestType == "OPTIONS") {
-					Send(serverHeaders(200, cl) + "Allow: GET,HEAD,POST,PUT,OPTIONS\r\n", cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
-				}*/
-				else {
-					//Send(serverHeaders(501, cl), cl->sock, cl->ssl); shutdown(cl->sock, 2); closesocket(cl->sock);
+				if (hcl.cl.RequestType == "GET") { std::thread t(AlyssaH2::Get, hcl); t.detach(); }
+				else if (hcl.cl.RequestType == "HEAD") { std::thread t(AlyssaH2::Get, hcl); t.detach(); }
+				/*else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
+				else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);*/
+				else if (hcl.cl.RequestType == "OPTIONS") {
+					serverHeaders(hcl, 204, 0);//We are going to send 204 and add a switch-case for 204 status, this is a lazy way for implementing OPTIONS.
 				}
-				//SSL_shutdown(cl.ssl);
+				else {
+					serverHeaders(hcl, 501, 0);
+				}
 			}
 			closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
 		}
@@ -683,7 +951,7 @@ bool customActions(string path, clientInfo* cl) {
 		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
 		Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->sock, cl->ssl); if (errorpages) Send(errorPage(500), cl->sock, cl->ssl); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
 	}
-	file.read(&buf[0], buf.size()); buf += "\1"; string temp = "";
+	file.read(&buf[0], buf.size()); buf += "\1"; string temp = ""; file.close();
 	for (size_t i = 0; i < buf.size(); i++) {
 		if (buf[i] < 32) {
 			string act, pr; int x = temp.find(" ");
@@ -724,7 +992,7 @@ bool customActions(string path, clientInfo* cl) {
 				}
 				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return 0;
 			}
-			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size());
+			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size()); pwd.close();
 			tmp += "\1"; temp = "";
 			for (size_t i = 0; i < tmp.size(); i++) {
 				if (tmp[i] < 32) {
@@ -779,6 +1047,9 @@ int main()//This is the main server function that fires up the server and listen
 	std::ios_base::sync_with_stdio(false);
 	//Set the locale and stdout to Unicode
 	fwide(stdout, 0);
+#ifndef _WIN32
+	signal(SIGPIPE, sigpipe_handler); //Workaround for Darwin killing the server when server tries to access an socket which is closed by remote peer.
+#endif
 	setlocale(LC_ALL, "");
 	//Read the config file
 	Config::initialRead();

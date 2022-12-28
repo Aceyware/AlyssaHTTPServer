@@ -86,10 +86,14 @@ void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
 		cl->cl.RequestType = cl->dynIndexHeaders[pos].Value; break;
 	case 4:
 		cl->cl.RequestPath = cl->dynIndexHeaders[pos].Value; break;
+	case 23:
+		cl->cl.auth = base64_decode(Substring(cl->dynIndexHeaders[pos].Value, 0, 5)); break;
 	default:
 		break;
 	}
 }
+
+void Logging(clientInfo* cl);
 
 void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 	std::bitset<8> Single; int Size; string Value = "", Key = ""; bool DynAdd = 0;
@@ -121,7 +125,10 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 		else {
 			std::cout << "Header is a dynamic indexed header field.\n";
 			if (Single[6]) { cout << "Header will be added to dynamic table.\n"; Single.flip(6); DynAdd = 1; }
-			else { cout << "Header will NOT be added to dynamic table.\n"; Single[4] = 0; DynAdd = 0; }
+			else {
+				cout << "Header will NOT be added to dynamic table.\n"; Single[4] = 0; DynAdd = 0; if (Single[5]) { 
+					i++; continue; }
+		}
 			int HDynamic = Single.to_ulong();
 			if (!HDynamic) {
 				std::cout << "Header is a new name.\nKey: ";
@@ -167,6 +174,24 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 					cl2->cl.RequestType = Value; break;
 				case 4:
 					cl2->cl.RequestPath = Value; break;
+				case 23:
+					cl2->cl.auth = base64_decode(Substring(Value, 0, 5)); break;
+				case 50:
+					Value = Substring(Value, 0, 5);
+					try {
+						cl2->cl.rstart = stoull(Substring(Value, Value.find("-")));
+					}
+					catch (const std::invalid_argument) {
+						//Send(serverHeaders(400, cl), sock, ssl); return;
+					}
+					try {
+						cl2->cl.rend = stoull(Substring(Value, 0, Value.find("-")+1));
+						//if (cl2->cl.rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl2->cl.RequestPath))) //{ Send(serverHeaders(416, cl), sock, ssl); return; }
+					}
+					catch (const std::invalid_argument) {
+						cl2->cl.rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl2->cl.RequestPath));
+					}
+					break;
 				default:
 					break;
 				}
@@ -176,6 +201,43 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 			}
 		}
 	}
+	Value.clear(); Size = -1;
+	for (size_t i = 0; i < cl2->cl.RequestPath.size(); i++) {
+		if (cl2->cl.RequestPath[i] == '%') {
+			try {
+				Value += (char)std::stoi(Substring(cl2->cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
+			}
+			catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
+				Value += '%';
+			}
+		}
+		else if (cl2->cl.RequestPath[i] == '?') {
+			cl2->cl.qStr = Substring(cl2->cl.RequestPath, 0, i + 1);
+			cl2->cl.RequestPath = Substring(cl2->cl.RequestPath, i - 1);
+		}
+		// The latter is mitigation for the vulnerability that server can actually access and send any file outside of htroot if it runs with sufficient permissions
+		// Refeer to HTTP/1.x code for detailed info, this code is same as it excluding this code reuses the existing variables instead of creating new ones (Value=temp2, PathDepth=Size) and 400 response is sent outside of this function.
+		else if (cl2->cl.RequestPath[i] == '/') { Size++; Value += cl2->cl.RequestPath[i]; }
+		else if (cl2->cl.RequestPath[i] == '.') {
+			Value += cl2->cl.RequestPath[i]; i++;
+			if (cl2->cl.RequestPath[i] == '.') {
+				Value += cl2->cl.RequestPath[i]; i++;
+				if (cl2->cl.RequestPath[i] == '/') {
+					Size--;
+					if (Size < 0) {
+						cl2->cl.RequestType = "";//Empty request type is reserved for 400 responses.
+						return;
+					}
+					Value += cl2->cl.RequestPath[i];
+				}
+			}
+			else if (cl2->cl.RequestPath[i] == '/') { Value += cl2->cl.RequestPath[i]; i++; }
+			else { Value += cl2->cl.RequestPath[i]; }
+		}
+		else Value += cl2->cl.RequestPath[i];
+	}
+	cl2->cl.RequestPath = Value; 
+	if (logging) Logging(&cl2->cl);
 }
 //
 //int main() {//Driver code for testing HPack individually. You have to comment the code related to clientInfo structs.
