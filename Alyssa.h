@@ -1,6 +1,7 @@
 // Header file for Alyssa
 #pragma once
 #pragma warning(disable : 4996)
+#define AlyssaHeader
 
 // Includes
 #include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
@@ -16,27 +17,38 @@
 #include <codecvt>
 #include <cstring>
 #include <mutex>
+#include <bitset>
+#include <math.h>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #else
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
 #endif
-
-#define COMPILE_OPENSSL//Define that if you want to compile with SSL support
-
-#ifdef COMPILE_OPENSSL
-#include <openssl/rand.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#define SSL_recv SSL_read // Definitions for making SSL code similar to plain sockets code.
-#define SSL_send SSL_write
-#endif
 using std::string;
+
+#define Compile_WolfSSL //Define that if you want to compile with SSL support
+#ifdef Compile_WolfSSL
+#ifndef _WIN32
+#include <wolfssl/options.h>
+#else
+#define WOLFSSL_USER_SETTINGS
+#define CYASSL_USER_SETTINGS
+#endif
+#include <cyassl/ctaocrypt/settings.h>
+#include <wolfssl/ssl.h>
+#define SSL_recv wolfSSL_read
+#define SSL_send wolfSSL_write
+#endif //Compile_WolfSSL
+
+#ifndef Compile_WolfSSL
+typedef struct WOLFSSL {};
+#endif
 
 // Definitions for non-Windows platforms
 #ifndef _WIN32
@@ -45,13 +57,36 @@ using std::string;
 typedef int SOCKET;
 #define closesocket close
 #define Sleep sleep
+static void sigpipe_handler(int unused)
+{
+}
 #endif
 // Definitions for Windows
 #ifdef _WIN32
 #define strdup _strdup
 #endif
 
-// Definition of functions and classes outside of Main
+// Definition/declaration of functions and classes
+typedef struct clientInfo {//This structure has the information from client request.
+	string RequestType = "", RequestPath = "", version = "", host = "", // "Host" header
+		cookies = "", auth = "", clhostname = "", // IP of client
+		payload = "",//HTTP POST/PUT Payload
+		qStr = "";//URL Encoded Query String
+	bool close = 0;
+	size_t rstart = 0, rend = 0; // Range request integers.
+	SOCKET sock = INVALID_SOCKET;
+	WOLFSSL* ssl = NULL;
+	char* ALPN = NULL; unsigned short ALPNSize = 0;
+};
+typedef struct HPackIndex {
+	int Key = 0;
+	string Value = "";
+};
+typedef struct clientInfoH2 {
+	clientInfo cl;
+	std::vector<HPackIndex> dynIndexHeaders;
+	char StreamIdent[4] = {0};
+};
 class Config
 {
 public:
@@ -67,6 +102,14 @@ private:
 	static string getFolder(std::string path);
 	static string HTML(std::string payload, std::string relpath);
 };
+class HPack {
+public:
+	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size);
+private:
+	static string DecodeHuffman(char* huffstr);
+	static void ExecDynIndex(clientInfoH2* cl, int pos);
+};
+
 static string currentTime() {
 	std::ostringstream x;
 	std::time_t tt = time(0);
@@ -104,6 +147,16 @@ static std::string Substring(const char* str, unsigned int size, unsigned int st
 	}
 	return x;
 }
+static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
+	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
+	if (size > strlen((char*)str) - startPoint) 
+		//throw std::out_of_range("Size argument is larger than input string.");
+	x.reserve(size);
+	for (int var = 0; var < size; var++) {
+		x += str[startPoint + var];
+	}
+	return x;
+}
 static std::string ToLower(string str) {
 	string x = ""; x.reserve(str.size());
 	for (size_t i = 0; i < str.size(); i++) {
@@ -114,12 +167,50 @@ static std::string ToLower(string str) {
 	}
 	return x;
 }
-#ifdef _WIN32
-#endif
-#ifndef COMPILE_OPENSSL
-struct ssl_st { }; //Placeholder SSL struct for easing the use of same code with and without OpenSSL
-typedef struct ssl_st SSL;
-#endif // !COMPILE_OPENSSL
+static size_t btoull(string str, int size) {
+	size_t out = 0;
+	for (int i = str.size(); size >= 0; i--) {
+		if (str[i] == '1') {
+			out += pow(2, size);
+		}
+		size--;
+	}
+	return out;
+}
+static unsigned int Convert24to32(unsigned char* Source) {
+	return (
+		(Source[0] << 24)
+		| (Source[1] << 16)
+		| (Source[2] << 8)
+		) >> 8;
+}
+static size_t Append(unsigned char* Source,unsigned char* Destination,size_t Position,size_t Size=0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
+}
+static size_t Append(char* Source, char* Destination, size_t Position, size_t Size = 0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
+}
+static size_t Append(const char* Source, char* Destination, size_t Position, size_t Size = 0) {
+	if (Size == 0) { Size = strlen((const char*)Source); }
+	size_t i = 0;
+	for (; i < Size; i++) {
+		Destination[Position] = Source[i];
+		Position++;
+	}
+	return i;
+}
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -136,7 +227,8 @@ extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
 extern bool logging;
-#ifdef COMPILE_OPENSSL
+extern bool EnableH2;
+#ifdef Compile_WolfSSL
 extern bool enableSSL;
 extern string SSLcertpath;
 extern string SSLkeypath;
@@ -146,12 +238,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.1.2";
+static string version = "v1.2";
+static char alpn[] = "h2,http/1.1,http/1.0";
+static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 
-#ifdef COMPILE_OPENSSL
-// SSL stuff
-#define	QLEN		  32	/* maximum connection queue length	*/
-#define	BUFSIZE		4096
-#define MAXCLI      100
-
-#endif

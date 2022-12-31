@@ -33,6 +33,9 @@
     <ClCompile Include="base64.cpp">
       <Filter>Source\External</Filter>
     </ClCompile>
+    <ClCompile Include="HPack.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Alyssa.h">
@@ -45,6 +48,9 @@
       <Filter>Header\External</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="AlyssaHuffman.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
