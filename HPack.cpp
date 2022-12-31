@@ -1,9 +1,12 @@
+#ifndef AlyssaHeader
 #include "Alyssa.h"
+#endif
 #include "AlyssaHuffman.h"
 #include <bitset>
 #include <iostream>
 #include <string>
 using std::cout; using std::string;
+//#define HPackTEST
 
 string HPack::DecodeHuffman(char* huffstr) {
 	std::bitset<32> Bits; std::bitset<8> Octet; unsigned char pos = 0, pos2 = 7; unsigned int x = 0, i = 0; string out; out.reserve(255);
@@ -76,7 +79,7 @@ string HPack::DecodeHuffman(char* huffstr) {
 	}
 	return out;
 }
-
+#ifndef HPackTEST
 void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
 	if (pos >= cl->dynIndexHeaders.size()) return;
 	switch (cl->dynIndexHeaders[pos].Key) {
@@ -94,52 +97,96 @@ void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
 }
 
 void Logging(clientInfo* cl);
-
+#endif
 void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 	std::bitset<8> Single; int Size; string Value = "", Key = ""; bool DynAdd = 0;
 	for (size_t i = 0; i < _Size;) {
 		Single = buf[i];
 		if (Single[7]) {
+#ifdef HPackTEST
 			std::cout << "Header is a static indexed header field.\n";
+#endif
 			Single.flip(7); int HStatic = Single.to_ulong();
 			if (HStatic < 62) {
 				switch (HStatic)
 				{
 				case 2:
-					cl2->cl.RequestType = "GET"; cout << ":method: GET\n"; break;
+#ifndef HPackTEST
+					cl2->cl.RequestType = "GET"; 
+#else
+					cout << ":method: GET\n";
+#endif
+					break;
 				case 3:
-					cl2->cl.RequestType = "POST"; cout << ":method: POST\n"; break;
+#ifndef HPackTEST
+					cl2->cl.RequestType = "POST"; 
+#else
+					cout << ":method: POST\n";
+#endif
+					break;
 				case 4:
-					cl2->cl.RequestPath = "/"; cout << ":path: /\n"; break;
+#ifndef HPackTEST
+					cl2->cl.RequestPath = "/"; 
+#else
+					cout << ":path: /\n";
+#endif
+					break;
 				case 5:
-					cl2->cl.RequestPath = "/index.html"; cout << ":path: /index.html\n"; break;
+#ifndef HPackTEST
+					cl2->cl.RequestPath = "/index.html"; 
+#else
+					cout << ":path: /index.html\n";
+#endif
+					break;
 				default:
-					cout << "Key: static table: " << HStatic << "\n"; break;
+#ifdef HPackTEST
+					cout << "Key: static table: " << HStatic << "\n";
+#endif
+					break;
 				}
 			}
+#ifndef HPackTEST
 			else {
 				ExecDynIndex(cl2, HStatic - 62);
 			}
+#endif
 			i++;
 		}
 		else {
+#ifdef HPackTEST
 			std::cout << "Header is a dynamic indexed header field.\n";
-			if (Single[6]) { cout << "Header will be added to dynamic table.\n"; Single.flip(6); DynAdd = 1; }
+#endif
+			if (Single[6]) { 
+#ifdef HPackTEST
+				cout << "Header will be added to dynamic table.\n"; 
+#endif
+				Single.flip(6); DynAdd = 1; 
+			}
 			else {
-				cout << "Header will NOT be added to dynamic table.\n"; Single[4] = 0; DynAdd = 0; if (Single[5]) { 
-					i++; continue; }
-		}
+#ifdef HPackTEST
+				cout << "Header will NOT be added to dynamic table.\n"; 
+#endif
+				Single[4] = 0; DynAdd = 0; if (Single[5]) { i++; continue; }
+			}
 			int HDynamic = Single.to_ulong();
 			if (!HDynamic) {
+#ifdef HPackTEST
 				std::cout << "Header is a new name.\nKey: ";
+#endif
 				i++; Single = buf[i]; bool hufmann = 0;
 				if (Single[7]) { hufmann = 1; Single.flip(7); }
 				Size = Single.to_ulong(); i++;
 				if (hufmann) {
-					Key = DecodeHuffman((char*)Substring(buf, Size, i).c_str()); cout << Key << " (Huffman): ";
+					Key = DecodeHuffman((char*)Substring(buf, Size, i).c_str());
+#ifdef HPackTEST
+					cout << Key << " (Huffman): ";
+#endif
 				}
 				else {
-					Key = Substring(buf, Size, i); cout << Key << ": ";
+					Key = Substring(buf, Size, i);
+#ifdef HPackTEST
+					cout << Key << ": ";
+#endif
 				}
 				i += Size;
 				Single = buf[i];
@@ -147,29 +194,49 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 				Single[7] = 0;
 				Size = Single.to_ulong(); i++;
 				if (hufmann) {
-					Value = DecodeHuffman((char*)Substring(buf, Size, i).c_str()); cout << Value << " (Huffman)\n";
+					Value = DecodeHuffman((char*)Substring(buf, Size, i).c_str());
+#ifdef HPackTEST
+					cout << Value << " (Huffman)\n";
+#endif
 				}
 				else {
-					Value = Substring(buf, Size, i); cout << Value << std::endl;
+					Value = Substring(buf, Size, i);
+#ifdef HPackTEST
+					cout << Value << std::endl;
+#endif
 				}
 				i += Size;
-				if(DynAdd) cl2->dynIndexHeaders.insert(cl2->dynIndexHeaders.begin(), {-1,""});//Just append a empty header, since we won't need it because it probably will be a useless header.
+				if (DynAdd) {
+#ifndef HPackTEST
+					cl2->dynIndexHeaders.insert(cl2->dynIndexHeaders.begin(), { -1,"" });//Just append a empty header, since we won't need it because it probably will be a useless header.
+#endif
+				}
 			}
 			else {
-				cout << "Key: dyn. table: " << HDynamic << "\nValue: "; bool hufmann = 0;
+#ifdef HPackTEST
+				cout << "Key: dyn. table: " << HDynamic << "\nValue: ";
+#endif
+				bool hufmann = 0;
 				i++; Single = buf[i]; i++;
 				if (Single[7]) { hufmann = 1; Single.flip(7); }
 				Size = Single.to_ulong();
 				if (hufmann) {
-					Value = DecodeHuffman((char*)Substring(buf, Size, i).c_str()); cout << Value << " (Huffman)\n";
+					Value = DecodeHuffman((char*)Substring(buf, Size, i).c_str());
+#ifdef HPackTEST
+					cout << Value << " (Huffman)\n";
+#endif
 				}
 				else {
-					Value = Substring(buf, Size, i); cout << Value << std::endl;
+					Value = Substring(buf, Size, i);
+#ifdef HPackTEST
+					cout << Value << std::endl;
+#endif
 				}
 				i += Size;
+#ifndef HPackTEST
 				switch (HDynamic) {
 				case 1:
-					cl2->cl.host = Value; break; 
+					cl2->cl.host = Value; break;
 				case 2:
 					cl2->cl.RequestType = Value; break;
 				case 4:
@@ -185,7 +252,7 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 						//Send(serverHeaders(400, cl), sock, ssl); return;
 					}
 					try {
-						cl2->cl.rend = stoull(Substring(Value, 0, Value.find("-")+1));
+						cl2->cl.rend = stoull(Substring(Value, 0, Value.find("-") + 1));
 						//if (cl2->cl.rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl2->cl.RequestPath))) //{ Send(serverHeaders(416, cl), sock, ssl); return; }
 					}
 					catch (const std::invalid_argument) {
@@ -198,9 +265,11 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 				if (DynAdd) {
 					cl2->dynIndexHeaders.insert(cl2->dynIndexHeaders.begin(), { HDynamic,Value });
 				}
+#endif
 			}
 		}
 	}
+#ifndef HPackTEST
 	Value.clear(); Size = -1;
 	for (size_t i = 0; i < cl2->cl.RequestPath.size(); i++) {
 		if (cl2->cl.RequestPath[i] == '%') {
@@ -216,7 +285,8 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 			cl2->cl.RequestPath = Substring(cl2->cl.RequestPath, i - 1);
 		}
 		// The latter is mitigation for the vulnerability that server can actually access and send any file outside of htroot if it runs with sufficient permissions
-		// Refeer to HTTP/1.x code for detailed info, this code is same as it excluding this code reuses the existing variables instead of creating new ones (Value=temp2, PathDepth=Size) and 400 response is sent outside of this function.
+		// Refeer to HTTP/1.x code (Main.cpp > AlyssaHTTP::ParseHeader()) for detailed info, this code is same as it 
+		// excluding this code reuses the existing variables instead of creating new ones (Value=temp2, PathDepth=Size) and 400 response is sent outside of this function.
 		else if (cl2->cl.RequestPath[i] == '/') { Size++; Value += cl2->cl.RequestPath[i]; }
 		else if (cl2->cl.RequestPath[i] == '.') {
 			Value += cl2->cl.RequestPath[i]; i++;
@@ -238,14 +308,18 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 	}
 	cl2->cl.RequestPath = Value; 
 	if (logging) Logging(&cl2->cl);
+#endif
 }
-//
-//int main() {//Driver code for testing HPack individually. You have to comment the code related to clientInfo structs.
-//	string x, x2 = "";
-//	std::getline(std::cin, x);
-//	for (size_t i = 0; i < x.size(); i+=2) {
-//		if (x[i] == ' ') i++;
-//		x2+=stoi(Substring(x, 2, i),NULL,16);
-//	}
-//	HPack::ParseHPack((unsigned char*)x2.c_str(),NULL,x2.size());
-//}
+
+
+ #ifdef HPackTEST
+int main() {//Driver code for testing HPack individually. You have to comment the code related to clientInfo structs.
+	string x, x2 = "";
+	std::getline(std::cin, x);
+	for (size_t i = 0; i < x.size(); i+=2) {
+		if (x[i] == ' ') i++;
+		x2+=stoi(Substring(x, 2, i),NULL,16);
+	}
+	HPack::ParseHPack((unsigned char*)x2.c_str(),NULL,x2.size());
+}
+#endif

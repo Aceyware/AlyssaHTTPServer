@@ -32,14 +32,14 @@ void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1) {
 	send(sock, payload.c_str(), size, 0);
 #endif // Compile_WolfSSL
 }
-void Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
+int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
 	#ifdef Compile_WolfSSL
 	if (ssl != NULL) {
-		SSL_send(ssl, payload, size);
+		return SSL_send(ssl, payload, size);
 	}
-	else { send(sock, payload, size, 0); }
+	else { return send(sock, payload, size, 0); }
 #else
-	send(sock, payload, size, 0);
+	return send(sock, payload, size, 0);
 #endif // Compile_WolfSSL
 }
 
@@ -520,7 +520,7 @@ public:
 		}
 		Append(&Temp[0], Payload, 11, 3);
 		Temp.clear();
-		Payload[Position] = '\x76'; Payload[Position+1] = '\15'; Position+=2;//"server" header
+		Payload[Position] = '\x76'; Payload[Position+1] = sizeof "Alyssa/" + strlen(&version[0])-1; Position+=2;//"server" header
 		Position += Append((char*)"Alyssa/", Payload, Position);
 		Position += Append((char*)version.c_str(), Payload, Position);
 		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
@@ -630,7 +630,7 @@ public:
 		}
 		Append(&Temp[0], Payload, 11, 3);
 		Temp.clear();
-		Payload[Position] = '\x76'; Payload[Position + 1] = '\15'; Position += 2;//"server" header
+		Payload[Position] = '\x76'; Payload[Position + 1] = sizeof "Alyssa/" + strlen(&version[0]) - 1; Position += 2;//"server" header
 		Position += Append((char*)"Alyssa/", Payload, Position);
 		Position += Append((char*)version.c_str(), Payload, Position);
 		Payload[Position] = 97; Payload[Position + 1] = '\x1d'; Position += 2; //Index:33(date), Size:30
@@ -828,7 +828,7 @@ public:
 			while (true) {
 				if (filesize >= 16384) {
 					file.read(&filebuf[9], 16384); filesize -= 16384;
-					Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, 16393);
+					if (Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, 16393) < 1) return;
 				}
 				else {
 					filebuf[4] = 1;
@@ -836,7 +836,7 @@ public:
 					filebuf[1] = (filesize >> 8) & 0xFF;
 					filebuf[2] = (filesize >> 0) & 0xFF;
 					file.read(&filebuf[9], filesize);
-					Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, filesize+9); 
+					if (Send(&filebuf[0], cl.cl.sock, cl.cl.ssl, filesize + 9) < 1)return;
 					filesize = 0;
 					break;
 				}
@@ -860,7 +860,7 @@ public:
 			Send("\0\0\0\4\0\0\0\0\0", cl.sock, cl.ssl); int Received = 0;
 			while ((Received=SSL_recv(cl.ssl, buf, 16600))>0){
 				unsigned int size = 0, pos = 0, StreamId = 0; std::vector<unsigned char> Frame;
-				while (pos<Received) { //These code below is partly BROKEN.
+				while (pos<Received) {
 					size = Convert24to32(&buf[pos]); 
 					pos += 3; unsigned char Type = buf[pos];
 					pos++;
@@ -871,7 +871,7 @@ public:
 					pos += 4;
 					switch (Type) {//Some frames has additional header data, set the pos and size according to situation.
 					case 1:
-						if (Flags[2]) {
+						if (Flags[5]) {
 							pos += 5; size -= 5;
 						}
 						break;
@@ -890,18 +890,30 @@ public:
 					case 1:	
 						HPack::ParseHPack(&Frame[0],&hcl,size);
 						break;
+					case 6:
+						{
+						char ping[73] = { 0 };
+						ping[2] = 8;
+						ping[3] = 6;
+						ping[4] = 1;
+						memcpy(&ping[5], &hcl.StreamIdent[0], 4);
+						Send(ping, hcl.cl.sock, hcl.cl.ssl, 73);
+						}
+						break;
+					case 7:
+						closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
 					default:
 						break;
 					}
 				}
-				if (hcl.cl.RequestType == "GET") { std::thread t(AlyssaH2::Get, hcl); t.detach(); }
-				else if (hcl.cl.RequestType == "HEAD") { std::thread t(AlyssaH2::Get, hcl); t.detach(); }
+				if (hcl.cl.RequestType == "GET") { AlyssaH2::Get(hcl); }
+				else if (hcl.cl.RequestType == "HEAD") { AlyssaH2::Get(hcl); }
 				/*else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
 				else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);*/
 				else if (hcl.cl.RequestType == "OPTIONS") {
 					serverHeaders(hcl, 204, 0);//We are going to send 204 and add a switch-case for 204 status, this is a lazy way for implementing OPTIONS.
 				}
-				else {
+				else if (hcl.cl.RequestType != "") {
 					serverHeaders(hcl, 501, 0);
 				}
 			}
@@ -1067,7 +1079,7 @@ int main()//This is the main server function that fires up the server and listen
 	wolfSSL_Init();
 	WOLFSSL_CTX* ctx;
 	if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
-		cout << "Error: internal error occured with SSL (wolfSSL_CTX_new error), SSL is disabled."; enableSSL = 0;
+		cout << "Error: internal error occured with SSL (wolfSSL_CTX_new error), SSL is disabled." << std::endl; enableSSL = 0;
 	}
 	if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS){
 		cout << "Error: failed to load SSL certificate file, SSL is disabled." << std::endl; enableSSL = 0;
@@ -1138,8 +1150,8 @@ int main()//This is the main server function that fires up the server and listen
 #endif
 	std::cout << std::endl;
 
-	// Warning message for indicating this builds are work-in-progress builds and not recommended. To be removed when development of h2 is complete.
-	cout << std::endl << "WARNING: This build is from work-in-progress experimental 'http2' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
+	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
+	//cout << std::endl << "WARNING: This build is from work-in-progress experimental '{branch name}' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
 	// Lambda threads for listening ports
 	threadsmaster.emplace_back(new std::thread([&]() {
@@ -1195,8 +1207,10 @@ int main()//This is the main server function that fires up the server and listen
 				if ((ssl = wolfSSL_new(ctx)) == NULL) {
 					std::terminate();
 				}
-				wolfSSL_set_fd(ssl, clientSocket); char alpn[] = "h2,http/1.1,http/1.0";
-				wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+				wolfSSL_set_fd(ssl, clientSocket);
+				if (EnableH2) {
+					wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+				}
 				
 				std::thread t([&client, &clientSocket, ssl]() {
 					clientInfo cl;
@@ -1209,7 +1223,8 @@ int main()//This is the main server function that fires up the server and listen
 							wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
 						}
 					}
-					wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
+					if (EnableH2) wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
+					else cl.ALPN = h1;
 					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
 					if (whitelist == "") {
 						if (!strcmp(cl.ALPN,"h2")) {

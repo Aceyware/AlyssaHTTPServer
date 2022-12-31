@@ -227,6 +227,7 @@ extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
 extern bool logging;
+extern bool EnableH2;
 #ifdef Compile_WolfSSL
 extern bool enableSSL;
 extern string SSLcertpath;
@@ -237,5 +238,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2.0";
+static string version = "v1.2";
+static char alpn[] = "h2,http/1.1,http/1.0";
+static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 

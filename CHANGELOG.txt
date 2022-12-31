@@ -1,8 +1,16 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
-v1.1.2 - 28.11.2022
-• Added the forgotten patches on v1.0.2 to SSL code, now SSL also doesn't crash anymore like the plain TCP counterpart.
+v1.2 - 31.12.2022 (Last release of year)
+• Initial HTTP/2 implementation
+	• Core HTTP/2 and most features that is available on HTTP/1.x is are implemented (excluding CGI support.)
+	• Connections are initiated with prior knowledge (ALPN).
+	• Can be enabled from config and disabled by default.
+	• Still work in progress and experimental. May not work with some client implementations, some features and semantics are incomplete and may have bugs. Usage on production is not recommended until I say so. (Using Alyssa itself on production is not a excellent idea anyway but still.)
+• Migration to wolfSSL from OpenSSL
+	• Reason of that is wolfSSL has good features like ALPN, dynamically selecting TLS version and QUIC. (OpenSSL may have that features too but they are not really usable because of reasons like lack of good documentation.)
+• Mitigated a critical security vulnerability that server can respond with literally any file outside of htroot folder
+Happy New Year.
 
 v1.1.1 - 25.11.2022
 • Fixed bugs related to requests to root of any folder and responses with index.html files on that folders (infinite page loadings, browser pretending as binary files and downloads it and etc.).

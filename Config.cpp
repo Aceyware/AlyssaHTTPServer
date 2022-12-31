@@ -1,8 +1,11 @@
+#ifndef AlyssaHeader
 #include "Alyssa.h"
+#endif
 using namespace std;
 //Redefinition of options
 string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF = 0; unsigned int port = 80; string htroot = ""; bool foldermode = 0; string whitelist = "";
-bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logOnScreen = 0; string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0;
+bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
+string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0;
 #ifdef Compile_WolfSSL
 unsigned int SSLport; string SSLkeypath; string SSLcertpath; bool enableSSL = 0; bool HSTS = 0;
 #endif
@@ -76,6 +79,7 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	CSPConnectSrc = getValue("cspallowedsrc", "");
 	if (CSPConnectSrc != "") CSPEnabled = 1;
 	logging = stoi(getValue("logging", "0"));
+	EnableH2 = stoi(getValue("http2", "0"));
 #ifdef Compile_WolfSSL
 	enableSSL = stoi(getValue("enablessl", "0"));
 	SSLcertpath = getValue("sslcert", "./crt.pem");
