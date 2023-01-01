@@ -878,8 +878,10 @@ public:
 					default:
 						break;
 					}
-					Frame.resize(size);
-					memcpy(&Frame[0], &buf[pos], size);
+					if (size > 0) {
+						Frame.resize(size);
+						memcpy(&Frame[0], &buf[pos], size);
+					}
 					pos += size+1;
 					switch (Type) {
 					case 0:
@@ -889,6 +891,13 @@ public:
 						break;
 					case 1:	
 						HPack::ParseHPack(&Frame[0],&hcl,size);
+						break;
+					case 4:
+						{
+						char options[] = "\0\0\0\4\0\0\0\0\0";
+						memcpy(&options[5], &hcl.StreamIdent[0], 4);
+						Send(options, hcl.cl.sock, hcl.cl.ssl, 9);
+						}
 						break;
 					case 6:
 						{
@@ -1054,6 +1063,96 @@ bool customActions(string path, clientInfo* cl) {
 	return 1;
 }
 
+void ListenConnection(SOCKET listening) {
+	while (true)
+	{
+		// Tell Winsock the socket is for listening 
+		listen(listening, SOMAXCONN);
+
+		// Wait for a connection
+		sockaddr_in client;
+#ifndef _WIN32
+		unsigned int clientSize = sizeof(client);
+#else
+		int clientSize = sizeof(client);
+#endif
+		SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
+		std::thread t([&client, &clientSocket]() {
+			clientInfo cl;
+			char host[NI_MAXHOST] = { 0 };		// Client's remote name
+			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
+			cl.sock = clientSocket;
+			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
+
+			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
+			if (whitelist == "") { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			else if (isWhitelisted(host)) {
+				std::thread t((AlyssaHTTP::clientConnection), cl); t.detach();
+			}
+			else {
+				closesocket(clientSocket);
+			}
+			});
+		t.detach();
+	}
+}
+
+void ListenConnectionSSL(SOCKET listening, WOLFSSL_CTX* ctx) {
+	while (true) {
+		// Tell Winsock the socket is for listening 
+		listen(listening, SOMAXCONN);
+
+		// Wait for a connection
+		sockaddr_in client;
+#ifndef _WIN32
+		unsigned int clientSize = sizeof(client);
+#else
+		int clientSize = sizeof(client);
+#endif
+		SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
+		WOLFSSL* ssl;
+		if ((ssl = wolfSSL_new(ctx)) == NULL) {
+			std::terminate();
+		}
+		wolfSSL_set_fd(ssl, clientSocket);
+		if (EnableH2) {
+			wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+		}
+
+		std::thread t([&client, &clientSocket, ssl]() {
+			clientInfo cl;
+			char host[NI_MAXHOST] = { 0 };		// Client's remote name
+			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
+			cl.sock = clientSocket; cl.ssl = ssl;
+			if (cl.ssl != NULL) { // Do the SSL Handshake
+				if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
+					wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+				}
+			}
+			if (EnableH2) wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
+			else cl.ALPN = h1;
+			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
+			if (whitelist == "") {
+				if (!strcmp(cl.ALPN, "h2")) {
+					std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+				}
+				else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			}
+			else if (isWhitelisted(host)) {
+				if (cl.ALPN == "h2") {
+					std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+				}
+				else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			}
+			else {
+				closesocket(clientSocket); wolfSSL_free(ssl);
+			}
+			}); t.detach();
+	}
+}
+
 int main()//This is the main server function that fires up the server and listens for connections.
 {
 	std::ios_base::sync_with_stdio(false);
@@ -1153,102 +1252,13 @@ int main()//This is the main server function that fires up the server and listen
 	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
 	//cout << std::endl << "WARNING: This build is from work-in-progress experimental '{branch name}' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
-	// Lambda threads for listening ports
-	threadsmaster.emplace_back(new std::thread([&]() {
-		while (true)
-		{
-			// Tell Winsock the socket is for listening 
-			listen(listening, SOMAXCONN);
-
-			// Wait for a connection
-			sockaddr_in client;
-#ifndef _WIN32
-			unsigned int clientSize = sizeof(client);
-#else
-			int clientSize = sizeof(client);
-#endif
-			SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
-			std::thread t([&client,&clientSocket]() {
-				clientInfo cl;
-				char host[NI_MAXHOST] = { 0 };		// Client's remote name
-				char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-				inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
-				cl.sock = clientSocket;
-				if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
-
-				//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
-				if (whitelist == "") { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
-				else if (isWhitelisted(host)) {
-					std::thread t((AlyssaHTTP::clientConnection), cl); t.detach();
-				}
-				else {
-					closesocket(clientSocket);
-				}
-			});
-			t.detach();
-		}
-	}));
+	// Threads for listening ports
+	
 #ifdef Compile_WolfSSL
 	if (enableSSL) {
-		threadsmaster.emplace_back(new std::thread([&]() {
-			while (true) {
-				// Tell Winsock the socket is for listening 
-				listen(HTTPSlistening, SOMAXCONN);
-
-				// Wait for a connection
-				sockaddr_in client;
-#ifndef _WIN32
-				unsigned int clientSize = sizeof(client);
-#else
-				int clientSize = sizeof(client);
-#endif
-				SOCKET clientSocket = accept(HTTPSlistening, (sockaddr*)&client, &clientSize);
-				WOLFSSL* ssl;
-				if ((ssl = wolfSSL_new(ctx)) == NULL) {
-					std::terminate();
-				}
-				wolfSSL_set_fd(ssl, clientSocket);
-				if (EnableH2) {
-					wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
-				}
-				
-				std::thread t([&client, &clientSocket, ssl]() {
-					clientInfo cl;
-					char host[NI_MAXHOST] = { 0 };		// Client's remote name
-					char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-					inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); cl.clhostname = host;
-					cl.sock = clientSocket; cl.ssl = ssl;
-					if (cl.ssl != NULL) { // Do the SSL Handshake
-						if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
-							wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
-						}
-					}
-					if (EnableH2) wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
-					else cl.ALPN = h1;
-					if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;//TCP is big endian so convert it back to little endian.
-					if (whitelist == "") {
-						if (!strcmp(cl.ALPN,"h2")) {
-							std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
-						}
-						else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
-					}
-					else if (isWhitelisted(host)) {
-						if (cl.ALPN == "h2") {
-							std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
-						}
-						else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
-					}
-					else {
-						closesocket(clientSocket); wolfSSL_free(ssl);
-					}
-				}); t.detach();
-			}
-		}));
+		threadsmaster.emplace_back(new std::thread(ListenConnectionSSL, HTTPSlistening, ctx));
 	}
 #endif // Compile_WolfSSL
 
-	while (true)// Dummy while loop for keeping server running
-	{
-		Sleep(1);
-	}
+	ListenConnection(listening);
 }

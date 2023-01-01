@@ -1,6 +1,11 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v1.2.1 - 01.01.2023 (First release of year)
+• Added a semi dummy SETTINGS frame implementation for HTTP/2 which satisfies some clients' SETTINGS frame expection, thus make them work (such as curl).
+• Fixed empty HTTP/2 frames crashing server
+• Made some changes on code related to threading for planned things on future.
+
 v1.2 - 31.12.2022 (Last release of year)
 • Initial HTTP/2 implementation
 	• Core HTTP/2 and most features that is available on HTTP/1.x is are implemented (excluding CGI support.)

@@ -238,7 +238,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2";
+static string version = "v1.2.1";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 
