@@ -1,6 +1,14 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v1.2.2 - 09.01.2023
+• Added support for listening multiple ports with a single process.
+	• Just add ports to config file (ex: "Port 800 801) and then you're ready.
+	• Both SSL and plaintext ports are supported.
+• Added IPv6 support.
+	• Can be enabled from config and disabled by default.
+	• Whitelisting on IPv6 is not supported for now, beware for anomalities when using whitelisting with IPv6 connections.
+
 v1.2.1 - 01.01.2023 (First release of year)
 • Added a semi dummy SETTINGS frame implementation for HTTP/2 which satisfies some clients' SETTINGS frame expection, thus make them work (such as curl).
 • Fixed empty HTTP/2 frames crashing server

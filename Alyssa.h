@@ -215,7 +215,9 @@ static size_t Append(const char* Source, char* Destination, size_t Position, siz
 // Declaration of config variables
 extern bool isCRLF;
 extern char delimiter;
-extern unsigned int port;
+//extern unsigned int port;
+extern std::vector<unsigned int> port;
+extern string portStr;
 extern string htroot;
 extern bool foldermode;
 extern bool forbiddenas404;
@@ -228,17 +230,20 @@ extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
 extern bool logging;
 extern bool EnableH2;
+extern bool EnableIPv6;
 #ifdef Compile_WolfSSL
 extern bool enableSSL;
 extern string SSLcertpath;
 extern string SSLkeypath;
-extern unsigned int SSLport;
+extern std::vector<unsigned int> SSLport;
+extern string SSLportStr;
 extern bool HSTS;
 #endif
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2.1";
+static string version = "v1.2.2";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
-
+static int off = 0;
+static int on = 1;

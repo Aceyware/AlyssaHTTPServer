@@ -1,5 +1,8 @@
 #include "Alyssa.h"
 using std::string; using std::cout;
+#ifndef _WIN32
+using std::terminate;
+#endif
 
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
 	if (std::filesystem::exists(std::filesystem::u8path(filepath))) return 1;
@@ -852,6 +855,7 @@ public:
 			serverHeaders(cl, 404, 0);
 		}
 	}
+#ifdef Compile_WolfSSL
 	static void clientConnectionH2(clientInfo cl) {
 		unsigned char buf[16600] = { 0 }; clientInfoH2 hcl;
 		hcl.cl = cl;
@@ -932,6 +936,7 @@ public:
 			closesocket(cl.sock); wolfSSL_free(cl.ssl); return;
 		}
 	}
+#endif
 private:
 
 };
@@ -1063,6 +1068,7 @@ bool customActions(string path, clientInfo* cl) {
 	return 1;
 }
 
+// Listen for new connections and create a thread for them.
 void ListenConnection(SOCKET listening) {
 	while (true)
 	{
@@ -1098,6 +1104,44 @@ void ListenConnection(SOCKET listening) {
 	}
 }
 
+// Listening code for IPv6
+void ListenConnection6(SOCKET listening) {
+	while (true)
+	{
+		// Tell Winsock the socket is for listening 
+		listen(listening, SOMAXCONN);
+
+		// Wait for a connection
+		sockaddr_in6 client;
+#ifndef _WIN32
+		unsigned int clientSize = sizeof(client);
+#else
+		int clientSize = sizeof(client);
+#endif
+		SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
+		std::thread t([&client, &clientSocket]() {
+			clientInfo cl;
+			char host[NI_MAXHOST] = { 0 };		// Client's remote name
+			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+			inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST); cl.clhostname = host;
+			cl.sock = clientSocket;
+			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin6_port) << std::endl;//TCP is big endian so convert it back to little endian.
+
+			//if (whitelist == "") threads.emplace_back(new std::thread((clientConnection), clientSocket));
+			if (whitelist == "") { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			else if (isWhitelisted(host)) {
+				std::thread t((AlyssaHTTP::clientConnection), cl); t.detach();
+			}
+			else {
+				closesocket(clientSocket);
+			}
+			});
+		t.detach();
+	}
+}
+
+// Listening code for SSL
+#ifdef Compile_WolfSSL
 void ListenConnectionSSL(SOCKET listening, WOLFSSL_CTX* ctx) {
 	while (true) {
 		// Tell Winsock the socket is for listening 
@@ -1153,6 +1197,63 @@ void ListenConnectionSSL(SOCKET listening, WOLFSSL_CTX* ctx) {
 	}
 }
 
+// Listening code for SSL on IPv6
+void ListenConnection6SSL(SOCKET listening, WOLFSSL_CTX* ctx) {
+	while (true) {
+		// Tell Winsock the socket is for listening 
+		listen(listening, SOMAXCONN);
+
+		// Wait for a connection
+		sockaddr_in6 client;
+#ifndef _WIN32
+		unsigned int clientSize = sizeof(client);
+#else
+		int clientSize = sizeof(client);
+#endif
+		SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
+		WOLFSSL* ssl;
+		if ((ssl = wolfSSL_new(ctx)) == NULL) {
+			std::terminate();
+		}
+		wolfSSL_set_fd(ssl, clientSocket);
+		if (EnableH2) {
+			wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+		}
+
+		std::thread t([&client, &clientSocket, ssl]() {
+			clientInfo cl;
+			char host[NI_MAXHOST] = { 0 };		// Client's remote name
+			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+			inet_ntop(AF_INET, &client.sin6_addr, host, NI_MAXHOST); cl.clhostname = host;
+			cl.sock = clientSocket; cl.ssl = ssl;
+			if (cl.ssl != NULL) { // Do the SSL Handshake
+				if (wolfSSL_accept(cl.ssl) != SSL_SUCCESS) {
+					wolfSSL_free(cl.ssl); closesocket(cl.sock); return;
+				}
+			}
+			if (EnableH2) wolfSSL_ALPN_GetProtocol(cl.ssl, &cl.ALPN, &cl.ALPNSize);
+			else cl.ALPN = h1;
+			if (logOnScreen) std::cout << host << " connected on port " << ntohs(client.sin6_port) << std::endl;//TCP is big endian so convert it back to little endian.
+			if (whitelist == "") {
+				if (!strcmp(cl.ALPN, "h2")) {
+					std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+				}
+				else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			}
+			else if (isWhitelisted(host)) {
+				if (cl.ALPN == "h2") {
+					std::thread t((AlyssaH2::clientConnectionH2), cl); t.detach();
+				}
+				else { std::thread t((AlyssaHTTP::clientConnection), cl); t.detach(); }
+			}
+			else {
+				closesocket(clientSocket); wolfSSL_free(ssl);
+			}
+			}); t.detach();
+	}
+}
+#endif
+
 int main()//This is the main server function that fires up the server and listens for connections.
 {
 	std::ios_base::sync_with_stdio(false);
@@ -1170,7 +1271,7 @@ int main()//This is the main server function that fires up the server and listen
 			cout << "Error: cannot open log file, logging is disabled." << std::endl; logging = 0;
 		}
 		else {
-			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() << " - Version: " << version << " -----"<<std::endl;
+			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() << " - Version: " << version << " -----" << std::endl;
 		}
 	}
 
@@ -1180,7 +1281,7 @@ int main()//This is the main server function that fires up the server and listen
 	if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
 		cout << "Error: internal error occured with SSL (wolfSSL_CTX_new error), SSL is disabled." << std::endl; enableSSL = 0;
 	}
-	if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS){
+	if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
 		cout << "Error: failed to load SSL certificate file, SSL is disabled." << std::endl; enableSSL = 0;
 	}
 	if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
@@ -1188,7 +1289,7 @@ int main()//This is the main server function that fires up the server and listen
 	}
 #endif // Compile_WolfSSL
 
-	#ifdef _WIN32
+#ifdef _WIN32
 	// Initialze winsock
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
 	if (WSAStartup(ver, &wsData))
@@ -1196,69 +1297,174 @@ int main()//This is the main server function that fires up the server and listen
 		std::cerr << "Can't Initialize winsock! Quitting" << std::endl;
 		return -1;
 	}
-	#endif
+#endif
 
-	// Create sockets
-	SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
-	if (listening == INVALID_SOCKET) {
-		std::cerr << "Can't create a socket! Quitting" << std::endl;
-		return -1;
-	}
-#ifdef Compile_WolfSSL
-	SOCKET HTTPSlistening = socket(AF_INET, SOCK_STREAM, 0);
-	if (enableSSL) {
-		if (HTTPSlistening == INVALID_SOCKET) {
-			std::cerr << "Can't create a socket! Quitting" << std::endl;
-			return -1;
-		}
-	}
-#endif // Compile_WolfSSL
-
-	// Bind the ip address and port to sockets
-	sockaddr_in hint; 
-	hint.sin_family = AF_INET; 
-	hint.sin_port = htons(port); 
-	inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr); 
-	socklen_t len = sizeof(hint);
-	bind(listening, (sockaddr*)&hint, sizeof(hint));
-	if (getsockname(listening, (struct sockaddr *)&hint, &len) == -1) {//Cannot reserve socket
-		std::cout << "Error binding socket on port " << port << std::endl << "Make sure port is not in use by another program."; return -2;
-	}
-	//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-	else if(port!=ntohs(hint.sin_port)) {std::cout << "Error binding socket on port " << port << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;}
-
-#ifdef Compile_WolfSSL
-	sockaddr_in HTTPShint;
-	if (enableSSL) {
-		HTTPShint.sin_family = AF_INET;
-		HTTPShint.sin_port = htons(SSLport);
-		inet_pton(AF_INET, "0.0.0.0", &HTTPShint.sin_addr);
-		socklen_t Slen = sizeof(HTTPShint);
-		bind(HTTPSlistening, (sockaddr*)&HTTPShint, sizeof(HTTPShint));
-		if (getsockname(HTTPSlistening, (struct sockaddr*)&HTTPShint, &Slen) == -1) {
-			std::cout << "Error binding socket on port " << SSLport << std::endl << "Make sure port is not in use by another program."; return -2;
-		}
-		else if (SSLport != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
-	}
-#endif // Compile_WolfSSL
+	// Threads for listening ports
 
 	std::vector<std::unique_ptr<std::thread>> threadsmaster;
-	std::cout << "Alyssa HTTP Server " << version << std::endl << "Listening on HTTP: " << port;
+		for (size_t i = 1; i < port.size(); i++) {
+			// Create sockets
+			SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
+			if (listening == INVALID_SOCKET) {
+				std::cerr << "Can't create a socket! Quitting" << std::endl;
+				return -1;
+			}
+			setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(int));
+#ifndef _WIN32
+			setsockopt(listening, SOL_SOCKET, SO_REUSEPORT, (const char*)&on, sizeof(int));
+#endif
+			sockaddr_in hint;
+			hint.sin_family = AF_INET;
+			hint.sin_port = htons(port[i]);
+			inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+			socklen_t len = sizeof(hint);
+			if (bind(listening, (sockaddr*)&hint, sizeof(hint)) < 0)
+			{
+				perror("bind");
+			}
+			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+				std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; return -2;
+			}
+			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+			else if (port[i] != ntohs(hint.sin_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+			threadsmaster.emplace_back(new std::thread(ListenConnection, listening));
+		}
+
 #ifdef Compile_WolfSSL
-	if(enableSSL)std::cout << " HTTPS: " << SSLport;
+		sockaddr_in HTTPShint;
+		if (enableSSL) {
+			for (size_t i = 0; i < SSLport.size(); i++) {
+				SOCKET HTTPSlistening;
+				HTTPSlistening = socket(AF_INET, SOCK_STREAM, 0);
+				if (HTTPSlistening == INVALID_SOCKET) {
+					std::cerr << "Can't create a socket! Quitting" << std::endl;
+					return -1;
+				}
+				setsockopt(HTTPSlistening, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(int));
+#ifndef _WIN32
+				setsockopt(HTTPSlistening, SOL_SOCKET, SO_REUSEPORT, (const char*)&on, sizeof(int));
+#endif
+				HTTPShint.sin_family = AF_INET;
+				HTTPShint.sin_port = htons(SSLport[i]);
+				inet_pton(AF_INET, "0.0.0.0", &HTTPShint.sin_addr);
+				socklen_t Slen = sizeof(HTTPShint);
+				if (bind(HTTPSlistening, (sockaddr*)&HTTPShint, sizeof(HTTPShint)) < 0)
+				{
+					perror("bind");
+				}
+				if (getsockname(HTTPSlistening, (struct sockaddr*)&HTTPShint, &Slen) == -1) {
+					std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program."; return -2;
+				}
+				else if (SSLport[i] != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+				threadsmaster.emplace_back(new std::thread(ListenConnectionSSL, HTTPSlistening, ctx));
+			}
+		}
+#endif // Compile_WolfSSL
+
+	// Create and listen IPv6 sockets if enabled
+	if (EnableIPv6) {
+		for (size_t i = 0; i < port.size(); i++) {
+			// Create sockets
+			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
+			if (listening == INVALID_SOCKET) {
+				std::cerr << "Can't create a socket! Quitting" << std::endl;
+				return -1;
+			}
+			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+			setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(int));
+#ifndef _WIN32
+			setsockopt(listening, SOL_SOCKET, SO_REUSEPORT, (const char*)&on, sizeof(int));
+#endif
+			sockaddr_in6 hint;
+			hint.sin6_family = AF_INET6;
+			hint.sin6_port = htons(port[i]);
+			hint.sin6_flowinfo = 0;
+			hint.sin6_scope_id = 0;
+			inet_pton(AF_INET6, "::", &hint.sin6_addr);
+			socklen_t len = sizeof(hint);
+			if (bind(listening, (sockaddr*)&hint, sizeof(hint)) < 0)
+			{
+				perror("bind");
+			}
+			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+				std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; return -2;
+			}
+			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+			else if (port[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+			threadsmaster.emplace_back(new std::thread(ListenConnection6, listening));
+		}
+
+#ifdef Compile_WolfSSL
+		if (enableSSL) {
+			for (size_t i = 0; i < SSLport.size(); i++) {
+				// Create sockets
+				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
+				if (listening == INVALID_SOCKET) {
+					std::cerr << "Can't create a socket! Quitting" << std::endl;
+					return -1;
+				}
+				setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+				setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(int));
+#ifndef _WIN32
+				setsockopt(listening, SOL_SOCKET, SO_REUSEPORT, (const char*)&on, sizeof(int));
+#endif
+				sockaddr_in6 hint;
+				hint.sin6_family = AF_INET6;
+				hint.sin6_port = htons(SSLport[i]);
+				hint.sin6_flowinfo = 0;
+				hint.sin6_scope_id = 0;
+				inet_pton(AF_INET6, "::", &hint.sin6_addr);
+				socklen_t len = sizeof(hint);
+				if (bind(listening, (sockaddr*)&hint, sizeof(hint)) < 0)
+				{
+					perror("bind");
+				}
+				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+					std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program."; return -2;
+				}
+				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+				else if (SSLport[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+				threadsmaster.emplace_back(new std::thread(ListenConnection6SSL, listening, ctx));
+			}
+		}
+#endif // Compile_WolfSSL
+	}
+
+	std::cout << "Alyssa HTTP Server " << version << std::endl << "Listening on HTTP: ";
+	for (size_t i = 0; i < port.size() - 1; i++) std::cout << port[i] << ", ";
+	std::cout << port[port.size() - 1];
+#ifdef Compile_WolfSSL
+	if (enableSSL) {
+		std::cout << std::endl << "             HTTPS: ";
+		for (size_t i = 0; i < SSLport.size() - 1; i++) std::cout << SSLport[i] << ", ";
+		std::cout << SSLport[SSLport.size() - 1];
+	}
 #endif
 	std::cout << std::endl;
 
 	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
 	//cout << std::endl << "WARNING: This build is from work-in-progress experimental '{branch name}' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
-	// Threads for listening ports
-	
-#ifdef Compile_WolfSSL
-	if (enableSSL) {
-		threadsmaster.emplace_back(new std::thread(ListenConnectionSSL, HTTPSlistening, ctx));
+	// Listen first port set on config on main thread of server.
+	SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
+	if (listening == INVALID_SOCKET) {
+		std::cerr << "Can't create a socket! Quitting" << std::endl;
+		return -1;
 	}
-#endif // Compile_WolfSSL
-
+	setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(int));
+#ifndef _WIN32
+	setsockopt(listening, SOL_SOCKET, SO_REUSEPORT, (const char*)&on, sizeof(int));
+#endif
+	sockaddr_in hint;
+	hint.sin_family = AF_INET;
+	hint.sin_port = htons(port[0]);
+	inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+	socklen_t len = sizeof(hint);
+	bind(listening, (sockaddr*)&hint, sizeof(hint));
+	if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+		std::cout << "Error binding socket on port " << port[0] << std::endl << "Make sure port is not in use by another program."; return -2;
+	}
+	//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+	else if (port[0] != ntohs(hint.sin_port)) { std::cout << "Error binding socket on port " << port[0] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 	ListenConnection(listening);
 }
