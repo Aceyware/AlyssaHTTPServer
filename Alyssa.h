@@ -67,7 +67,7 @@ static void sigpipe_handler(int unused)
 #endif
 
 // Definition/declaration of functions and classes
-typedef struct clientInfo {//This structure has the information from client request.
+struct clientInfo {//This structure has the information from client request.
 	string RequestType = "", RequestPath = "", version = "", host = "", // "Host" header
 		cookies = "", auth = "", clhostname = "", // IP of client
 		payload = "",//HTTP POST/PUT Payload
@@ -78,11 +78,11 @@ typedef struct clientInfo {//This structure has the information from client requ
 	WOLFSSL* ssl = NULL;
 	char* ALPN = NULL; unsigned short ALPNSize = 0;
 };
-typedef struct HPackIndex {
+struct HPackIndex {
 	int Key = 0;
 	string Value = "";
 };
-typedef struct clientInfoH2 {
+struct clientInfoH2 {
 	clientInfo cl;
 	std::vector<HPackIndex> dynIndexHeaders;
 	char StreamIdent[4] = {0};
@@ -132,29 +132,23 @@ static std::string ws2s(const std::wstring& wstr) {
 static std::string Substring(std::string str, unsigned int size, unsigned int startPoint=0){
 	string x=""; if(size==0) size=str.size()-startPoint;
 	if (size > str.size() - startPoint) throw std::out_of_range("Size argument is larger than input string.");
-	x.reserve(size);
-	for (int var = 0; var < size; var++) {
-		x+=str[startPoint+var];
-	}
+	x.resize(size);
+	memcpy(&x[0], &str[startPoint], size);
 	return x;
 }
 static std::string Substring(const char* str, unsigned int size, unsigned int startPoint=0){
 	string x=""; if(size==0) size=strlen(str)-startPoint;
 	if (size > strlen(str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
-	x.reserve(size);
-	for (int var = 0; var < size; var++) {
-		x+=str[startPoint+var];
-	}
+	x.resize(size);
+	memcpy(&x[0], &str[startPoint], size);
 	return x;
 }
 static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
 	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
-	if (size > strlen((char*)str) - startPoint) 
+	//if (size > strlen((char*)str) - startPoint) 
 		//throw std::out_of_range("Size argument is larger than input string.");
-	x.reserve(size);
-	for (int var = 0; var < size; var++) {
-		x += str[startPoint + var];
-	}
+	x.resize(size);
+	memcpy(&x[0], &str[startPoint], size);
 	return x;
 }
 static std::string ToLower(string str) {
@@ -242,7 +236,7 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2.2";
+static string version = "v1.2.2-r1";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;

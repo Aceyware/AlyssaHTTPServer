@@ -69,12 +69,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "PEPSIMANTR"
             VALUE "FileDescription", "Alyssa HTTP Server Project"
-            VALUE "FileVersion", "v1.2.2"
+            VALUE "FileVersion", "v1.2.2-r1"
             VALUE "InternalName", "AlyssaHTTP.exe"
             VALUE "LegalCopyright", "Copyright (C) 2023 PEPSIMANTR"
             VALUE "OriginalFilename", "AlyssaHTTP.exe"
             VALUE "ProductName", "Alyssa HTTP Server Project"
-            VALUE "ProductVersion", "v1.2.2"
+            VALUE "ProductVersion", "v1.2.2-r1"
         END
     END
     BLOCK "VarFileInfo"

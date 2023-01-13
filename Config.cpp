@@ -95,9 +95,11 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	EnableIPv6 = stoi(getValue("ipv6", "0"));
 #ifdef Compile_WolfSSL
 	enableSSL = stoi(getValue("enablessl", "0"));
-	SSLcertpath = getValue("sslcert", "./crt.pem");
-	SSLkeypath = getValue("sslkey", "./key.key");
-	SSLportStr = getValue("sslport", "443")+'\0';
+	if (enableSSL) {
+		SSLcertpath = getValue("sslcert", "./crt.pem");
+		SSLkeypath = getValue("sslkey", "./key.key");
+		SSLportStr = getValue("sslport", "443") + '\0';
+	}
 	temp.clear();
 	for (size_t i = 0; i < SSLportStr.size(); i++) {
 		if (SSLportStr[i] >= 48) temp += SSLportStr[i];
