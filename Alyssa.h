@@ -19,6 +19,9 @@
 #include <mutex>
 #include <bitset>
 #include <math.h>
+#include <stdio.h>
+#include <poll.h>
+#include <iomanip>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -26,6 +29,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros 
 #else
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
@@ -67,25 +71,32 @@ static void sigpipe_handler(int unused)
 #endif
 
 // Definition/declaration of functions and classes
+struct _Surrogate {//Surrogator struct that holds essentials for connection which is filled when there is a new connection.
+	SOCKET sock = INVALID_SOCKET;
+	string clhostname = ""; // IP of client
+	WOLFSSL* ssl = NULL; char* ALPN = NULL; unsigned short ALPNSize = 0;
+};
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", version = "", host = "", // "Host" header
-		cookies = "", auth = "", clhostname = "", // IP of client
+	string RequestType = "", RequestPath = "", version = "", 
+		host = "", // "Host" header
+		cookies = "", auth = "", 
 		payload = "",//HTTP POST/PUT Payload
 		qStr = "";//URL Encoded Query String
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
-	SOCKET sock = INVALID_SOCKET;
-	WOLFSSL* ssl = NULL;
-	char* ALPN = NULL; unsigned short ALPNSize = 0;
+	_Surrogate* Sr;
+	void clear() {
+		RequestType = "", RequestPath = "", version = "", host = "",
+			cookies = "", auth = "", payload = "", qStr = "", close = 0,
+			rstart = 0, rend = 0;
+	}
 };
 struct HPackIndex {
 	int Key = 0;
 	string Value = "";
 };
 struct clientInfoH2 {
-	clientInfo cl;
 	std::vector<HPackIndex> dynIndexHeaders;
-	char StreamIdent[4] = {0};
 };
 class Config
 {
@@ -104,12 +115,30 @@ private:
 };
 class HPack {
 public:
-	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size);
+	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, clientInfo* cl, int _Size);
 private:
 	static string DecodeHuffman(char* huffstr);
-	static void ExecDynIndex(clientInfoH2* cl, int pos);
+	static void ExecDynIndex(clientInfoH2* clh2, clientInfo* cl, int pos);
 };
+class AlyssaH2{
+	public:
+		static void serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, char* StreamIdent, string _StrArg);
+		//static void goAway();
+		static bool customActions(string path, clientInfoH2* clh2, clientInfo* cl, char* StreamIdent);
+		static void Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]);
+		static void clientConnectionH2(_Surrogate sr);
+	private:
+};
+class AlyssaHTTP{
+	public:
+		static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0);
+		static void parseHeader(clientInfo* cl, char* buf, int sz);
+		static void Get(clientInfo* cl, bool isHEAD = 0);
+		static void Post(clientInfo* cl);
+		static void clientConnection(_Surrogate sr);
+	private:
 
+};
 static string currentTime() {
 	std::ostringstream x;
 	std::time_t tt = time(0);
@@ -129,26 +158,10 @@ static std::string ws2s(const std::wstring& wstr) {
 
 	return converterX.to_bytes(wstr);
 }
-static std::string Substring(std::string str, unsigned int size, unsigned int startPoint=0){
-	string x=""; if(size==0) size=str.size()-startPoint;
-	if (size > str.size() - startPoint) throw std::out_of_range("Size argument is larger than input string.");
+static std::string Substring(void* str, unsigned int size, unsigned int startPoint=0){
+	string x; if (size == 0) { size = strlen(&static_cast<char*>(str)[startPoint]); }
 	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
-	return x;
-}
-static std::string Substring(const char* str, unsigned int size, unsigned int startPoint=0){
-	string x=""; if(size==0) size=strlen(str)-startPoint;
-	if (size > strlen(str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
-	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
-	return x;
-}
-static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
-	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
-	//if (size > strlen((char*)str) - startPoint) 
-		//throw std::out_of_range("Size argument is larger than input string.");
-	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
+	memcpy(&x[0], &static_cast<char*>(str)[startPoint], size);
 	return x;
 }
 static std::string ToLower(string str) {
@@ -178,32 +191,10 @@ static unsigned int Convert24to32(unsigned char* Source) {
 		| (Source[2] << 8)
 		) >> 8;
 }
-static size_t Append(unsigned char* Source,unsigned char* Destination,size_t Position,size_t Size=0) {
+static size_t Append(void* Source,void* Destination,size_t Position,size_t Size=0) {
 	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
-}
-static size_t Append(char* Source, char* Destination, size_t Position, size_t Size = 0) {
-	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
-}
-static size_t Append(const char* Source, char* Destination, size_t Position, size_t Size = 0) {
-	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
+	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
+	return Size+Position;
 }
 
 // Declaration of config variables
@@ -219,6 +210,7 @@ extern string whitelist;
 extern bool errorpages;
 extern string respath;
 extern string htrespath;
+extern string _htrespath;
 extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
@@ -236,8 +228,50 @@ extern bool HSTS;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2.2-r1";
+static string version = "v2.0";
 static char alpn[] = "h2,http/1.1,http/1.0";
-static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
+static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
 static int on = 1;
+static string GPLDisclaimer=
+	"Copyright (C) 2023 PEPSIMANTR\n"
+    "This program is free software: you can redistribute it and/or modify "
+    "it under the terms of the GNU General Public License as published by "
+    "the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\n"
+
+	"This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of "
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\n"
+
+    "You should have received a copy of the GNU General Public License"
+    "along with this program.  \nIf not, see <http://www.gnu.org/licenses/>.\n";
+static string HelpString=
+		"Alyssa HTTP Server command-line arguments help:\n\n"
+
+		"-version       : Displays the version and license info\n"
+		"-help          : Displays this help message\n"
+		"-port [int]    : Overrides the port on config, comma-separated list for multiple ports\n"
+		"-htroot [str]  : Overrides the htroot path on config\n"
+#ifdef Compile_WolfSSL
+		"-nossl         : Disables the SSL if enabled on config\n"
+		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
+#endif
+		"\n"
+		"For usage help please refer to https://pepsimantr.github.io/Alyssa/help\n";
+
+// Definition of functions again
+static string errorPage(int statusCode) {
+	std::ifstream file; string page = "";
+	file.open(respath + "/"+std::to_string(statusCode)+".html");
+	if (file.is_open()) {
+		string filebuf(8192, '\0');
+		while (true) {
+			file.read(&filebuf[0], 8192);
+			page += filebuf;
+			if (file.eof()) {
+				break;
+			}
+		}
+		file.close();
+	}
+	return page;
+}

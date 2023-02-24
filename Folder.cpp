@@ -1,4 +1,6 @@
+#ifndef AlyssaHeader
 #include "Alyssa.h"
+#endif
 #include <sstream>
 #ifdef WIN32
 #pragma warning(disable : 4996)
@@ -34,8 +36,7 @@ std::string Folder::getFolder(std::string path) {
 }
 
 std::string Folder::HTML(std::string payload, std::string relpath) {
-	relpath = relpath.substr(htroot.size()); 
-	if (relpath == "") relpath = "/";
+	relpath = Substring(&relpath[0], 0, 1);
 	string folders = ""; string files = ""; //Whole payload will be divided to 2 separate string for listing folders first.
 	string htm = "<!DOCTYPE html><head><meta charset=\"utf-8\"><style>.t {tab-size: 48;} pre {display: inline;} </style><title>Index of '" + relpath + "'</title></head><body><h1>Index of '" + relpath + "'</h1><hr>";
 	if (relpath != "/") htm += "<img src=\"" + htrespath + "/folder.png\" height=12 width=15> <a href=\"/..\">/..</a><br>"; //Unless root is requested, add the parent folder entry.
@@ -50,7 +51,7 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 					switch (x) {
 					case 0:
 						name = temp2; x++;
-						if (name.size()>8 && (temp2=Substring(name, 0, name.size() - 8)) == "htaccess" || temp2=="htpasswd") {//If file is a ht* file, break the loop and set the name variable to blank.
+						if (name.size()>8 && (temp2=Substring(&name[0], 0, name.size() - 6)) == "alyssa") {//If file is a ht* file, break the loop and set the name variable to blank.
 							name = ""; temp2 = "";
 							break;
 						}
@@ -63,7 +64,7 @@ std::string Folder::HTML(std::string payload, std::string relpath) {
 					}
 				}
 			}
-			if (name == "") { temp = ""; continue; }//If name variable is blank, that means we hit an ht* file, go to beginning of loop and get into next file.
+			if (name == "") { temp = ""; continue; }//If name variable is blank, that means we hit an .alyssa file, go to beginning of loop and get into next file.
 			filesize = stoull(temp2); x = 0; temp2 = "";//For loop will end and we'll have a leftover value, or latest value, so we'll put it to latest in order
 			//We'll use the values we get for making the HTML. Folders are first so there's a if statement.
 			if (isFolder) {

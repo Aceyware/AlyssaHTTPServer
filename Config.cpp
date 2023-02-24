@@ -3,8 +3,8 @@
 #endif
 using namespace std;
 //Redefinition of options
-string configcache[20] = {}; string configcache_value[20] = {}; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = ""; bool foldermode = 0;
-string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
+std::vector<string> configcache,configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = ""; bool foldermode = 0;
+string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
 string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0;
 #ifdef Compile_WolfSSL
 std::vector<unsigned int> SSLport; string SSLportStr; string SSLkeypath; string SSLcertpath; bool enableSSL = 0; bool HSTS = 0;
@@ -13,7 +13,7 @@ void Config::Configcache() {//This function reads the config file and caches all
 	ifstream conf; conf.open("Alyssa.cfg"); conf.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	if (!conf) return;
 	string buf(std::filesystem::file_size("Alyssa.cfg"), '\0');
-	conf.read(&buf[0], std::filesystem::file_size("Alyssa.cfg")); buf += "\1"; string temp = ""; short x = 0;
+	conf.read(&buf[0], std::filesystem::file_size("Alyssa.cfg")); buf += "\1"; string temp = "";
 	for (size_t i = 0; i < buf.size(); i++) {
 		if (buf[i] < 32) {
 			if (temp[0] == '#') {}//Comment line, discard
@@ -21,7 +21,8 @@ void Config::Configcache() {//This function reads the config file and caches all
 			else {
 				for (size_t i = 0; i < temp.size(); i++) {
 					if (temp[i]==' ') {
-						configcache[x] = ToLower(Substring(temp, i)); configcache_value[x] = Substring(temp, 0, i + 1); x++;
+						configcache.emplace_back(ToLower(Substring(&temp[0], i))); 
+						configcache_value.emplace_back(Substring(&temp[0], 0, i + 1));
 					}
 				}
 			}
@@ -33,10 +34,8 @@ void Config::Configcache() {//This function reads the config file and caches all
 }
 
 string Config::getValue(std::string key, std::string value) {//Interface function for getting a value from config. If value isn't found then value variable on this function will be returned as default value.
-		for (size_t i = 0; i < 20; i++)
-		{
-			if (configcache[i] == key)
-			{
+		for (size_t i = 0; i < configcache.size(); i++) {
+			if (configcache[i] == key) {
 				return configcache_value[i];
 			}
 		}
@@ -45,7 +44,7 @@ string Config::getValue(std::string key, std::string value) {//Interface functio
 
 void Config::initialRead() {//Initial read of the config file and setup of setting variables at the startup of the program.
 	Configcache();
-	portStr = getValue("port", "80")+'\0';
+	portStr = getValue("port", "80")+'\1';
 	string temp = "";
 	for (size_t i = 0; i < portStr.size(); i++) {
 		if (portStr[i] >= 48) temp += portStr[i];
@@ -62,26 +61,10 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 			temp.clear();
 		}
 	}
-	/*port = stoi(getValue("port", "80"));
-		if (port>65535) { cout << "Config: Error: invalid port specified on config."; exit(-3); }*/
-	htroot = getValue("htrootpath", "./htroot");
-	try {
-		for (const auto& asd : filesystem::directory_iterator(filesystem::u8path(htroot))) {
-			break;
-		}
-	}
-	catch (std::filesystem::filesystem_error) {
-		cout << "Config: Error: invalid htroot path specified on config or path is inaccessible. Trying to create the folder.." << endl;
-		try {
-			filesystem::create_directory(filesystem::u8path(htroot));
-		}
-		catch (const std::filesystem::filesystem_error) {
-			cout << "Config: Error: failed to create the folder." << endl; exit(-3);
-		}
-	}
 	htroot = getValue("htrootpath", "./htroot");
 	respath = getValue("respath", "./htroot/res");
 	htrespath = getValue("htrespath", "/res");
+	_htrespath = '.' + htrespath;
 	foldermode = stoi(getValue("foldermode", "0"));
 	errorpages = stoi(getValue("errorpages", "0"));
 	whitelist = getValue("whitelist", "");
