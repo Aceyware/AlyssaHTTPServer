@@ -174,6 +174,13 @@ static std::string ToLower(string str) {
 	}
 	return x;
 }
+static void ToLower(char* c, int l){
+	for (int var = 0; var < l; ++var) {
+		if (c[var] < 91 && c[var] > 64) {
+					c[var] += 32;
+		}
+	}
+}
 static size_t btoull(string str, int size) {
 	size_t out = 0;
 	for (int i = str.size(); size >= 0; i--) {
@@ -224,6 +231,8 @@ extern string SSLkeypath;
 extern std::vector<unsigned int> SSLport;
 extern string SSLportStr;
 extern bool HSTS;
+extern bool CAEnabled;
+extern bool CARecursive;
 #endif
 
 // Definition of constant values

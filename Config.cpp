@@ -5,7 +5,7 @@ using namespace std;
 //Redefinition of options
 std::vector<string> configcache,configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = ""; bool foldermode = 0;
 string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
-string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0;
+string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled=0; bool CARecursive=0;
 #ifdef Compile_WolfSSL
 std::vector<unsigned int> SSLport; string SSLportStr; string SSLkeypath; string SSLcertpath; bool enableSSL = 0; bool HSTS = 0;
 #endif
@@ -102,6 +102,15 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	HSTS = stoi(getValue("hsts", "0"));
 	if (HSTS && !enableSSL) { cout << "Config: Error: HSTS is set on config but SSL is not enabled." << endl; HSTS = 0; }
 	//if (HSTS && SSLport != 443) { cout << "Config: Error: HSTS is set but SSL port is not 443." << endl; HSTS = 0; }
+	switch (stoi(getValue("customactions", "0"))) {
+		case 1:
+			CAEnabled=1;
+			break;
+		case 2:
+			CAEnabled=1; CARecursive=1;
+		default:
+			break;
+	}
 #endif
 	return;
 }

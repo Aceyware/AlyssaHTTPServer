@@ -547,10 +547,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 
 	//fd_set _SocketArray; FD_ZERO(&_SocketArray);
 	std::vector<pollfd> _SocketArray; _SocketArray.resize(port.size());
-#ifdef Compile_WolfSSL
-	//fd_set _SocketArrayS; FD_ZERO(&_SocketArrayS);
-	std::vector<pollfd> _SocketArrayS; _SocketArray.resize(SSLport.size());
-#endif // Compile_WolfSSL
+	std::vector<char> _SockType;
 
 	for (size_t i = 0; i < port.size(); i++) {
 		// Create sockets
@@ -570,16 +567,20 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		}
 		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 		else if (port[i] != ntohs(hint.sin_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
-		listen(listening, SOMAXCONN); _SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+		listen(listening, SOMAXCONN);
+		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+		_SocketArray.emplace_back();
+		_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+		_SockType.emplace_back(0);
 	}
 
 #ifdef Compile_WolfSSL
 	sockaddr_in HTTPShint;
 	if (enableSSL) {
 		for (size_t i = 0; i < SSLport.size(); i++) {
-			SOCKET HTTPSlistening;
-			HTTPSlistening = socket(AF_INET, SOCK_STREAM, 0);
-			if (HTTPSlistening == INVALID_SOCKET) {
+			SOCKET listening;
+			listening = socket(AF_INET, SOCK_STREAM, 0);
+			if (listening == INVALID_SOCKET) {
 				std::cerr << "Can't create a socket! Quitting" << std::endl;
 				return -1;
 			}
@@ -587,20 +588,20 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			HTTPShint.sin_port = htons(SSLport[i]);
 			inet_pton(AF_INET, "0.0.0.0", &HTTPShint.sin_addr);
 			socklen_t Slen = sizeof(HTTPShint);
-			bind(HTTPSlistening, (sockaddr*)&HTTPShint, sizeof(HTTPShint));
-			if (getsockname(HTTPSlistening, (struct sockaddr*)&HTTPShint, &Slen) == -1) {
+			bind(listening, (sockaddr*)&HTTPShint, sizeof(HTTPShint));
+			if (getsockname(listening, (struct sockaddr*)&HTTPShint, &Slen) == -1) {
 				std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program."; exit(-2);
 			}
 			else if (SSLport[i] != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
-			listen(HTTPSlistening, SOMAXCONN); _SocketArrayS[i].fd=HTTPSlistening;
+			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
+			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+			_SockType.emplace_back(0);
 		}
 	}
 #endif // Compile_WolfSSL
 
 	// Create and listen IPv6 sockets if enabled
 	if (EnableIPv6) {
-		int oldsize=_SocketArray.size();
-		_SocketArray.resize(_SocketArray.size()*2);
 		for (size_t i = 0; i < port.size(); i++) {
 			// Create sockets
 			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
@@ -622,13 +623,13 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			}
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 			else if (port[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
-			listen(listening, SOMAXCONN); _SocketArray[oldsize+i].fd=listening;
+			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
+			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+			_SockType.emplace_back(0);
 		}
 
 #ifdef Compile_WolfSSL
 		if (enableSSL) {
-			int oldsize=_SocketArrayS.size();
-			_SocketArrayS.resize(_SocketArrayS.size()*2);
 			for (size_t i = 0; i < SSLport.size(); i++) {
 				// Create sockets
 				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
@@ -652,7 +653,9 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 				else if (SSLport[i] != ntohs(hint.sin6_port)) {
 					std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; exit(-2);
 				}
-				listen(listening, SOMAXCONN); _SocketArrayS[oldsize+i].fd=listening;
+				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
+				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+				_SockType.emplace_back(0);
 			}
 		}
 #endif // Compile_WolfSSL
@@ -671,56 +674,9 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 	}
 #endif
 	std::cout << std::endl;
-#ifdef Compile_WolfSSL
-	if (enableSSL) {
-		std::thread([&_SocketArrayS,&ctx]() {
-			sockaddr_in6 client;
-#ifndef _WIN32
-			unsigned int clientSize = sizeof(client);
-#else
-			int clientSize = sizeof(client);
-#endif
-			int ActiveSocket = poll(&_SocketArrayS[0],_SocketArrayS.size(), 0);
-			for (int i = 0; i < _SocketArrayS.size(); i++) {
-				if (_SocketArrayS[i].revents == POLLIN) {
-					char host[NI_MAXHOST] = { 0 };		// Client's remote name
-					char service[NI_MAXSERV] = { 0 };// Service (i.e. port) the client is connect on
-					inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
-					_Surrogate sr;
-					sr.clhostname = host;
-					sr.sock = _SocketArrayS[i].fd;
-					WOLFSSL *ssl;
-					if ((ssl = wolfSSL_new(ctx)) == NULL) {
-						std::terminate();
-					}
-					wolfSSL_set_fd(ssl,sr.sock);
-					if (EnableH2) {
-						wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
-					}
-					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
-						wolfSSL_free(ssl);
-						closesocket(sr.sock);
-					}
-					else {
-						if (EnableH2)
-							wolfSSL_ALPN_GetProtocol(sr.ssl, &sr.ALPN,
-									&sr.ALPNSize);
-						else
-							sr.ALPN = h1;
-						sr.ssl = ssl;
 
-						if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaH2::clientConnectionH2, sr); t.detach(); }
-						else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
-					}
-					ActiveSocket--; if(!ActiveSocket) break;
-				}
-			}
-
-		}).detach();
-	}
-#endif
 	while (true) {
-		int ActiveSocket = poll(&_SocketArray[0],port.size(), -1);
+		int ActiveSocket = poll(&_SocketArray[0],_SocketArray.size(), -1);
 		sockaddr_in6 client;
 #ifndef _WIN32
 		unsigned int clientSize = sizeof(client);
@@ -728,14 +684,53 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		int clientSize = sizeof(client);
 #endif
 		for (int i = 0; i < port.size(); i++) {
-			char host[NI_MAXHOST] = { 0 };		// Client's remote name
-			char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
-			inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
-			_Surrogate sr;
-			sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd,(sockaddr*)&client,&clientSize);
-			std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
-			ActiveSocket--; if(!ActiveSocket) break;
+			if (_SocketArray[i].revents == POLLIN) {
+				switch (_SockType[i]) {
+					case 0:
+						char host[NI_MAXHOST] = { 0 };		// Client's remote name
+						char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
+						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
+						_Surrogate sr;
+						sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd,(sockaddr*)&client,&clientSize);
+						std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
+						break;
+					case 1:
+						char host[NI_MAXHOST] = { 0 };		// Client's remote name
+						char service[NI_MAXSERV] = { 0 };// Service (i.e. port) the client is connect on
+						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
+						_Surrogate sr;
+						sr.clhostname = host;
+						sr.sock = _SocketArray[i].fd;
+						WOLFSSL *ssl;
+						if ((ssl = wolfSSL_new(ctx)) == NULL) {
+							std::terminate();
+						}
+						wolfSSL_set_fd(ssl,sr.sock);
+						if (EnableH2) {
+							wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+						}
+						if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
+							wolfSSL_free(ssl);
+							closesocket(sr.sock);
+						}
+						else {
+							if (EnableH2)
+								wolfSSL_ALPN_GetProtocol(sr.ssl, &sr.ALPN,
+										&sr.ALPNSize);
+							else
+								sr.ALPN = h1;
+							sr.ssl = ssl;
 
+							if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaH2::clientConnectionH2, sr); t.detach(); }
+							else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
+						}
+						break;
+					default:
+						std::terminate();
+						break;
+				}
+				ActiveSocket--; if(!ActiveSocket) break;
+			}
 		}
 	}
 }

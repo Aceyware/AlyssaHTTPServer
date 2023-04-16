@@ -133,7 +133,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 //	return 1;
 //}
 
-bool customActions(string path, clientInfo* cl){
+/*bool customActions(string path, clientInfo* cl){
 	int x=0; string temp="", filebuf="", Argument[3]={""}; std::ifstream file; char Action[3]={0}; std::vector<std::filesystem::path> fileList;
 	// Get rid of parent and current directories from path first
 	while((x=path.find("/./"))!=std::string::npos)
@@ -190,5 +190,162 @@ bool customActions(string path, clientInfo* cl){
 		}
 	}
 	return 1;
-}
+}*/
+
+class CustomActions {
+public:
+	int CAMain(char* path, clientInfo* c){
+		bool isDirectory=std::filesystem::is_directory(std::filesystem::path(path));
+		int sz=strlen(path); std::deque<std::filesystem::path> fArray;
+		char* _Path=new char[sz+8];//Duplicate of path for usage on this function.
+		memcpy(_Path, path, sz);
+		if(CARecursive){
+			if(isDirectory){// Add / at the end if missing on request.
+				if(_Path[sz-1]!='/')
+					_Path[sz]='/';
+			}
+			for (int var = 0; var >= 0; var--) {// Search for all folders until root of htroot recursively.
+				if(_Path[var]=='/'){
+					Append((char*)".alyssa\0", &_Path, var, 8);
+					if(std::filesystem::exists(std::filesystem::path(_Path)))
+						fArray.emplace_back(std::filesystem::path(_Path));
+				}
+			}
+			for (int var = sz; var > 0; --var) {// Reuse _Path for name of the requested file/directory
+				if(path[var]=='/'){
+					memcpy(_Path, path, sz-var); _Path[sz-var]=0; break;
+				}
+			}
+			for (int var = 0; var < fArray.size(); ++var) {// Check all of them by order.
+				switch (ParseFile(fArray[var], _Path ,c)) {
+					default:
+						break;
+				}
+			}
+		}
+	}
+private:
+	int DoAuthentication(char* p,char* c){
+		FILE* f;
+		fopen(p,"rb");
+		if(!f){
+			std::cout<<"Custom actions: Error: Cannot open credentials file "<<p; return -1;
+		}
+		int sz=std::filesystem::file_size(std::filesystem::path(p));
+		char* buf=new char[sz];
+		fread(buf,sz,1,f); int cn=0;
+		for (int var = 0; var < sz; ++var) {
+			if(buf[var]<32){
+				if(!strncmp(c, &buf[cn], var-cn)){
+					delete[] buf; fclose(f); return 1;
+				}
+				if(buf[var+1]=='\n')// Check for CRLF delimiters.
+					var++;
+				cn=var+1;
+			}
+		}
+		delete[] buf; fclose(f); return 0;
+	}
+
+	int ParseCA(char* c, int s, clientInfo* cl) {
+		char Action[3]={0}; string Arguments[3];//Things that is going to be i order.
+		int cn=0,ct=0; //Counter variables
+		while(cn<s){// Read the commands first.
+			// Iterate to where commands begin.
+			if(c[cn]<65) {
+				cn++; ct++;}// Iterate again until end of command
+			else{
+				if(c[ct]>64)
+					ct++;
+				else{
+					ToLower(&c[cn], ct-cn);
+					if(!strncmp(&c[cn], "authenticate", ct-cn)){
+						cn=ct;
+						while(c[ct]>64)
+							ct++;
+						if(ct-cn<2){
+							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath; return -1;
+						}
+						c[ct]=0; DoAuthentication(c, &cl->auth[0]);
+					}
+					else if(!strncmp(&c[cn],"redirect", ct-cn)){
+						cn=ct;
+						while(c[ct]>64)
+							ct++;
+						if(ct-cn<2){
+							std::cout<<"Custom actions: Error: Argument required for 'Redirect' action on node "<<cl->RequestPath; return -1;
+						}
+						string rd(ct-cn,0); memcpy(&rd[0], &c[cn], ct-cn);
+						Send(AlyssaHTTP::serverHeaders(302, cl, rd, 0), cl->Sr->sock, cl->Sr->ssl, 1); return 0;
+					}
+					else if(!strncmp(&c[cn],"softredirect", ct-cn)){
+						cn=ct;
+						while(c[ct]>64)
+							ct++;
+						if(ct-cn<2){
+							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath; return -1;
+						}
+						Arguments[1].resize(ct-cn); memcpy(&Arguments[1], &c[cn], ct-cn);
+					}
+					cn=ct;
+				}
+			}
+		}
+		// Execute the commands by order after reading
+		switch (Action[1]) {
+			case 1:
+				cl->RequestPath=Arguments[1];
+				break;
+			default:
+				break;
+		}
+		return 1;
+	}
+
+	int ParseFile(std::filesystem::path p,char* n,clientInfo* c){
+		std::ifstream f;
+		f.open(p); int len=std::filesystem::file_size(p);
+		char* buf=new char[len+1];
+		f.read(buf, len); int cn=0, ct=0;
+		while(cn<len){
+			if(buf[cn]=='}'){
+				std::cout<<"Custom actions: Error: Syntax error (closure of a non-existent scope) "
+							"at char "<<cn<<" on file "<<p<<std::endl; return -1;
+			}
+			else if(buf[cn]=='{'){
+				bool isAffecting=0;
+				if(!strncmp(&buf[ct], "Recursive", cn-ct))
+					isAffecting=1;
+				else if(!strncmp(&buf[ct], "WholeDirectory", cn-ct))
+					isAffecting=1;
+				else if(!strncmp(&buf[ct],"Node ",5)){
+					if(!strncmp(&buf[ct+5],n,strlen(n)))
+						isAffecting=1;
+				}
+				else{
+					std::cout<<"Custom actions: Error: Syntax error (invalid node identifier keyword) "
+								"at char "<<cn<<" on file "<<p<<std::endl; return -1;
+				}
+				if(!isAffecting) {
+					ct=cn; continue;
+				}
+				while(cn<len+1) {
+					if(buf[cn]=='}') {buf[cn]=0; break;}
+					cn++; }
+				if(cn==len){
+					std::cout<<"Custom actions: Error: Syntax error (missing '}' "
+								"for scope beginning at  "<<ct<<" on file "<<p<<std::endl; return -1;
+				}
+				len=ParseCA(&buf[ct],cn-ct, c);// Reuse 'len' for return value
+				delete[] buf; f.close(); return len;
+			}
+			cn++;
+		}
+		return 0;
+	}
+};
+
+
+
+
 
