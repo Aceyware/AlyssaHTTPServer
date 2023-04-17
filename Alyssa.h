@@ -20,8 +20,8 @@
 #include <bitset>
 #include <math.h>
 #include <stdio.h>
-#include <poll.h>
 #include <iomanip>
+#include <deque>
 #ifndef _WIN32
 #include <sys/types.h>
 #include <unistd.h>
@@ -30,9 +30,11 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros 
+#include <poll.h>
 #else
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
+#include <io.h>
 #endif
 using std::string;
 
@@ -41,10 +43,10 @@ using std::string;
 #ifndef _WIN32
 #include <wolfssl/options.h>
 #else
-#define WOLFSSL_USER_SETTINGS
+#define WOLFSSL_USER_SETTINGS//Please somebody tell me what is the exact way to making compiler find that fucking user_settings.h file. 
 #define CYASSL_USER_SETTINGS
+#include "user_settings.h"
 #endif
-#include <cyassl/ctaocrypt/settings.h>
 #include <wolfssl/ssl.h>
 #define SSL_recv wolfSSL_read
 #define SSL_send wolfSSL_write
@@ -67,6 +69,7 @@ static void sigpipe_handler(int unused)
 #endif
 // Definitions for Windows
 #ifdef _WIN32
+#define poll WSAPoll
 #define strdup _strdup
 #endif
 
@@ -138,6 +141,14 @@ class AlyssaHTTP{
 		static void clientConnection(_Surrogate sr);
 	private:
 
+};
+class CustomActions {
+public:
+	static int CAMain(char* path, clientInfo* c);
+private:
+	static int DoAuthentication(char* p, char* c);
+	static int ParseCA(char* c, int s, clientInfo* cl);
+	static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir);
 };
 static string currentTime() {
 	std::ostringstream x;

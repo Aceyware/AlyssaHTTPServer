@@ -64,7 +64,6 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 }
 
 string execCGI(const char* exec, clientInfo* cl);// Prototypes of functions that moved below AlyssaHTTP class.
-bool customActions(string path, clientInfo* cl);
 
 std::ofstream Log; std::mutex logMutex;
 void Logging(clientInfo* cl) {
@@ -314,22 +313,34 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	//	temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
 	//	Send(temp, sock, ssl);
 	//}
+
+	if (CAEnabled) {
+		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
+		{
+			case 0:
+				return;
+			case -1:
+				Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+			case -3:
+				shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
+			break;
+			default:
+				break;
+		}
+	}
+		
+
 	FILE* file=NULL; size_t filesize = 0;
 	if (cl->RequestPath=="./") {
-		if (std::filesystem::exists("./root.alyssa")) {}
-		else if (std::filesystem::exists("./index.html")) { cl->RequestPath = "./index.html"; }
+		if (std::filesystem::exists("./index.html")) { cl->RequestPath = "./index.html"; }
 		else if (foldermode) { string asd = Folder::folder("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
 	}
 	else if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
 		cl->RequestPath = respath + Substring(&cl->RequestPath[0], 0, _htrespath.size());
 	}
 	else if(std::filesystem::is_directory(std::filesystem::u8path(cl->RequestPath))) {
-		if (std::filesystem::exists("./"+cl->RequestPath+"/root.alyssa")) {}
-		else if (std::filesystem::exists("./" + cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
+		if (std::filesystem::exists("./" + cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
 		else if (foldermode) { string asd = Folder::folder("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
-	}
-	else {
-		if (fileExists(cl->RequestPath + ".alyssa")) {}
 	}
 
 	if (isHEAD) {
@@ -375,23 +386,23 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 
 }
 void AlyssaHTTP::Post(clientInfo* cl) {
-	//POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
-	if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl->RequestPath))) {
-		if (fileExists(htroot + cl->RequestPath + "/root.htaccess")) {//Check if custom actions exists
-			if (!customActions(htroot + cl->RequestPath + "/root.htaccess", cl)) return;
-		}
-	}
-	else {
-		if (fileExists(htroot + cl->RequestPath + ".htaccess")) {//Check for special rules first
-			if (!customActions(htroot + cl->RequestPath + ".htaccess", cl)) return;
-		}
-	}
-	// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
-	Send(serverHeaders(404, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl);
-	if (errorpages) { // If custom error pages enabled send the error page
-		Send(errorPage(404), cl->Sr->sock, cl->Sr->ssl);
-	}
-	closesocket(cl->Sr->sock);
+	////POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
+	//if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl->RequestPath))) {
+	//	if (fileExists(htroot + cl->RequestPath + "/root.htaccess")) {//Check if custom actions exists
+	//		if (!customActions(htroot + cl->RequestPath + "/root.htaccess", cl)) return;
+	//	}
+	//}
+	//else {
+	//	if (fileExists(htroot + cl->RequestPath + ".htaccess")) {//Check for special rules first
+	//		if (!customActions(htroot + cl->RequestPath + ".htaccess", cl)) return;
+	//	}
+	//}
+	//// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
+	//Send(serverHeaders(404, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl);
+	//if (errorpages) { // If custom error pages enabled send the error page
+	//	Send(errorPage(404), cl->Sr->sock, cl->Sr->ssl);
+	//}
+	//closesocket(cl->Sr->sock);
 }
 
 void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function that gets data from client.
@@ -546,7 +557,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 	// Threads for listening ports
 
 	//fd_set _SocketArray; FD_ZERO(&_SocketArray);
-	std::vector<pollfd> _SocketArray; _SocketArray.resize(port.size());
+	std::vector<pollfd> _SocketArray;
 	std::vector<char> _SockType;
 
 	for (size_t i = 0; i < port.size(); i++) {
@@ -569,8 +580,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		else if (port[i] != ntohs(hint.sin_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 		listen(listening, SOMAXCONN);
 		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
-		_SocketArray.emplace_back();
-		_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+		_SocketArray.emplace_back(pollfd{listening, POLLRDNORM, 0});
 		_SockType.emplace_back(0);
 	}
 
@@ -594,7 +604,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			}
 			else if (SSLport[i] != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
-			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 			_SockType.emplace_back(0);
 		}
 	}
@@ -624,7 +634,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 			else if (port[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
-			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 			_SockType.emplace_back(0);
 		}
 
@@ -654,7 +664,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 					std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; exit(-2);
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
-				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 				_SockType.emplace_back(0);
 			}
 		}
@@ -684,28 +694,31 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		int clientSize = sizeof(client);
 #endif
 		for (int i = 0; i < port.size(); i++) {
-			if (_SocketArray[i].revents == POLLIN) {
+			if (_SocketArray[i].revents == POLLRDNORM) {
 				switch (_SockType[i]) {
 					case 0:
+					{
 						char host[NI_MAXHOST] = { 0 };		// Client's remote name
 						char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						_Surrogate sr;
-						sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd,(sockaddr*)&client,&clientSize);
+						sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
 						break;
+					}
 					case 1:
+					{
 						char host[NI_MAXHOST] = { 0 };		// Client's remote name
 						char service[NI_MAXSERV] = { 0 };// Service (i.e. port) the client is connect on
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						_Surrogate sr;
 						sr.clhostname = host;
 						sr.sock = _SocketArray[i].fd;
-						WOLFSSL *ssl;
+						WOLFSSL* ssl;
 						if ((ssl = wolfSSL_new(ctx)) == NULL) {
 							std::terminate();
 						}
-						wolfSSL_set_fd(ssl,sr.sock);
+						wolfSSL_set_fd(ssl, sr.sock);
 						if (EnableH2) {
 							wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
 						}
@@ -716,7 +729,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 						else {
 							if (EnableH2)
 								wolfSSL_ALPN_GetProtocol(sr.ssl, &sr.ALPN,
-										&sr.ALPNSize);
+									&sr.ALPNSize);
 							else
 								sr.ALPN = h1;
 							sr.ssl = ssl;
@@ -725,6 +738,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 							else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
 						}
 						break;
+					}
 					default:
 						std::terminate();
 						break;
