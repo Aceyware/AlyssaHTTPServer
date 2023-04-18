@@ -216,17 +216,12 @@ string execCGI(const char* exec, clientInfo* cl) {
 				}
 			}
 			for (int var = 0; var < fArray.size(); ++var) {// Check all of them by order.
-				switch (ParseFile(fArray[var], _Path ,c,!var)) {
-					case 0:
-						return 0;
-					case -1:
-						return -1;
+				int ret = ParseFile(fArray[var], _Path, c, !var);
+				switch (ret) {
 					case -2:
 						break;
-					case -3:
-						return -3;
 					default:
-						break;
+						return ret;
 				}
 			}
 		}
@@ -256,14 +251,13 @@ string execCGI(const char* exec, clientInfo* cl) {
 	}
 
 	int CustomActions::ParseCA(char* c, int s, clientInfo* cl) {
-		char Action[3]={0}; string Arguments[3];//Things that is going to be i order.
+		char Action=0; string Arguments;//Things that is going to be exectued last
 		int cn=0,ct=0; //Counter variables
 		while(cn<s){// Read the commands first.
-			// Iterate to where commands begin.
-			if(c[cn]<65) {
-				cn++; ct++;}// Iterate again until end of command
+			if(c[cn]<65) {// Iterate to where commands begin.
+				cn++; ct++;}
 			else{
-				if(c[ct]>64)
+				if(c[ct]>64)// Iterate again until end of command
 					ct++;
 				else{
 					ToLower(&c[cn], ct-cn);
@@ -275,7 +269,19 @@ string execCGI(const char* exec, clientInfo* cl) {
 						if(ct-cn<2){
 							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath; return -1;
 						}
-						c[ct]=0; DoAuthentication(c, &cl->auth[0]);
+						c[ct]=0; 
+						if (cl->auth == "") {
+							Send(AlyssaHTTP::serverHeaders(401, cl), cl->Sr->sock, cl->Sr->ssl); return 0;
+						}
+						switch (DoAuthentication(c, &cl->auth[0]))
+						{
+						case -1:
+							return -1;
+						case 0:
+							Send(AlyssaHTTP::serverHeaders(403, cl), cl->Sr->sock, cl->Sr->ssl); return 0;
+						case 1:
+							break;
+						}
 					}
 					else if(!strncmp(&c[cn],"redirect", 8)){
 						cn=ct;
@@ -294,17 +300,36 @@ string execCGI(const char* exec, clientInfo* cl) {
 						if(ct-cn<2){
 							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath; return -1;
 						}
-						Arguments[1].resize(ct-cn); memcpy(&Arguments[1], &c[cn], ct-cn);
+						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 1;
+					}
+					else if (!strncmp(&c[cn], "execcgi", 7)) {
+						cn = ct;
+						while (c[ct] > 64)
+							ct++;
+						if (ct - cn < 2) {
+							std::cout << "Custom actions: Error: Argument required for 'ExecCGI' action on node " << cl->RequestPath; return -1;
+						}
+						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 2;
+					}
+					else {
+						printf("Custom actions: Error: Unknown command %.*s\n", ct - 1 - cn, &c[cn]); return -1;
 					}
 					cn=ct;
 				}
 			}
 		}
 		// Execute the commands by order after reading
-		switch (Action[1]) {
+		switch (Action) {
 			case 1:
-				cl->RequestPath=Arguments[1];
+				cl->RequestPath=Arguments;
 				break;
+			case 2:
+			{
+				string asd = execCGI(Arguments.c_str(), cl);
+				asd = AlyssaHTTP::serverHeaders(200, cl, "", asd.size()) + "\r\n" + asd;
+				Send(asd, cl->Sr->sock, cl->Sr->ssl);
+				return 0;
+			}
 			default:
 				break;
 		}
@@ -347,12 +372,12 @@ string execCGI(const char* exec, clientInfo* cl) {
 				while(cn<len+1) {
 					if(buf[cn]=='}') {buf[cn]=0; break;}
 					cn++; }
+				if (cn == len) {
+					std::cout << "Custom actions: Error: Syntax error (missing '}' "
+						"for scope beginning at  " << ct << " on file " << p << std::endl; return -1;
+				}
 				if (!isAffecting) {
 					cn++; continue;
-				}
-				if(cn==len){
-					std::cout<<"Custom actions: Error: Syntax error (missing '}' "
-								"for scope beginning at  "<<ct<<" on file "<<p<<std::endl; return -1;
 				}
 				len=ParseCA(&buf[ct],cn-ct, c);// Reuse 'len' for return value
 				delete[] buf; f.close(); return len;

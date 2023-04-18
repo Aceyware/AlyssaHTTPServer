@@ -323,7 +323,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 				Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
 			case -3:
 				shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
-			break;
 			default:
 				break;
 		}
@@ -374,7 +373,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		}
 		fclose(file); delete[] buf;
 	}
-
 	else {
 		Send(serverHeaders(404, cl, "", 0) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 	}
@@ -386,23 +384,17 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 
 }
 void AlyssaHTTP::Post(clientInfo* cl) {
-	////POST and PUT requests are only supported for CGI. What else would they be used on a web server anyway..?
-	//if (std::filesystem::is_directory(std::filesystem::u8path(htroot + cl->RequestPath))) {
-	//	if (fileExists(htroot + cl->RequestPath + "/root.htaccess")) {//Check if custom actions exists
-	//		if (!customActions(htroot + cl->RequestPath + "/root.htaccess", cl)) return;
-	//	}
-	//}
-	//else {
-	//	if (fileExists(htroot + cl->RequestPath + ".htaccess")) {//Check for special rules first
-	//		if (!customActions(htroot + cl->RequestPath + ".htaccess", cl)) return;
-	//	}
-	//}
-	//// If a valid CGI were executed, function would already end here. Latter will be executed if a CGI didn't executed, and will send a 404 to client.
-	//Send(serverHeaders(404, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl);
-	//if (errorpages) { // If custom error pages enabled send the error page
-	//	Send(errorPage(404), cl->Sr->sock, cl->Sr->ssl);
-	//}
-	//closesocket(cl->Sr->sock);
+	switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
+	{
+	case 0:
+		return;
+	case -1:
+		Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+	case -3:
+		shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
+	default:
+		Send(AlyssaHTTP::serverHeaders(404, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+	}
 }
 
 void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function that gets data from client.

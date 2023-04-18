@@ -9,11 +9,11 @@ void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1);
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
 string fileMime(string filename);
 
-void AlyssaH2::serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, char* StreamIdent, string _StrArg = "") {//Overload of the function above that takes pointer as argument.
+void AlyssaH2::serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, int StreamIdent, string _StrArg = "") {//Overload of the function above that takes pointer as argument.
 	char Payload[512] = { 0 }; int Position = 9; std::basic_string<char> Temp; unsigned char T2 = 0;
 	Payload[3] = 1;//Type: HEADERS
 	Payload[4] = 4;//Flag: END_HEADERS
-	Append(StreamIdent, Payload, 5, 4);
+	Append(&StreamIdent, Payload, 5, 4);
 	Position += Append((char*)"\x48\3", Payload, Position); //Type: "status" and length 3
 	Position += 3;//Leave here empty because we need to add status to beginning i guess.
 	if (_StrArg[0] < 32) {
@@ -123,97 +123,13 @@ void AlyssaH2::serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode,
 	Payload[2] = (Position >> 0) & 0xFF;
 	Send(Payload, cl->Sr->sock, cl->Sr->ssl, Position + 9);
 }
-bool AlyssaH2::customActions(string path, clientInfoH2* clh2, clientInfo* cl, char* StreamIdent) {
-	std::ifstream file; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)), '\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
-	if (!file) {
-		std::wcout << L"Error: cannot read custom actions file \"" + s2ws(path) + L"\"\n";
-		serverHeaders(clh2, cl, 500, 0, StreamIdent); return 0;
-	}
-	file.read(&buf[0], buf.size()); buf += "\1"; string temp = ""; file.close();
-	for (size_t i = 0; i < buf.size(); i++) {
-		if (buf[i] < 32) {
-			string act, pr; int x = temp.find(" ");
-			if (x != -1) { act = ToLower(Substring(&temp[0], x)); pr = Substring(&temp[0], 0, x + 1); }
-			else act = temp;
-			temp = ""; if (buf[i + 1] < 32) i++;//CRLF
-			if (action[0] == "") {
-				if (act == "authenticate") {
-					action[0] = act; param[0] = pr;
-					continue;
-				}
-			}
-			if (action[1] == "") {
-				if (act == "redirect") {
-					action[1] = act; param[1] = pr; continue;
-				}
-				else if (act == "returnteapot") { action[1] = act; continue; }
-			}
-			std::wcout << L"Warning: Unknown or redefined option \"" + s2ws(act) + L"\" on file \"" + s2ws(path) + L"\"\n";
-		}
-		else temp += buf[i];
-	}
-	file.close();
 
-	//2. Execute the custom actions by their order
-	if (action[0] != "") {
-		if (action[0] == "authenticate") {
-			if (cl->auth == "") {
-				serverHeaders(clh2, cl, 401, 0, StreamIdent); return 0;
-			}
-			std::ifstream pwd; if (param[0] == "") { param[0] = path.substr(0, path.size() - 9); param[0] += ".htpasswd"; }
-			pwd.open(std::filesystem::u8path(param[0]));
-			if (!pwd.is_open()) {
-				std::cout << "Error: Failed to open htpasswd file \"" + param[0] + "\" defined on \"" + path + "\"\n";
-				serverHeaders(clh2, cl, 500, 0, StreamIdent);
-				//if (errorpages) { // If custom error pages enabled send the error page
-				//	Send(errorPage(500), cl->sock, cl->ssl);
-				//}
-				return 0;
-			}
-			bool found = 0; string tmp(std::filesystem::file_size(std::filesystem::u8path(param[0])), '\0'); pwd.read(&tmp[0], tmp.size()); pwd.close();
-			tmp += "\1"; temp = "";
-			for (size_t i = 0; i < tmp.size(); i++) {
-				if (tmp[i] < 32) {
-					if (cl->auth == temp) { found = 1; break; } temp = "";
-					if (tmp[i + 1] < 32) i++; //CRLF
-				}
-				else temp += tmp[i];
-			}
-			if (!found) {
-				if (!forbiddenas404) {
-					serverHeaders(clh2, cl, 403, 0, StreamIdent);
-					//if (errorpages) { // If custom error pages enabled send the error page
-					//	Send(errorPage(403), cl->sock, cl->ssl);
-					//}
-				}
-				else {
-					serverHeaders(clh2, cl, 404, 0, StreamIdent);
-					//if (errorpages) { // If custom error pages enabled send the error page
-					//	Send(errorPage(404), cl->sock, cl->ssl);
-					//}
-				}
-				return 0;
-			}
-		}
-	}
-	if (action[1] != "") {
-		if (action[1] == "redirect") {
-			serverHeaders(clh2,cl,302,0,StreamIdent,param[1]);
-			return 0;
-		}
-		else if (action[1] == "returnteapot") {
-			serverHeaders(clh2, cl, 418, 0, StreamIdent);
-			return 0;
-		}
-	}
-	return 1;
-}
-void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]) {
+void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, int StreamIdent) {
 	//This get is pretty identical to get on AlyssaHTTP class, they will be merged to a single function when everything for HTTP/2 is implemented.
 	FILE* file; int filesize = 0; unsigned char FrameHeader[9] = { 0 };
 	if (cl.RequestPath == "./") {//If server requests for root, we'll handle it specially
 		if (fileExists("./root.htaccess")) {
-			if (!customActions("./root.htaccess", clh2,&cl,&StreamIdent[0])) return;
+			if (!customActions("./root.htaccess", clh2,&cl,&StreamIdent)) return;
 			return;
 		}
 		if (fileExists("./index.html")) {
@@ -244,12 +160,12 @@ void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]) {
 			}
 			else if (foldermode) {
 				string asd = Folder::folder(htroot + cl.RequestPath);
-				serverHeaders(clh2,&cl, 200, asd.size(),&StreamIdent[0], "text/html");
+				serverHeaders(clh2,&cl, 200, asd.size(),StreamIdent, "text/html");
 				FrameHeader[0] = (asd.size() >> 16) & 0xFF;
 				FrameHeader[1] = (asd.size() >> 8) & 0xFF;
 				FrameHeader[2] = (asd.size() >> 0) & 0xFF;
 				FrameHeader[4] = 1;
-				Append((unsigned char*)StreamIdent, FrameHeader, 5, 4);
+				Append(&StreamIdent, FrameHeader, 5, 4);
 				Send((char*)&FrameHeader, cl.Sr->sock, cl.Sr->ssl, 9);
 				Send(&asd[0], cl.Sr->sock, cl.Sr->ssl, asd.size());
 				return;
@@ -279,8 +195,8 @@ void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]) {
 #endif
 
 	if (cl.RequestType == "HEAD") {
-		if (file){ serverHeaders(clh2,&cl, 200, filesize,&StreamIdent[0]); }
-		else { serverHeaders(clh2, &cl, 200, filesize, &StreamIdent[0]); }
+		if (file){ serverHeaders(clh2,&cl, 200, filesize,StreamIdent); }
+		else { serverHeaders(clh2, &cl, 404, filesize, StreamIdent); }
 		return;
 	}
 
@@ -288,14 +204,14 @@ void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]) {
 		//temp = serverHeaders(200, cl, fileMime(path), filesize) + "\r\n";
 		//Send(temp, sock, ssl);
 		if (cl.rstart || cl.rend) {
-			serverHeaders(clh2, &cl, 206, filesize, &StreamIdent[0],fileMime(cl.RequestPath));
+			serverHeaders(clh2, &cl, 206, filesize, StreamIdent,fileMime(cl.RequestPath));
 			/*file.seekg(cl.rstart);
 				filesize = cl.cl.rend - cl.cl.rstart;
 				file.seekg(cl.cl.rstart);*/
 		}
-		else serverHeaders(clh2, &cl, 200, filesize, &StreamIdent[0], fileMime(cl.RequestPath));
+		else serverHeaders(clh2, &cl, 200, filesize, StreamIdent, fileMime(cl.RequestPath));
 		char* filebuf = new char[16393];
-		Append(StreamIdent, filebuf, 5, 4);
+		Append(&StreamIdent, filebuf, 5, 4);
 		filebuf[0] = (16384 >> 16) & 0xFF;
 		filebuf[1] = (16384 >> 8) & 0xFF;
 		filebuf[2] = (16384 >> 0) & 0xFF;
@@ -323,12 +239,12 @@ void AlyssaH2::Get(clientInfoH2* clh2, clientInfo cl, char StreamIdent[4]) {
 		//}
 		//temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
 		//Send(temp, cl.cl.sock, cl.cl.ssl);
-		serverHeaders(clh2, &cl, 404, 0, &StreamIdent[0]);
+		serverHeaders(clh2, &cl, 404, 0, StreamIdent);
 	}
 }
 #ifdef Compile_WolfSSL
 void AlyssaH2::clientConnectionH2(_Surrogate sr) {
-	unsigned char buf[16600] = { 0 }; clientInfoH2 clh2; clientInfo cl; char StreamIdent[4] = { 0 };
+	unsigned char buf[16600] = { 0 }; clientInfoH2 clh2; clientInfo cl;
 	cl.Sr = &sr;
 	SSL_recv(sr.ssl, buf, 16600); //Receive data once for HTTP/2 Preface
 	if (!strcmp((char*)buf,"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) {
@@ -342,7 +258,6 @@ void AlyssaH2::clientConnectionH2(_Surrogate sr) {
 				std::bitset<8> Flags = buf[pos];
 				pos++;
 				memcpy(&StreamId, &buf[pos], 4);
-				memcpy(StreamIdent, &buf[pos], 4);
 				pos += 4;
 				switch (Type) {//Some frames has additional header data, set the pos and size according to situation.
 				case 1:
@@ -370,7 +285,7 @@ void AlyssaH2::clientConnectionH2(_Surrogate sr) {
 				case 4:
 					if(!Flags[7]) {
 						char options[] = "\0\0\0\4\0\0\0\0\0";
-						memcpy(&options[5], &StreamIdent[0], 4);
+						memcpy(&options[5], &StreamId, 4);
 						Send(options, sr.sock, sr.ssl, 9);
 					}
 					else if(size>0){}//Client sent a ACKed SETTINGS frame with payload, this is a connection error according to HTTP/2 semantics. Send a goaway.
@@ -390,18 +305,18 @@ void AlyssaH2::clientConnectionH2(_Surrogate sr) {
 					break;
 				}
 			}
-			if (cl.RequestType == "GET") { AlyssaH2::Get(&clh2,cl,StreamIdent); }
-			else if (cl.RequestType == "HEAD") { AlyssaH2::Get(&clh2,cl,StreamIdent); }
+			if (cl.RequestType == "GET") { AlyssaH2::Get(&clh2,cl,StreamId); }
+			else if (cl.RequestType == "HEAD") { AlyssaH2::Get(&clh2,cl,StreamId); }
 			/*else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
 				else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);*/
 			else if (cl.RequestType == "OPTIONS") {
-				serverHeaders(&clh2,&cl, 204, 0,&StreamIdent[0]);//We are going to send 204 and add a switch-case for 204 status, this is a lazy way for implementing OPTIONS.
+				serverHeaders(&clh2,&cl, 204, 0,StreamId);//We are going to send 204 and add a switch-case for 204 status, this is a lazy way for implementing OPTIONS.
 			}
 			else if (cl.RequestType == "I") {//I stands for "Invalid".
-				serverHeaders(&clh2, &cl, 400, 0, &StreamIdent[0]);
+				serverHeaders(&clh2, &cl, 400, 0, StreamId);
 			}
 			else if (cl.RequestType != "") {
-				serverHeaders(&clh2, &cl, 501, 0, &StreamIdent[0]);
+				serverHeaders(&clh2, &cl, 501, 0, StreamId);
 			}
 		}
 		closesocket(sr.sock); wolfSSL_free(sr.ssl); return;
