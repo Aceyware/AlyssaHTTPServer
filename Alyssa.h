@@ -93,7 +93,6 @@ struct clientInfo {//This structure has the information from client request.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr;
-	clientInfoH2* cl2 = NULL;
 	void clear() {
 		RequestType = "", RequestPath = "", version = "", host = "",
 			cookies = "", auth = "", payload = "", qStr = "", close = 0,
@@ -129,14 +128,15 @@ private:
 	static string DecodeHuffman(char* huffstr);
 	static void ExecDynIndex(clientInfoH2* clh2, clientInfo* cl, int pos);
 };
-class AlyssaH2{
-	public:
-		static void serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, int StreamIdent, string _StrArg);
-		//static void goAway();
-		static void Get(clientInfoH2* clh2, clientInfo cl, int StreamIdent);
-		static void clientConnectionH2(_Surrogate sr);
-	private:
-};
+//class AlyssaH2{
+//	public:
+//		static void serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, int StreamIdent, string _StrArg);
+//		//static void goAway();
+//		static void Get(clientInfoH2* clh2, clientInfo cl, int StreamIdent);
+//		static void clientConnectionH2(_Surrogate sr);
+//	private:
+//};
+
 class AlyssaHTTP{
 	public:
 		static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0);
@@ -206,7 +206,7 @@ static size_t btoull(string str, int size) {
 	}
 	return out;
 }
-static unsigned int Convert24to32(unsigned char* Source) {
+static unsigned int Convert24to32(char* Source) {
 	return (
 		(Source[0] << 24)
 		| (Source[1] << 16)
@@ -301,5 +301,7 @@ static string errorPage(int statusCode) {
 	return page;
 }
 
+#include "AlyssaH2.h"
+#include "DirectoryIndex.h"
 
 #endif // AlyssaHeader

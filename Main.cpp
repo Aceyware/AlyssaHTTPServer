@@ -320,7 +320,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 			case 0:
 				return;
 			case -1:
-				Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+				Send(serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
 			case -3:
 				shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
 			default:
@@ -332,7 +332,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	FILE* file=NULL; size_t filesize = 0;
 	if (cl->RequestPath=="./") {
 		if (std::filesystem::exists("./index.html")) { cl->RequestPath = "./index.html"; }
-		else if (foldermode) { string asd = Folder::folder("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
+		else if (foldermode) { string asd = DirectoryIndex::DirMain("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
 	}
 	else if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
 		cl->RequestPath = respath + Substring(&cl->RequestPath[0], 0, _htrespath.size());
@@ -726,7 +726,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 								sr.ALPN = h1;
 							sr.ssl = ssl;
 
-							if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaH2::clientConnectionH2, sr); t.detach(); }
+							if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
 							else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
 						}
 						break;
