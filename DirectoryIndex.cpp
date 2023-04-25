@@ -12,7 +12,7 @@ std::time_t to_time_t(TP tp)
 std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
 	std::deque<IndexEntry> ret; IndexEntry NewEntry; int8_t DirCount=0;
 	for (auto x : std::filesystem::directory_iterator(p)) {
-		if (x.path().extension() == "alyssa")
+		if (x.path().extension() == "alyssa" || x.path().filename()==".alyssa")
 			continue;
 		NewEntry.FileName = x.path().filename().u8string();
 		NewEntry.isDirectory = x.is_directory();
@@ -31,47 +31,37 @@ std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
 	return ret;
 }
 
-//unsigned int DirectorySize(std::deque<IndexEntry>* a) {
-//	unsigned int ret = 0;
-//	//ret+=whatever
-//	for (uint8_t i = 0; i < a->size() ; i++) {
-//		ret += a->at(i).FileName.size();
-//		size_t sz = a->at(i).FileSize;
-//		if (!sz) 
-//			i++;
-//		else {
-//			while (sz) {
-//				ret++; sz /= 10;
-//			}
-//		}
-//	}
-//	//More stuff
-//}
-
-//char* Main(string p) {
 string DirectoryIndex::DirMain(string p) {
 	std::deque<IndexEntry> Array = GetDirectory(p);
 	p=p.substr(1);
 	//char* ret = new char[DirectorySize(&Array)]; 
 	string ret; uint8_t DirCnt = 0;
-	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:Arial;}pre{font-family:Arial;display:inline;margin-left:200px}div{white-space:nowrap;font-family:sans-serif;}img{height:12;width:15;}</style></head>"
-		"<body><h1>Index of " + p + "</h1><hr><div>";
+	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:75;}pre{display:inline;font-family:sans-serif;}img{height:12;width:15;}</style>"
+		"<title>Index of " + p + "</title></head><body><h1>Index of " + p + "</h1><hr><div>"
+		"<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
 	for (uint8_t i = 0; i < Array.size(); i++) {
 		if (Array[i].isDirectory) {
-			ret += "<img src=\"" + htrespath + "/directory.png\"><a href=\"./" + Array[i].FileName + "\">" + Array[i].FileName + "</a><pre>" + Array[i].ModifyDate + "</pre><br>"; DirCnt++;
+			ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a>	-	" + Array[i].ModifyDate + "</pre><br>"; DirCnt++;
 		}
 		else {
-			ret += "<img src=\"" + htrespath + "/file.png\"><a href=\"./" + Array[i].FileName + "\">" + Array[i].FileName + "</a><pre>" + Array[i].ModifyDate + "</pre><pre>" + std::to_string(Array[i].FileSize) + "</pre><br>";
+			ret += "<pre><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a>	" + std::to_string(Array[i].FileSize) + "	" + Array[i].ModifyDate + "</pre><br>";
 		}
 	}
 	ret += "</div><hr>";
 	if (DirCnt) {
-		ret += std::to_string(DirCnt)+" directories";
-		if (Array.size())
+		ret += std::to_string(DirCnt)+" director";
+		if (DirCnt > 1)
+			ret += "ies";
+		else
+			ret += "y";
+		if (Array.size() - DirCnt)
 			ret += " and ";
 	}
-	if (Array.size())
-		ret += std::to_string(Array.size() - DirCnt) + " files";
+	if (Array.size() - DirCnt) {
+		ret += std::to_string(Array.size() - DirCnt) + " file";
+		if (Array.size() - DirCnt > 1)
+			ret += "s";
+	}
 	ret += "<br>Alyssa HTTP Server " + version + "</body></html>";
 	return ret;
 }

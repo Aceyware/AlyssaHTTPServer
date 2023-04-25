@@ -441,14 +441,14 @@ void AlyssaHTTP2::Get(H2Stream* s) {// Pretty similar to its HTTP/1.1 counterpar
 	FILE* file = NULL; size_t filesize = 0; HeaderParameters hp;
 	if (s->cl.RequestPath == "./") {
 		if (std::filesystem::exists("./index.html")) { s->cl.RequestPath = "./index.html"; }
-		else if (foldermode) { string asd = Folder::folder("./"); hp.StatusCode = 200; hp.ContentLength = asd.size(); ServerHeaders(s, hp); SendData(s, &asd[0], asd.size()); return; }
+		else if (foldermode) { string asd = DirectoryIndex::DirMain("./"); hp.StatusCode = 200; hp.ContentLength = asd.size(); ServerHeaders(s, hp); SendData(s, &asd[0], asd.size()); return; }
 	}
 	else if (!strncmp(&s->cl.RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
 		s->cl.RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, _htrespath.size());
 	}
 	else if (std::filesystem::is_directory(std::filesystem::u8path(s->cl.RequestPath))) {
 		if (std::filesystem::exists("./" + s->cl.RequestPath + "/index.html")) { s->cl.RequestPath += "/index.html"; }
-		else if (foldermode) { string asd = Folder::folder("./"); hp.StatusCode = 200; hp.ContentLength = asd.size(); ServerHeaders(s, hp); SendData(s, &asd[0], asd.size()); return; }
+		else if (foldermode) { string asd = DirectoryIndex::DirMain(s->cl.RequestPath); hp.StatusCode = 200; hp.ContentLength = asd.size(); ServerHeaders(s, hp); SendData(s, &asd[0], asd.size()); return; }
 	}
 	else {
 #ifndef _WIN32

@@ -114,13 +114,6 @@ public:
 private:
 	static void Configcache();
 };
-class Folder {
-public:
-	static string folder(std::string path);
-private:
-	static string getFolder(std::string path);
-	static string HTML(std::string payload, std::string relpath);
-};
 class HPack {
 public:
 	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, clientInfo* cl, int _Size);

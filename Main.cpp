@@ -339,7 +339,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	}
 	else if(std::filesystem::is_directory(std::filesystem::u8path(cl->RequestPath))) {
 		if (std::filesystem::exists("./" + cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
-		else if (foldermode) { string asd = Folder::folder("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
+		else if (foldermode) { string asd = DirectoryIndex::DirMain(cl->RequestPath); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
 	}
 
 	if (isHEAD) {
