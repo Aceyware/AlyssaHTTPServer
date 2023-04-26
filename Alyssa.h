@@ -93,6 +93,7 @@ struct clientInfo {//This structure has the information from client request.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr;
+	int8_t RequestTypeInt = 0;
 	void clear() {
 		RequestType = "", RequestPath = "", version = "", host = "",
 			cookies = "", auth = "", payload = "", qStr = "", close = 0,
@@ -199,7 +200,7 @@ static size_t btoull(string str, int size) {
 	}
 	return out;
 }
-static unsigned int Convert24to32(char* Source) {
+static unsigned int Convert24to32(unsigned char* Source) {
 	return (
 		(Source[0] << 24)
 		| (Source[1] << 16)

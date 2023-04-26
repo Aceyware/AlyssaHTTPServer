@@ -9,7 +9,7 @@ struct H2Stream{
 	std::atomic<bool> StrAtom=1;// This one is for stopping threads when a RST_STREAM is received.
 	bool StrOpen = 1;// This one is for determing if stream is "open" or "half-closed".
 	int StrIdent=0;
-	char* Data;//This has to be deleted manually
+	char* Data=NULL;//This has to be deleted manually
 };
 
 struct StreamTable {
@@ -17,7 +17,7 @@ struct StreamTable {
 };
 
 struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
-	int8_t StatusCode;
+	int16_t StatusCode;
 	size_t ContentLength=0;
 	string MimeType;
 	bool HasRange = 0; 
@@ -28,7 +28,9 @@ class AlyssaHTTP2
 public:
 	static void ClientConnection(_Surrogate sr);
 	static void ServerHeaders(H2Stream* s, HeaderParameters p);
+	static void ParseHeaders(H2Stream* s, char* buf, int sz);
 private:
+	static string DecodeHuffman(char* huffstr, int16_t sz);
 	static unsigned int FindIndex(std::deque<H2Stream*>* StrArray, std::deque<StreamTable>* StrTable, unsigned int StreamId) {// Note: this shit is not thread safe obviously!
 		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
 			if (StrTable->at(i).Stream == StreamId) {// This shit sounds wrong
@@ -72,7 +74,7 @@ private:
 
 //Flags (endianness-dependent)
 #define H2FENDSTREAM 1
-#define H2FENDHEADERS 2
+#define H2FENDHEADERS 4
 #define H2FPADDED 8
 #define H2FPRIORITY 32
 #define H2FACK 1

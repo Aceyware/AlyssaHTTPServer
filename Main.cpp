@@ -597,7 +597,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			else if (SSLport[i] != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-			_SockType.emplace_back(0);
+			_SockType.emplace_back(1);
 		}
 	}
 #endif // Compile_WolfSSL
@@ -657,7 +657,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-				_SockType.emplace_back(0);
+				_SockType.emplace_back(1);
 			}
 		}
 #endif // Compile_WolfSSL
@@ -685,7 +685,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 #else
 		int clientSize = sizeof(client);
 #endif
-		for (int i = 0; i < port.size(); i++) {
+		for (int i = 0; i < _SocketArray.size(); i++) {
 			if (_SocketArray[i].revents == POLLRDNORM) {
 				switch (_SockType[i]) {
 					case 0:
@@ -705,7 +705,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						_Surrogate sr;
 						sr.clhostname = host;
-						sr.sock = _SocketArray[i].fd;
+						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						WOLFSSL* ssl;
 						if ((ssl = wolfSSL_new(ctx)) == NULL) {
 							std::terminate();
@@ -720,7 +720,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 						}
 						else {
 							if (EnableH2)
-								wolfSSL_ALPN_GetProtocol(sr.ssl, &sr.ALPN,
+								wolfSSL_ALPN_GetProtocol(ssl, &sr.ALPN,
 									&sr.ALPNSize);
 							else
 								sr.ALPN = h1;

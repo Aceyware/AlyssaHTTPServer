@@ -27,13 +27,16 @@
     <ClCompile Include="Config.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="Folder.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="base64.cpp">
       <Filter>Source\External</Filter>
     </ClCompile>
-    <ClCompile Include="HPack.cpp">
+    <ClCompile Include="AlyssaH2.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="DynContent.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectoryIndex.cpp">
       <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
@@ -51,6 +54,12 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="AlyssaHuffman.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="AlyssaH2.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectoryIndex.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
