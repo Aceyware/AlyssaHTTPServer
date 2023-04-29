@@ -8,7 +8,7 @@
 using std::cout; using std::string;
 //#define HPackTEST
 
-string HPack::DecodeHuffman(char* huffstr) {
+string AlyssaHTTP2::DecodeHuffman(char* huffstr) {// How the fuck is this even working?
 	std::bitset<32> Bits; std::bitset<8> Octet; unsigned char pos = 0, pos2 = 7; unsigned int x = 0, i = 0; string out; out.reserve(255);
 	unsigned char start = 0, end = 0, sz = 0; Octet = huffstr[i]; Bits[pos] = Octet[pos2];
 	while (i < strlen(huffstr)) {

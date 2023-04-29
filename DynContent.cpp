@@ -192,7 +192,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 	return 1;
 }*/
 
-	int CustomActions::CAMain(char* path, clientInfo* c){
+	int CustomActions::CAMain(char* path, clientInfo* c, H2Stream* h){
 		bool isDirectory=std::filesystem::is_directory(std::filesystem::path(path));
 		int sz=strlen(path); std::deque<std::filesystem::path> fArray;
 		char* _Path=new char[sz+8];//Duplicate of path for usage on this function.
@@ -216,16 +216,17 @@ string execCGI(const char* exec, clientInfo* cl) {
 				}
 			}
 			for (int var = 0; var < fArray.size(); ++var) {// Check all of them by order.
-				int ret = ParseFile(fArray[var], _Path, c, !var);
+				int ret = ParseFile(fArray[var], _Path, c, !var, h);
 				switch (ret) {
 					case -2:
 						break;
 					default:
+						delete[] _Path;
 						return ret;
 				}
 			}
 		}
-		return 1;
+		delete[] _Path; return 1;
 	}
 
 	int CustomActions::DoAuthentication(char* p,char* c){
@@ -250,9 +251,10 @@ string execCGI(const char* exec, clientInfo* cl) {
 		delete[] buf; fclose(f); return 0;
 	}
 
-	int CustomActions::ParseCA(char* c, int s, clientInfo* cl) {
+	int CustomActions::ParseCA(char* c, int s, clientInfo* cl, H2Stream* h) {
 		char Action=0; string Arguments;//Things that is going to be exectued last
 		int cn=0,ct=0; //Counter variables
+		HeaderParameters hp;
 		while(cn<s){// Read the commands first.
 			if(c[cn]<65) {// Iterate to where commands begin.
 				cn++; ct++;}
@@ -271,14 +273,24 @@ string execCGI(const char* exec, clientInfo* cl) {
 						}
 						c[ct]=0; 
 						if (cl->auth == "") {
-							Send(AlyssaHTTP::serverHeaders(401, cl), cl->Sr->sock, cl->Sr->ssl); return 0;
+							hp.StatusCode = 401;
+							if (h)
+								AlyssaHTTP2::ServerHeaders(h, hp);
+							else
+								Send(AlyssaHTTP::serverHeaders(401, cl), cl->Sr->sock, cl->Sr->ssl);
+							return 0;
 						}
 						switch (DoAuthentication(c, &cl->auth[0]))
 						{
 						case -1:
 							return -1;
 						case 0:
-							Send(AlyssaHTTP::serverHeaders(403, cl), cl->Sr->sock, cl->Sr->ssl); return 0;
+							hp.StatusCode = 403;
+							if (h)
+								AlyssaHTTP2::ServerHeaders(h, hp);
+							else
+								Send(AlyssaHTTP::serverHeaders(403, cl), cl->Sr->sock, cl->Sr->ssl); 
+							return 0;
 						case 1:
 							break;
 						}
@@ -290,8 +302,12 @@ string execCGI(const char* exec, clientInfo* cl) {
 						if(ct-cn<2){
 							std::cout<<"Custom actions: Error: Argument required for 'Redirect' action on node "<<cl->RequestPath; return -1;
 						}
-						string rd(ct-cn,0); memcpy(&rd[0], &c[cn], ct-cn);
-						Send(AlyssaHTTP::serverHeaders(302, cl, rd, 0), cl->Sr->sock, cl->Sr->ssl, 1); return -3;
+						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
+						if (h)
+							AlyssaHTTP2::ServerHeaders(h, hp);
+						else
+							Send(AlyssaHTTP::serverHeaders(302, cl, rd), cl->Sr->sock, cl->Sr->ssl);
+						return -3;
 					}
 					else if(!strncmp(&c[cn],"softredirect", 12)){
 						cn=ct;
@@ -325,9 +341,16 @@ string execCGI(const char* exec, clientInfo* cl) {
 				break;
 			case 2:
 			{
-				string asd = execCGI(Arguments.c_str(), cl);
-				asd = AlyssaHTTP::serverHeaders(200, cl, "", asd.size()) + "\r\n" + asd;
-				Send(asd, cl->Sr->sock, cl->Sr->ssl);
+				string asd = execCGI(Arguments.c_str(), cl); hp.StatusCode = 200; hp.ContentLength = asd.size();
+				if (h) {
+					//AlyssaHTTP2::ServerHeaders(h, hp);
+					//AlyssaHTTP2::
+					std::terminate();
+				}
+				else {
+					asd = AlyssaHTTP::serverHeaders(200, cl, "", asd.size()) + "\r\n" + asd;
+					Send(asd, cl->Sr->sock, cl->Sr->ssl);
+				}
 				return 0;
 			}
 			default:
@@ -336,7 +359,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 		return 1;
 	}
 
-	int CustomActions::ParseFile(std::filesystem::path p,char* n,clientInfo* c,bool isSameDir){
+	int CustomActions::ParseFile(std::filesystem::path p,char* n,clientInfo* c,bool isSameDir, H2Stream* h){
 		std::ifstream f;
 		f.open(p); int len=std::filesystem::file_size(p);
 		char* buf=new char[len+1];
@@ -379,7 +402,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 				if (!isAffecting) {
 					cn++; continue;
 				}
-				len=ParseCA(&buf[ct],cn-ct, c);// Reuse 'len' for return value
+				len=ParseCA(&buf[ct],cn-ct, c,h);// Reuse 'len' for return value
 				delete[] buf; f.close(); return len;
 			}
 			cn++;

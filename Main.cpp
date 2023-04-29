@@ -377,8 +377,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		Send(serverHeaders(404, cl, "", 0) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 	}
 
-	if (cl->close)
-	{
+	if (cl->close) {
 		shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock);
 	}
 
@@ -489,20 +488,21 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			else {cout<<"Invalid argument: "<<argv[i]<<". See -help for valid arguments."<<std::endl; return -4;}
 		}
 	}
+	
 	try {
-			for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(htroot))) {
-				break;
-			}
+		for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(htroot))) {
+			break;
 		}
-		catch (std::filesystem::filesystem_error&) {
-			cout << "Config: Error: invalid htroot path specified on config or path is inaccessible. Trying to create the folder.." << std::endl;
-			try {
-				std::filesystem::create_directory(std::filesystem::u8path(htroot));
-			}
-			catch (const std::filesystem::filesystem_error) {
-				cout << "Config: Error: failed to create the folder." << std::endl; exit(-3);
-			}
+	}
+	catch (std::filesystem::filesystem_error&) {
+		cout << "Config: Error: invalid htroot path specified on config or path is inaccessible. Trying to create the folder.." << std::endl;
+		try {
+			std::filesystem::create_directory(std::filesystem::u8path(htroot));
 		}
+		catch (const std::filesystem::filesystem_error) {
+			cout << "Config: Error: failed to create the folder." << std::endl; exit(-3);
+		}
+	}
 
 	if (logging) {
 		Log.open("Alyssa.log", std::ios::app);
@@ -546,11 +546,8 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 	}
 #endif
 
-	// Threads for listening ports
-
-	//fd_set _SocketArray; FD_ZERO(&_SocketArray);
 	std::vector<pollfd> _SocketArray;
-	std::vector<char> _SockType;
+	std::vector<int8_t> _SockType;
 
 	for (size_t i = 0; i < port.size(); i++) {
 		// Create sockets

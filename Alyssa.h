@@ -107,6 +107,7 @@ struct HPackIndex {
 struct clientInfoH2 {
 	std::vector<HPackIndex> dynIndexHeaders;
 };
+struct H2Stream;
 class Config
 {
 public:
@@ -142,11 +143,11 @@ class AlyssaHTTP{
 };
 class CustomActions {
 public:
-	static int CAMain(char* path, clientInfo* c);
+	static int CAMain(char* path, clientInfo* c, H2Stream* h=NULL);
 private:
 	static int DoAuthentication(char* p, char* c);
-	static int ParseCA(char* c, int s, clientInfo* cl);
-	static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir);
+	static int ParseCA(char* c, int s, clientInfo* cl, H2Stream* h);
+	static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir, H2Stream* h);
 };
 static string currentTime() {
 	std::ostringstream x;

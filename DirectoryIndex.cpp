@@ -37,8 +37,9 @@ string DirectoryIndex::DirMain(string p) {
 	//char* ret = new char[DirectorySize(&Array)]; 
 	string ret; uint8_t DirCnt = 0;
 	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:75;}pre{display:inline;font-family:sans-serif;}img{height:12;width:15;}</style>"
-		"<title>Index of " + p + "</title></head><body><h1>Index of " + p + "</h1><hr><div>"
-		"<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
+		"<title>Index of " + p + "</title></head><body><h1>Index of " + p + "</h1><hr><div>";
+	if (p != "/")
+		ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
 	for (uint8_t i = 0; i < Array.size(); i++) {
 		if (Array[i].isDirectory) {
 			ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a>	-	" + Array[i].ModifyDate + "</pre><br>"; DirCnt++;
