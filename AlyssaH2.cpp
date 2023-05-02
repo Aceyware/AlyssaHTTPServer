@@ -335,8 +335,6 @@ void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p) {
 	char buf[4096] = { 0 }; uint16_t pos = 9;
 	buf[3] = H2THEADERS;
 	buf[4] = H2FENDHEADERS;
-	//memcpy(&buf[5], &s->StrIdent, 4);
-	//FrameStrId = buf[pos] << 24 | buf[pos + 1] << 16 | buf[pos + 2] << 8 | buf[pos + 3] << 0;
 	buf[5] = s->StrIdent << 24; buf[6] = s->StrIdent << 16; buf[7] = s->StrIdent << 8; buf[8] = s->StrIdent << 0;
 	switch (p.StatusCode) {//Add "status" header.
 		case 200:
@@ -405,8 +403,24 @@ void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p) {
 	buf[pos] = 64 | 54;//Lit. indexed 54: server
 	buf[pos + 1] = 7 + version.size() - 1; pos += 2;//Size
 	memcpy(&buf[pos], "Alyssa/", 7); memcpy(&buf[pos + 7], &version[1], version.size()-1); pos += buf[pos - 1];
+	// Add the additional custom headers as literal non-indexed header
+	for (int8_t i = 0; i < p.CustomHeaders.size(); i++) {
+		pos++;// Lit. non-indexed 0: new name
+		int8_t j = 0;
+		while (j < p.CustomHeaders[i].size()) {
+			j++; if (p.CustomHeaders[i][j] == ':') break;
+		}
+		buf[pos] = j;
+		string temp;
+		temp = Substring(&p.CustomHeaders[i][0], j);
+		temp = ToLower(temp);
+		strcpy(&buf[pos+1], temp.c_str());
+		pos += buf[pos] + 1;
+		temp = Substring(&p.CustomHeaders[i][j + 2], p.CustomHeaders[i].size() - j - 1);
+		buf[pos] = temp.size()-1;
+		strcpy(&buf[pos + 1], temp.c_str()); pos += buf[pos] + 1;
+	}
 	// Set the size of the frame
-	//memcpy(&buf[1], &pos, 2);
 	buf[1] = pos - 9 << 8; buf[2] = pos - 9 << 0;
 	// Send the frame to the client.
 	wolfSSL_send(s->cl.Sr->ssl, buf, pos, 0);

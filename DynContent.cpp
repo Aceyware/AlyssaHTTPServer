@@ -6,35 +6,143 @@
 void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1);
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
 
-string execCGI(const char* exec, clientInfo* cl) {
-#pragma warning(suppress : 4996)
-	string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
-	if (cl->qStr != "") payload = cl->qStr;
-	else if (cl->payload != "") payload = cl->payload;
-	const char* environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/" + version).c_str()),strdup("GATEWAY_INTERFACE=\"CGI/1.1\""),strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH=" + pathstr).c_str()),NULL };
-	//Refer to github page of library.
-	struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
-	int result = subprocess_create_ex(cmd, 0, environment, &cgi);
-	if (0 != result) {
-		std::cout << "Warning: CGI Failed to execute: " << exec << std::endl;
-		Send(AlyssaHTTP::serverHeaders(404, cl), cl->Sr->sock, cl->Sr->ssl);
-		return "";
+const char* environmentMaster[] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()), "GATEWAY_INTERFACE=\"CGI/1.1\"", NULL, NULL };
+
+bool CGIEnvInit() {// This function initializes master environment array by adding PATH (and maybe some other in the future)
+	char* buf;  char* pathchar = getenv("PATH");
+	if (!pathchar)
+		return 1;
+	buf = new char[strlen(pathchar) + 8];
+	strcpy(buf, "PATH=\"");
+	strcpy(&buf[6], pathchar);
+	buf[sizeof buf - 1] = '\"';
+	environmentMaster[2] = buf;
+#ifdef _WIN32
+	environmentMaster[3] = (char*)2;
+#else
+	environmentMaster[3] = (char*)1;
+#endif
+	return 0;
+}
+
+void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver function.
+	string ret; subprocess_s cgi; HeaderParameters hp;
+	const char* environment[] = { environmentMaster[0],environmentMaster[1],environmentMaster[2],
+									strdup(string("REQUEST_METHOD=" + cl->RequestType).c_str()),
+									strdup(string("QUERY_STRING=" + cl->qStr).c_str()),NULL };
+
+	const char* cmd[] = { exec,NULL }; char buf[512] = { 0 };
+	int8_t result = subprocess_create_ex(cmd, 0, environment, &cgi);
+	if (result != 0) {
+		std::cout << "Custom Actions: Error: Failed to execute CGI: " << exec << std::endl; hp.StatusCode = 500;
+		if (h)
+			AlyssaHTTP2::ServerHeaders(h, hp);
+		else
+			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+		return;
 	}
 	FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
-	if (payload != "") {
-		payload += "\r\n";
-		fputs(payload.c_str(), in);
-		fflush(in);
+	fputs(cl->payload.c_str(), in);
+#ifdef _WIN32
+	fputs("\r\n", in);
+#else
+	fputs("\n", in);
+#endif
+	fflush(in);
+	while (fgets(buf, 512, out)) {
+		ret += buf;
 	}
-	while (fgets(buf, 4096, out) != nullptr) {
-		rst += buf;
+	subprocess_destroy(&cgi); delete[] environment[3]; delete[] environment[4];
+	// Parse the CGI data and set headers accordingly.
+	int HeaderEndpoint=0;
+	for (; HeaderEndpoint < ret.size(); HeaderEndpoint++) {// Iterate until end of headers.
+		if (ret[HeaderEndpoint] < 32)
+			if (ret[HeaderEndpoint + (int)environmentMaster[3]] < 32)//environmentMaster[3] is size of line delimiter of OS that's server is working on.
+				break;
 	}
-	subprocess_destroy(&cgi);
-	for (size_t i = 0; i < 6; i++) {
-		delete[] environment[i];
+	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
+		std::cout << "Custom Actions: Error: Missing header terminator on CGI " << exec << std::endl; hp.StatusCode = 500;
+		if (h)
+			AlyssaHTTP2::ServerHeaders(h, hp);
+		else
+			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+		return;
 	}
-	return rst;
+	// Check sanity of headers.
+	int pos = 0;
+	for (int i = 0; i < HeaderEndpoint+1; i++) {
+		if (ret[i] < 32) {
+			int j = pos;
+			while (j < i) {
+				j++;
+				if (ret[j] == ' ') break;
+			}
+			if (j == i) {// No space found.
+				if (!pos) {// First line is not a header. Treat as there's no header at all.
+					HeaderEndpoint = 0; break;
+				}
+				std::cout << "Custom Actions: Error: Malformed header on CGI " << exec << std::endl; hp.StatusCode = 500;
+				hp.CustomHeaders.clear();
+				if (h)
+					AlyssaHTTP2::ServerHeaders(h, hp);
+				else
+					Send(AlyssaHTTP::serverHeaders(500, cl), cl->Sr->sock, cl->Sr->ssl, 1);
+				return;
+			}
+			hp.CustomHeaders.emplace_back(Substring(&ret[pos], i - pos));
+			if (ret[i + 1] == '\n') i++;
+			pos = i + 1;
+		}
+	}
+	hp.StatusCode = 200;
+	if (h) {
+		AlyssaHTTP2::ServerHeaders(h, hp);
+		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*(int)environmentMaster[3]], ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
+	}
+	else {
+		Send(AlyssaHTTP::serverHeaders(200, cl,"",ret.size()-HeaderEndpoint-2*(int)environmentMaster[3]), cl->Sr->sock, cl->Sr->ssl, 1);
+		Send(&ret[0], cl->Sr->sock, cl->Sr->ssl, ret.size());
+		return;
+	}
+
 }
+
+//void AlyssaCGI::CGIMain(const char* p, clientInfo* cl, H2Stream* h) {// CGI driver function.
+//	string CGIData = ExecCGI(p, cl, h);
+//}
+
+
+//string execCGI(const char* exec, clientInfo* cl, H2Stream* h) {
+//#pragma warning(suppress : 4996)
+//	//string payload = ""; char* pathchar = getenv("PATH"); string pathstr; if (pathchar != NULL) pathstr = pathchar;
+//	//if (cl->qStr != "") payload = cl->qStr;
+//	//else if (cl->payload != "") payload = cl->payload;
+//	//const char* environment[6] = { strdup(string("SERVER_SOFTWARE=Alyssa/" + version).c_str()),strdup("GATEWAY_INTERFACE=\"CGI/1.1\""),strdup(string("REQUEST_METHOD=\"" + cl->RequestType + "\"").c_str()),strdup(string("QUERY_STRING=" + cl->qStr).c_str()),strdup(string("PATH=" + pathstr).c_str()),NULL };
+//	////Refer to github page of library.
+//	//struct subprocess_s cgi; const char* cmd[] = { exec,NULL }; char buf[4096] = { 0 }; string rst = "";
+//	//int result = subprocess_create_ex(cmd, 0, environment, &cgi);
+//	//if (0 != result) {
+//	//	std::cout << "Warning: CGI Failed to execute: " << exec << std::endl;
+//	//	Send(AlyssaHTTP::serverHeaders(404, cl), cl->Sr->sock, cl->Sr->ssl);
+//	//	return "";
+//	//}
+//	//FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
+//	//if (payload != "") {
+//	//	payload += "\r\n";
+//	//	fputs(payload.c_str(), in);
+//	//	fflush(in);
+//	//}
+//	//while (fgets(buf, 4096, out) != nullptr) {
+//	//	rst += buf;
+//	//}
+//	//subprocess_destroy(&cgi);
+//	//for (size_t i = 0; i < 6; i++) {
+//	//	delete[] environment[i];
+//	//}
+//	//return rst;
+//
+//	string ret; subprocess_s cgi;
+//}
 
 //bool customActions(string path, clientInfo* cl) {
 //	std::ifstream file; SOCKET sock = cl->Sr->sock; WOLFSSL* ssl = cl->Sr->ssl; string action[2] = { "" }, param[2] = { "" }, buf(std::filesystem::file_size(std::filesystem::u8path(path)), '\0'); file.open(std::filesystem::u8path(path)); file.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
@@ -311,7 +419,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 					}
 					else if(!strncmp(&c[cn],"softredirect", 12)){
 						cn=ct;
-						while(c[ct]>64)
+						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
 							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath; return -1;
@@ -320,12 +428,12 @@ string execCGI(const char* exec, clientInfo* cl) {
 					}
 					else if (!strncmp(&c[cn], "execcgi", 7)) {
 						cn = ct;
-						while (c[ct] > 64)
+						while (c[ct] > 32)
 							ct++;
 						if (ct - cn < 2) {
 							std::cout << "Custom actions: Error: Argument required for 'ExecCGI' action on node " << cl->RequestPath; return -1;
 						}
-						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 2;
+						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
 					}
 					else {
 						printf("Custom actions: Error: Unknown command %.*s\n", ct - 1 - cn, &c[cn]); return -1;
@@ -341,16 +449,7 @@ string execCGI(const char* exec, clientInfo* cl) {
 				break;
 			case 2:
 			{
-				string asd = execCGI(Arguments.c_str(), cl); hp.StatusCode = 200; hp.ContentLength = asd.size();
-				if (h) {
-					//AlyssaHTTP2::ServerHeaders(h, hp);
-					//AlyssaHTTP2::
-					std::terminate();
-				}
-				else {
-					asd = AlyssaHTTP::serverHeaders(200, cl, "", asd.size()) + "\r\n" + asd;
-					Send(asd, cl->Sr->sock, cl->Sr->ssl);
-				}
+				ExecCGI(Arguments.c_str(), cl, h);
 				return 0;
 			}
 			default:

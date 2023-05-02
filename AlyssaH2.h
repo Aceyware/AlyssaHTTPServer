@@ -23,6 +23,7 @@ struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) fu
 	string MimeType;
 	bool HasRange = 0; 
 	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
+	std::deque<string> CustomHeaders;// Additional custom headers
 };
 
 // Frame Types
@@ -51,6 +52,7 @@ public:
 	static void ClientConnection(_Surrogate sr);
 	static void ServerHeaders(H2Stream* s, HeaderParameters p);
 	static void ParseHeaders(H2Stream* s, char* buf, int sz);
+	static void SendData(H2Stream* s, void* d, size_t sz);
 private:
 	static void GoAway(WOLFSSL* s, unsigned int errorCode, unsigned int lastStr, const char* DbgErrorReason) {
 		char* buf;
@@ -105,5 +107,4 @@ private:
 		}
 	}
 	static void Get(H2Stream* s);
-	static void SendData(H2Stream* s, void* d, size_t sz);
 };

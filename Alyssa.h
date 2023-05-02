@@ -213,6 +213,8 @@ static size_t Append(void* Source,void* Destination,size_t Position,size_t Size=
 	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
 	return Size+Position;
 }
+bool CGIEnvInit();
+void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
 
 // Declaration of config variables
 extern bool isCRLF;

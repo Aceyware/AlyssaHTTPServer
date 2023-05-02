@@ -320,9 +320,9 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 			case 0:
 				return;
 			case -1:
-				Send(serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+				Send(serverHeaders(500, cl, "", 0)+"\r\n", cl->Sr->sock, cl->Sr->ssl, 1); return;
 			case -3:
-				shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
+				shutdown(cl->Sr->sock, 2); return;
 			default:
 				break;
 		}
@@ -378,7 +378,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	}
 
 	if (cl->close) {
-		shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock);
+		shutdown(cl->Sr->sock, 2);
 	}
 
 }
@@ -390,7 +390,7 @@ void AlyssaHTTP::Post(clientInfo* cl) {
 	case -1:
 		Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
 	case -3:
-		shutdown(cl->Sr->sock, 2); closesocket(cl->Sr->sock); return;
+		shutdown(cl->Sr->sock, 2); return;
 	default:
 		Send(AlyssaHTTP::serverHeaders(404, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
 	}
@@ -535,6 +535,10 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 #endif // Compile_WolfSSL
 
 	std::filesystem::current_path(std::filesystem::u8path(htroot));
+
+	if (CGIEnvInit()) {
+		terminate();
+	}
 
 #ifdef _WIN32
 	// Initialze winsock
@@ -688,7 +692,6 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 					case 0:
 					{
 						char host[NI_MAXHOST] = { 0 };		// Client's remote name
-						char service[NI_MAXSERV] = { 0 };	// Service (i.e. port) the client is connect on
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						_Surrogate sr;
 						sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
@@ -698,7 +701,6 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 					case 1:
 					{
 						char host[NI_MAXHOST] = { 0 };		// Client's remote name
-						char service[NI_MAXSERV] = { 0 };// Service (i.e. port) the client is connect on
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						_Surrogate sr;
 						sr.clhostname = host;
