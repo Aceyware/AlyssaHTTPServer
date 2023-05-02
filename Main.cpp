@@ -63,19 +63,6 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	return "application/octet-stream";
 }
 
-string execCGI(const char* exec, clientInfo* cl);// Prototypes of functions that moved below AlyssaHTTP class.
-
-std::ofstream Log; std::mutex logMutex;
-void Logging(clientInfo* cl) {
-	// A very basic logging implementation
-	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
-	logMutex.lock();
-	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath; 
-	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
-	Log << std::endl;
-	logMutex.unlock();
-}
-
 string AlyssaHTTP::serverHeaders(int statusCode, clientInfo* cl, string mime, int contentlength) {//This is the HTTP Response Header function. Status code is obviously mandatory.
 	//As of now the "mime" variable is used for everything else as a string parameter. Same for "contentlength" if it's required at all.
 	string temp = "HTTP/1.1 ";
@@ -208,112 +195,9 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 }
 
 void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
-	//std::ifstream file; string temp = ""; int filesize = 0; temp.reserve(768);
-	//SOCKET sock = cl->sock; WOLFSSL* ssl = cl->ssl; string path = cl->RequestPath;//The old definitions for ease and removing the need of rewriting the code
-	//if (path == "/") {//If server requests for root, we'll handle it specially
-	//	if (fileExists(htroot + "/root.htaccess")) {
-	//		if (!customActions(htroot + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
-	//	} //Check for the special rules first
-	//	else if (fileExists(htroot + "/index.html")) {
-	//		path = "/index.html";
-	//		file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
-	//	} //Check for index.html, which is default filename for webpage on root of any folder.
-	//	else if (foldermode) {
-	//		string asd = Folder::folder(htroot + "/"); asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
-	//		Send(asd, sock, ssl);
-	//		if (cl->close) { shutdown(sock, 2); closesocket(sock); }
-	//		return;
-	//	} //Send the folder index if enabled.
-	//}
-	//else if (path.substr(0, htrespath.size()) == htrespath) {//Request for a resource
-	//	if (fileExists(respath + "/" + path.substr(htrespath.size()))) {
-	//		file.open(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(respath + "/" + path.substr(htrespath.size())));
-	//	}
-	//}
-	//else {
-	//	if (std::filesystem::is_directory(std::filesystem::u8path(htroot + path))) {//Check for if path is a folder
-	//		if (fileExists(htroot + path + "/root.htaccess")) {//Check if custom actions exists
-	//			if (!customActions(htroot + path + "/root.htaccess", cl)) { if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
-	//		}
-	//		if (fileExists(htroot + path + "/index.html")) {//Check for index.html
-	//			path += "/index.html";
-	//			file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
-	//		}
-	//		else {//Send the folder structure if it's enabled
-	//			string asd = Folder::folder(htroot + path);
-	//			if (!isHEAD) asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n" + asd;
-	//			else asd = serverHeaders(200, cl, "text/html", asd.size()) + "\r\n";//Refeer to below (if(isHEAD)) part for more info about that.
-	//			Send(asd, sock, ssl);
-	//			if (cl->close) { shutdown(sock, 2); closesocket(sock); }
-	//			return;
-	//		}
-	//	}
-	//	else {//Path is a file
-	//		if (path.size() > 7) {
-	//			if (path.substr(path.size() - 8) == "htaccess" || path.substr(path.size() - 8) == "htpasswd") {//Send 403 and break if client requested for a .htpasswd/.htaccess file
-	//				string asd = ""; if (errorpages) asd = errorPage(403);
-	//				asd = serverHeaders(403, cl, "text/html", asd.size()) + "\r\n" + asd;
-	//				Send(asd, sock, ssl);
-	//				if (cl->close) { shutdown(sock, 2); closesocket(sock); } return;
-	//			}
-	//		}
-	//		if (fileExists(htroot + path + u8".htaccess")) {//Check for special rules first
-	//			if (!customActions(htroot + path + u8".htaccess", cl)) { file.close(); if (cl->close) { shutdown(sock, 2); closesocket(sock); } return; }
-	//		}
-	//		if (fileExists(htroot + path)) {//If special rules are not found, check for a file with exact name on request
-	//			file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
-	//			}
-	//		else if (fileExists(htroot + path + ".html")) { //If exact requested file doesn't exist, an HTML file would exists with such name
-	//			path += ".html";
-	//			file.open(std::filesystem::u8path(htroot + path), std::ios::binary); filesize = std::filesystem::file_size(std::filesystem::u8path(htroot + path));
-	//		}
-	//	} //If none is exist, don't open any file so server will return 404.
-	//}
-
-	//if (isHEAD) { //HTTP HEAD Requests are same as GET, but without response body. So if Request is a HEAD, we'll just send the header and then close the socket and return (stop) the function. Easy.
-	//	if (file.is_open()) { temp = serverHeaders(200, cl,fileMime(path), filesize) + "\r\n"; }
-	//	else { temp = serverHeaders(404, cl); }
-	//	Send(temp, sock, ssl);
-	//	if (cl->close) {
-	//		shutdown(sock, 2);
-	//		closesocket(sock);
-	//	}
-	//	return;
-	//}
-
-	//if (file.is_open()) { // Check if file is open, it shouldn't give a error if the file exists.
-	//	if(cl->rend) temp = serverHeaders(206, cl, std::to_string(cl->rstart) + "-" + std::to_string(cl->rend), filesize) + "\r\n";
-	//	else { temp = serverHeaders(200, cl, fileMime(path), filesize) + "\r\n"; }
-	//	Send(temp, sock, ssl);
-	//	bool isText = 0; char filebuf[32768] = { 0 }; if (Substring(fileMime(path),4) == "text") isText = 1;
-	//	file.rdbuf()->pubsetbuf(filebuf, 32768);
-	//	if (cl->rend) { filesize = cl->rend - cl->rstart+1; file.seekg(cl->rstart); }
-	//	while (true) {
-	//		if (filesize >= 32768) {
-	//			file.read(&filebuf[0], 32768); filesize -= 32768;
-	//			Send(filebuf, sock, ssl, 32768);
-	//		}
-	//		else {
-	//			file.read(&filebuf[0], filesize);
-	//			if (isText) Send(filebuf, sock, ssl, strlen(filebuf));
-	//			else { Send(filebuf, sock, ssl, filesize); }
-	//			filesize = 0;
-	//			break;
-	//		}
-	//	}
-	//	if (cl->close || cl->rend) {
-	//		shutdown(sock, 2); closesocket(sock);
-	//	}
-	//}
-	//else { // Cannot open file, probably doesn't exist so we'll send a 404
-	//	temp = "";
-	//	if (errorpages) { // If custom error pages enabled send the error page
-	//		temp = errorPage(404);
-	//	}
-	//	temp = serverHeaders(404, cl, "text/html", temp.size()) + "\r\n" + temp; // Send the HTTP 404 Response.
-	//	Send(temp, sock, ssl);
-	//}
-
+	if (logging) {
+		Logging(cl);
+	}
 	if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
 		{
@@ -330,25 +214,28 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		
 
 	FILE* file=NULL; size_t filesize = 0;
-	if (cl->RequestPath=="./") {
-		if (std::filesystem::exists("./index.html")) { cl->RequestPath = "./index.html"; }
-		else if (foldermode) { string asd = DirectoryIndex::DirMain("./"); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
-	}
-	else if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
+	if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
 		cl->RequestPath = respath + Substring(&cl->RequestPath[0], 0, _htrespath.size());
 	}
-	else if(std::filesystem::is_directory(std::filesystem::u8path(cl->RequestPath))) {
-		if (std::filesystem::exists("./" + cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
-		else if (foldermode) { string asd = DirectoryIndex::DirMain(cl->RequestPath); Send(serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); return; }
+	else if (std::filesystem::is_directory(std::filesystem::u8path(cl->RequestPath))) {
+		if (std::filesystem::exists(cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
+		else if (foldermode) {
+			string asd = DirectoryIndex::DirMain(cl->RequestPath);
+			Send(AlyssaHTTP::serverHeaders(200, cl, "text/html", asd.size()) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+			if(!isHEAD)
+				Send(asd, cl->Sr->sock, cl->Sr->ssl, 1); 
+			return;
+		}
+		else {
+			Send(AlyssaHTTP::serverHeaders(404, cl),cl->Sr->sock,cl->Sr->ssl,1); return;
+		}
 	}
 
-	if (isHEAD) {
-
-	}
 	else {
 #ifndef _WIN32
-		file = fopen(&cl->RequestPath[0], "r+b");
-#else //WinAPI accepts ANSI for standard fopen, unlike some *nix systems which accepts UTF-8 instead. Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
+		file = fopen(&cl->RequestPath[0], "rb");
+#else //WinAPI accepts ANSI for standard fopen, unlike sane operating systems which accepts UTF-8 instead. 
+	  //Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 		std::wstring RequestPathW;
 		RequestPathW.resize(cl->RequestPath.size());
 		MultiByteToWideChar(CP_UTF8, 0, &cl->RequestPath[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
@@ -359,6 +246,9 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	if (file) {
 		filesize = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath));
 		Send(serverHeaders(200, cl, fileMime(cl->RequestPath), filesize)+"\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+		if (isHEAD) {
+			fclose(file); return;
+		}
 		char* buf = new char[32768];
 		while (filesize) {
 			if (filesize>=32768) {
@@ -383,17 +273,23 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 
 }
 void AlyssaHTTP::Post(clientInfo* cl) {
-	switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
-	{
-	case 0:
-		return;
-	case -1:
-		Send(AlyssaHTTP::serverHeaders(500, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
-	case -3:
-		shutdown(cl->Sr->sock, 2); return;
-	default:
-		Send(AlyssaHTTP::serverHeaders(404, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return;
+	if (logging) {
+		Logging(cl);
 	}
+	if (CAEnabled) {
+		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
+		{
+		case 0:
+			return;
+		case -1:
+			Send(AlyssaHTTP::serverHeaders(500, cl, "", 0) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); return;
+		case -3:
+			shutdown(cl->Sr->sock, 2); return;
+		default:
+			Send(AlyssaHTTP::serverHeaders(404, cl, "", 0) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); return;
+		}
+	}
+	Send(AlyssaHTTP::serverHeaders(404, cl, "", 0) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1); return;
 }
 
 void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function that gets data from client.
@@ -504,6 +400,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		}
 	}
 
+	std::ofstream Log; std::mutex logMutex;
 	if (logging) {
 		Log.open("Alyssa.log", std::ios::app);
 		if (!Log.is_open()) {
@@ -537,6 +434,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 	std::filesystem::current_path(std::filesystem::u8path(htroot));
 
 	if (CGIEnvInit()) {
+		cout << "CGIEnvInit() Error!" << std::endl;
 		terminate();
 	}
 
@@ -628,7 +526,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 			else if (port[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-			_SockType.emplace_back(0);
+			_SockType.emplace_back(2);
 		}
 
 #ifdef Compile_WolfSSL
@@ -658,7 +556,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-				_SockType.emplace_back(1);
+				_SockType.emplace_back(3);
 			}
 		}
 #endif // Compile_WolfSSL
@@ -680,59 +578,84 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 
 	while (true) {
 		int ActiveSocket = poll(&_SocketArray[0],_SocketArray.size(), -1);
-		sockaddr_in6 client;
-#ifndef _WIN32
-		unsigned int clientSize = sizeof(client);
-#else
-		int clientSize = sizeof(client);
-#endif
+
 		for (int i = 0; i < _SocketArray.size(); i++) {
 			if (_SocketArray[i].revents == POLLRDNORM) {
-				switch (_SockType[i]) {
-					case 0:
-					{
-						char host[NI_MAXHOST] = { 0 };		// Client's remote name
+				if (_SockType[i] & 1) {// SSL Port
+					_Surrogate sr;
+					char host[NI_MAXHOST] = { 0 }; // Client's IP address
+					if (_SockType[i] & 2) {// IPv6 socket
+						sockaddr_in6 client;
+#ifndef _WIN32
+						unsigned int clientSize = sizeof(client);
+#else
+						int clientSize = sizeof(client);
+#endif
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
-						_Surrogate sr;
-						sr.clhostname = host; sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
-						std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
-						break;
-					}
-					case 1:
-					{
-						char host[NI_MAXHOST] = { 0 };		// Client's remote name
-						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
-						_Surrogate sr;
-						sr.clhostname = host;
 						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
-						WOLFSSL* ssl;
-						if ((ssl = wolfSSL_new(ctx)) == NULL) {
-							std::terminate();
-						}
-						wolfSSL_set_fd(ssl, sr.sock);
-						if (EnableH2) {
-							wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
-						}
-						if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
-							wolfSSL_free(ssl);
-							closesocket(sr.sock);
-						}
-						else {
-							if (EnableH2)
-								wolfSSL_ALPN_GetProtocol(ssl, &sr.ALPN,
-									&sr.ALPNSize);
-							else
-								sr.ALPN = h1;
-							sr.ssl = ssl;
-
-							if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
-							else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
-						}
-						break;
 					}
-					default:
+					else {// IPv4 socket
+						sockaddr_in client;
+#ifndef _WIN32
+						unsigned int clientSize = sizeof(client);
+#else
+						int clientSize = sizeof(client);
+#endif
+						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
+						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+					}
+					sr.clhostname = host;
+					WOLFSSL* ssl;
+					if ((ssl = wolfSSL_new(ctx)) == NULL) {
 						std::terminate();
-						break;
+					}
+					wolfSSL_set_fd(ssl, sr.sock);
+					if (EnableH2) {
+						wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+					}
+					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
+						wolfSSL_free(ssl);
+						closesocket(sr.sock);
+					}
+					else {
+						if (EnableH2)
+							wolfSSL_ALPN_GetProtocol(ssl, &sr.ALPN,
+								&sr.ALPNSize);
+						else
+							sr.ALPN = h1;
+						sr.ssl = ssl;
+
+						if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
+						else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
+					}
+					break;
+				}
+				else {
+					_Surrogate sr;
+					char host[NI_MAXHOST] = { 0 }; // Client's IP address
+					if (_SockType[i] & 2) {// IPv6 socket
+						sockaddr_in6 client;
+#ifndef _WIN32
+						unsigned int clientSize = sizeof(client);
+#else
+						int clientSize = sizeof(client);
+#endif
+						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
+						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+				}
+					else {// IPv4 socket
+						sockaddr_in client;
+#ifndef _WIN32
+						unsigned int clientSize = sizeof(client);
+#else
+						int clientSize = sizeof(client);
+#endif
+						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
+						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+					}
+					sr.clhostname = host;
+					std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
+					break;
 				}
 				ActiveSocket--; if(!ActiveSocket) break;
 			}

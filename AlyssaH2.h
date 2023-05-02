@@ -14,7 +14,7 @@ struct H2Stream{
 };
 
 struct StreamTable {
-	unsigned long long Stream, Index;
+	int Stream, Index;
 };
 
 struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
@@ -80,11 +80,11 @@ private:
 		// First search for any empty space on array
 		for (size_t i = 0; i < StrArray->size(); i++) {
 			if (StrArray->at(i) == NULL) {
-				StrArray->at(i) = new H2Stream; StrTable->emplace_back(StreamTable{ StreamId, i }); return i;
+				StrArray->at(i) = new H2Stream; StrTable->emplace_back(StreamTable{ (int)StreamId, (int)i }); return i;
 			}
 		}
 		// No empty space, add it to end
-		StrArray->emplace_back(new H2Stream); StrTable->emplace_back(StreamTable{ StreamId, StrArray->size() - 1 }); return StrArray->size() - 1;
+		StrArray->emplace_back(new H2Stream); StrTable->emplace_back(StreamTable{ (int)StreamId, (int)StrArray->size() - 1 }); return StrArray->size() - 1;
 	}
 	static void DeleteStream(std::deque<H2Stream*>* StrArray, std::deque<StreamTable>* StrTable, unsigned int StreamId) {// Deletes stream structure of a single stream from memory.
 		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
@@ -93,7 +93,7 @@ private:
 					delete[] StrArray->at(i)->Data;
 				delete StrArray->at(i); 
 				StrArray->at(i) = NULL;
-				StrTable->at(i).Index = 0; StrTable->erase(StrTable->begin() + i);
+				StrTable->at(i).Index = -1; StrTable->erase(StrTable->begin() + i);
 				return;
 			}
 		}
@@ -107,4 +107,5 @@ private:
 		}
 	}
 	static void Get(H2Stream* s);
+	static void Post(H2Stream* s);
 };

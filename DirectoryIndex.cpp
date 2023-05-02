@@ -1,4 +1,6 @@
-#include "DirectoryIndex.h"
+#ifndef AlyssaHeader
+#include "Alyssa.h"
+#endif
 
 template <typename TP>
 std::time_t to_time_t(TP tp)

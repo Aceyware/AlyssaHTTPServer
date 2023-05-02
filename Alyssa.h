@@ -85,18 +85,18 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", version = "", 
+	string RequestType = "", RequestPath = "", version = "",
 		host = "", // "Host" header
-		cookies = "", auth = "", 
+		cookies = "", auth = "",
 		payload = "",//HTTP POST/PUT Payload
-		qStr = "";//URL Encoded Query String
+		qStr = "";//URL Query string.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr;
 	int8_t RequestTypeInt = 0;
 	void clear() {
 		RequestType = "", RequestPath = "", version = "", host = "",
-			cookies = "", auth = "", payload = "", qStr = "", close = 0,
+			cookies = "", auth = "", payload = "", qStr = ""; close = 0,
 			rstart = 0, rend = 0;
 	}
 };
@@ -107,32 +107,20 @@ struct HPackIndex {
 struct clientInfoH2 {
 	std::vector<HPackIndex> dynIndexHeaders;
 };
+struct IndexEntry {
+	string FileName;	size_t FileSize;
+	bool isDirectory;	string ModifyDate;
+};
 struct H2Stream;
-class Config
-{
-public:
-	static string getValue(std::string key, std::string value);
-	static void initialRead();
-private:
-	static void Configcache();
-};
-class HPack {
-public:
-	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, clientInfo* cl, int _Size);
-private:
-	static string DecodeHuffman(char* huffstr);
-	static void ExecDynIndex(clientInfoH2* clh2, clientInfo* cl, int pos);
-};
-//class AlyssaH2{
-//	public:
-//		static void serverHeaders(clientInfoH2* clh2, clientInfo* cl, int statusCode, int fileSize, int StreamIdent, string _StrArg);
-//		//static void goAway();
-//		static void Get(clientInfoH2* clh2, clientInfo cl, int StreamIdent);
-//		static void clientConnectionH2(_Surrogate sr);
-//	private:
-//};
 
-class AlyssaHTTP{
+class Config {
+	public:
+		static string getValue(std::string key, std::string value);
+		static void initialRead();
+	private:
+		static void Configcache();
+};
+class AlyssaHTTP {
 	public:
 		static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0);
 		static void parseHeader(clientInfo* cl, char* buf, int sz);
@@ -142,31 +130,26 @@ class AlyssaHTTP{
 		static void Post(clientInfo* cl);
 };
 class CustomActions {
-public:
-	static int CAMain(char* path, clientInfo* c, H2Stream* h=NULL);
-private:
-	static int DoAuthentication(char* p, char* c);
-	static int ParseCA(char* c, int s, clientInfo* cl, H2Stream* h);
-	static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir, H2Stream* h);
+	public:
+		static int CAMain(char* path, clientInfo* c, H2Stream* h=NULL);
+	private:
+		static int DoAuthentication(char* p, char* c);
+		static int ParseCA(char* c, int s, clientInfo* cl, H2Stream* h);
+		static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir, H2Stream* h);
 };
+class DirectoryIndex {
+	public:
+		static string DirMain(string p);
+	private:
+		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
+};
+
 static string currentTime() {
 	std::ostringstream x;
 	std::time_t tt = time(0);
 	std::tm* gmt = std::gmtime(&tt);
 	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
 	return x.str();
-}
-static std::wstring s2ws(const std::string& str) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-	return converterX.from_bytes(str);
-}
-static std::string ws2s(const std::wstring& wstr) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-	return converterX.to_bytes(wstr);
 }
 static std::string Substring(void* str, unsigned int size, unsigned int startPoint=0){
 	string x; if (size == 0) { size = strlen(&static_cast<char*>(str)[startPoint]); }
@@ -280,25 +263,28 @@ static string HelpString=
 		//"For usage help please refer to https://pepsimantr.github.io/Alyssa/help\n"
 	;
 
-// Definition of functions again
-static string errorPage(int statusCode) {
-	std::ifstream file; string page = "";
-	file.open(respath + "/"+std::to_string(statusCode)+".html");
-	if (file.is_open()) {
-		string filebuf(8192, '\0');
-		while (true) {
-			file.read(&filebuf[0], 8192);
-			page += filebuf;
-			if (file.eof()) {
-				break;
-			}
-		}
-		file.close();
-	}
-	return page;
-}
-
 #include "AlyssaH2.h"
 #include "DirectoryIndex.h"
+
+static std::ofstream Log; extern std::mutex logMutex;
+static void Logging(clientInfo* cl) {
+	if (!Log.is_open()) {
+		std::terminate();
+	}
+	// A very basic logging implementation
+	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
+	logMutex.lock();
+	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath;
+	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
+	Log << std::endl;
+	logMutex.unlock();
+}
+// Log a predefined message instead of reading from clientInfo, for things like error logging.
+static void LogString(const char* s) {
+	logMutex.lock(); Log << s; logMutex.unlock();
+}
+static void LogString(string s) {
+	logMutex.lock(); Log << s; logMutex.unlock();
+}
 
 #endif // AlyssaHeader
