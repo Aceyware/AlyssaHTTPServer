@@ -20,7 +20,7 @@ std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
 		NewEntry.isDirectory = x.is_directory();
 		std::time_t tt = to_time_t(x.last_write_time());
 		std::tm* gmt = std::gmtime(&tt);
-		std::stringstream timebuf; timebuf << std::put_time(gmt, "%a, %d %B %Y %H:%M");
+		std::stringstream timebuf; timebuf << std::put_time(gmt, "%d %b %Y %H:%M");
 		NewEntry.ModifyDate = timebuf.str();
 		if (!NewEntry.isDirectory) {
 			NewEntry.FileSize = x.file_size();

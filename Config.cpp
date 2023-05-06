@@ -107,7 +107,7 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 			CAEnabled=1;
 			break;
 		case 2:
-			CAEnabled=1; CARecursive=1;
+			CAEnabled = 1; CARecursive = 1; break;
 		default:
 			break;
 	}

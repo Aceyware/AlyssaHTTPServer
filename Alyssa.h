@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <iomanip>
 #include <deque>
+#include <atomic>
 #ifndef _WIN32
 	#include <sys/types.h>
 	#include <unistd.h>
@@ -81,7 +82,8 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 	SOCKET sock = INVALID_SOCKET;
 	string clhostname = ""; // IP of client
 #ifdef Compile_WolfSSL
-	WOLFSSL* ssl = NULL; char* ALPN = NULL; unsigned short ALPNSize = 0;
+	WOLFSSL* ssl = NULL; char* ALPN = NULL; unsigned short ALPNSize = 0; 
+	//std::recursive_mutex& SockMtx; i hate myself
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
@@ -92,7 +94,7 @@ struct clientInfo {//This structure has the information from client request.
 		qStr = "";//URL Query string.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
-	_Surrogate* Sr;
+	_Surrogate* Sr=NULL;
 	int8_t RequestTypeInt = 0;
 	void clear() {
 		RequestType = "", RequestPath = "", version = "", host = "",
@@ -266,7 +268,7 @@ static string HelpString=
 #include "AlyssaH2.h"
 #include "DirectoryIndex.h"
 
-static std::ofstream Log; extern std::mutex logMutex;
+extern std::ofstream Log; extern std::mutex logMutex;
 static void Logging(clientInfo* cl) {
 	if (!Log.is_open()) {
 		std::terminate();

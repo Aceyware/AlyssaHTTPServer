@@ -20,6 +20,7 @@ bool CGIEnvInit() {// This function initializes master environment array by addi
 	strcpy(&buf[6], pathchar);
 	buf[sizeof buf - 1] = '\"';
 	environmentMaster[2] = buf;
+	// Line-delimiter length, platform dependent.
 #ifdef _WIN32
 	environmentMaster[3] = (char*)2;
 #else
@@ -89,7 +90,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				if (h)
 					AlyssaHTTP2::ServerHeaders(h, hp);
 				else
-					Send(AlyssaHTTP::serverHeaders(500, cl), cl->Sr->sock, cl->Sr->ssl, 1);
+					Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 				return;
 			}
 			hp.CustomHeaders.emplace_back(Substring(&ret[pos], i - pos));
@@ -116,32 +117,31 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		char* _Path=new char[sz+8];//Duplicate of path for usage on this function.
 		memcpy(_Path, path, sz);
 		memset(&_Path[sz], 0, 8);
-		if(CARecursive){
-			if(isDirectory){// Add / at the end if missing on request.
-				if(_Path[sz-1]!='/')
-					_Path[sz]='/';
+		if (isDirectory) {// Add / at the end if missing on request.
+			if (_Path[sz - 1] != '/')
+				_Path[sz] = '/';
+		}
+		for (int var = sz - 1; var >= 0; var--) {// Search for all folders until root of htroot recursively.
+			if (_Path[var] == '/') {
+				memcpy(&_Path[var + 1], ".alyssa", 8);
+				if (std::filesystem::exists(std::filesystem::path(_Path)))
+					fArray.emplace_back(std::filesystem::path(_Path).relative_path());
+				if (!CARecursive) break; // If recursive is not set, break so only current directory will be added.
 			}
-			for (int var = sz-1; var >= 0; var--) {// Search for all folders until root of htroot recursively.
-				if(_Path[var]=='/'){
-					memcpy(&_Path[var+1], ".alyssa", 8);
-					if(std::filesystem::exists(std::filesystem::path(_Path)))
-						fArray.emplace_back(std::filesystem::path(_Path).relative_path());
-				}
+		}
+		for (int var = sz; var > 0; --var) {// Reuse _Path for name of the requested file/directory
+			if (path[var] == '/') {
+				memcpy(_Path, &path[var + 1], sz - var); _Path[sz - var] = 0; break;
 			}
-			for (int var = sz; var > 0; --var) {// Reuse _Path for name of the requested file/directory
-				if(path[var]=='/'){
-					memcpy(_Path, &path[var+1], sz - var); _Path[sz - var] = 0; break;
-				}
-			}
-			for (int var = 0; var < fArray.size(); ++var) {// Check all of them by order.
-				int ret = ParseFile(fArray[var], _Path, c, !var, h);
-				switch (ret) {
-					case -2:
-						break;
-					default:
-						delete[] _Path;
-						return ret;
-				}
+		}
+		for (int var = 0; var < fArray.size(); ++var) {// Check all of them by order.
+			int ret = ParseFile(fArray[var], _Path, c, !var, h);
+			switch (ret) {
+			case -2:
+				break;
+			default:
+				delete[] _Path;
+				return ret;
 			}
 		}
 		delete[] _Path; return 1;
@@ -155,8 +155,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		}
 		int sz=std::filesystem::file_size(std::filesystem::path(p));
 		char* buf=new char[sz+1];
-		fread(buf,sz,1,f); int cn=0;
-		for (int var = 0; var < sz; ++var) {
+		fread(buf, sz, 1, f); int cn = 0; buf[sz] = '\0';
+		for (int var = 0; var < sz+1; ++var) {
 			if(buf[var]<32){
 				if(!strncmp(c, &buf[cn], var-cn)){
 					delete[] buf; fclose(f); return 1;
@@ -183,22 +183,22 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					ToLower(&c[cn], ct-cn);
 					ct++;
 					if(!strncmp(&c[cn], "authenticate", 12)){
-						cn=ct;
-						while(c[ct]>64)
+						cn = ct; hp.hasAuth = 1;
+						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
 							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath; return -1;
 						}
-						c[ct]=0; 
+						c[ct] = '\0';
 						if (cl->auth == "") {
 							hp.StatusCode = 401;
 							if (h)
 								AlyssaHTTP2::ServerHeaders(h, hp);
 							else
-								Send(AlyssaHTTP::serverHeaders(401, cl), cl->Sr->sock, cl->Sr->ssl);
+								Send(AlyssaHTTP::serverHeaders(401, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
 							return 0;
 						}
-						switch (DoAuthentication(c, &cl->auth[0]))
+						switch (DoAuthentication(&c[cn], &cl->auth[0]))
 						{
 						case -1:
 							return -1;
@@ -207,7 +207,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							if (h)
 								AlyssaHTTP2::ServerHeaders(h, hp);
 							else
-								Send(AlyssaHTTP::serverHeaders(403, cl), cl->Sr->sock, cl->Sr->ssl); 
+								Send(AlyssaHTTP::serverHeaders(403, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
 							return 0;
 						case 1:
 							break;
@@ -273,7 +273,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		f.open(p, std::ios::binary); int len=std::filesystem::file_size(p);
 		char* buf=new char[len+1];
 		//char buf[4096] = { 0 };
-		f.read(buf, len); int cn=0, ct=0;
+		f.read(buf, len); int cn=0, ct=0;  f.close();
+		for (; cn < len && buf[cn] < 32; cn++) {} ct = cn; // Iterate to beginning in case of there's empty lines at beginning of file.
 		while(cn<len){
 			if(buf[cn]=='}'){
 				std::cout<<"Custom actions: Error: Syntax error (closure of a non-existent scope) "
@@ -281,8 +282,10 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 			}
 			else if(buf[cn]=='{'){
 				bool isAffecting=0;
-				if(!strncmp(&buf[ct], "Recursive", 9))
-					isAffecting=1;
+				if (!strncmp(&buf[ct], "Recursive", 9)) {
+					if (CARecursive)
+						isAffecting = 1;
+				}
 				else if (isSameDir) {
 					if (!strncmp(&buf[ct], "WholeDirectory", 14))
 						isAffecting = 1;
@@ -309,16 +312,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					std::cout << "Custom actions: Error: Syntax error (missing '}' "
 						"for scope beginning at  " << ct << " on file " << p << std::endl; return -1;
 				}
-				for (; cn < len, buf[cn] < 32; cn++) {}
+				for (; cn < len && buf[cn] < 32; cn++) {}
 				if (!isAffecting) {
 					ct = cn; continue;
 				}
 				len=ParseCA(&buf[ct],cn-ct, c,h);// Reuse 'len' for return value
-				delete[] buf; f.close(); return len;
+				delete[] buf; return len;
 			}
 			cn++;
 		}
-		return -2;
+		delete[] buf; return -2;
 	}
 
 

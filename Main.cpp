@@ -3,6 +3,7 @@ using std::string; using std::cout;
 #ifndef _WIN32
 using std::terminate;
 #endif
+std::ofstream Log; std::mutex logMutex;
 
 bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
 	if (std::filesystem::exists(std::filesystem::u8path(filepath))) return 1;
@@ -177,14 +178,14 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			pos = line.find(":");
 			if (pos < 0) { Send(serverHeaders(400, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return; }
 			string key = Substring(&line[0], pos); pos += 2; string value = Substring(&line[0], 0, pos);
-			if (key == "Authorization") { cl->auth = Substring(&value[0], 0, 6); }
+			if (key == "Authorization") { cl->auth = Substring(&value[0], 0, 6); cl->auth = base64_decode(cl->auth); }
 			else if(key=="Connection") { if (value == "close") cl->close = 1; }
 			else if (key == "Host") { cl->host = value; }
 			else if(key=="Range"){
 				value = Substring(&value[0], 0, 6);
 				pos = value.find("-"); if (pos < 0) {}
 				try {
-					cl->rstart = stoi(Substring(&value[0], pos)); cl->rend = stoi(Substring(&value[0], 0, pos)); }
+					cl->rstart = stoi(Substring(&value[0], pos)); cl->rend = stoi(Substring(&value[0], 0, pos+1)); }
 				catch (const std::invalid_argument&) {}
 				if (!cl->rstart && !cl->rend) { Send(serverHeaders(400, cl, "", 0), cl->Sr->sock, cl->Sr->ssl, 1); return; }
 			}
@@ -198,6 +199,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	if (logging) {
 		Logging(cl);
 	}
+
 	if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
 		{
@@ -211,7 +213,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 				break;
 		}
 	}
-		
 
 	FILE* file=NULL; size_t filesize = 0;
 	if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
@@ -245,7 +246,12 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 
 	if (file) {
 		filesize = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath));
-		Send(serverHeaders(200, cl, fileMime(cl->RequestPath), filesize)+"\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+		if (cl->rstart || cl->rend) {
+			Send(serverHeaders(206, cl, std::to_string(cl->rstart)+"-"+std::to_string(cl->rend), filesize) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+			fseek(file, cl->rstart, 0); if (cl->rend)  filesize = cl->rend + 1 - cl->rstart;
+		}
+		else
+			Send(serverHeaders(200, cl, fileMime(cl->RequestPath), filesize)+"\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 		if (isHEAD) {
 			fclose(file); return;
 		}
@@ -400,7 +406,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 		}
 	}
 
-	std::ofstream Log; std::mutex logMutex;
+	
 	if (logging) {
 		Log.open("Alyssa.log", std::ios::app);
 		if (!Log.is_open()) {
