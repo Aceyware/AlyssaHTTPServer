@@ -38,16 +38,16 @@ string DirectoryIndex::DirMain(string p) {
 	p=p.substr(1);
 	//char* ret = new char[DirectorySize(&Array)]; 
 	string ret; uint8_t DirCnt = 0;
-	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:75;}pre{display:inline;font-family:sans-serif;}img{height:12;width:15;}</style>"
+	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:135;}pre{display:inline;font-family:sans-serif;}img{height:12px;width:15px;}</style>"
 		"<title>Index of " + p + "</title></head><body><h1>Index of " + p + "</h1><hr><div>";
 	if (p != "/")
 		ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
 	for (uint8_t i = 0; i < Array.size(); i++) {
 		if (Array[i].isDirectory) {
-			ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a>	-	" + Array[i].ModifyDate + "</pre><br>"; DirCnt++;
+			ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a>	" + Array[i].ModifyDate + "	-</pre><br>"; DirCnt++;
 		}
 		else {
-			ret += "<pre><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a>	" + std::to_string(Array[i].FileSize) + "	" + Array[i].ModifyDate + "</pre><br>";
+			ret += "<pre><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a>	" + Array[i].ModifyDate + "	[" + std::to_string(Array[i].FileSize) + "]</pre><br>";
 		}
 	}
 	ret += "</div><hr>";

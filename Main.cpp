@@ -5,23 +5,6 @@ using std::terminate;
 #endif
 std::ofstream Log; std::mutex logMutex;
 
-bool fileExists(std::string filepath) {//This function checks for desired file is exists and is accessible
-	if (std::filesystem::exists(std::filesystem::u8path(filepath))) return 1;
-	else { return 0; }
-}
-
-bool isWhitelisted(string ip, string wl=whitelist) {
-	if (wl[wl.size() - 1] != ';') wl+= ";";
-	size_t x = wl.find(";");
-	while (x<wl.size()) {
-		if (wl.substr(wl.size()-x-1, wl.find(";", x)) == ip) {
-			return 1;
-		}
-		x = wl.find(";", x + 1);
-	}
-	return 0;
-}
-
 void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1) {
 	size_t size = 0;
 	if (isText)
@@ -232,7 +215,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		}
 	}
 
-	else {
 #ifndef _WIN32
 		file = fopen(&cl->RequestPath[0], "rb");
 #else //WinAPI accepts ANSI for standard fopen, unlike sane operating systems which accepts UTF-8 instead. 
@@ -242,7 +224,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		MultiByteToWideChar(CP_UTF8, 0, &cl->RequestPath[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
 		file = _wfopen(&RequestPathW[0], L"rb");
 #endif
-	}
 
 	if (file) {
 		filesize = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath));
@@ -587,6 +568,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 
 		for (int i = 0; i < _SocketArray.size(); i++) {
 			if (_SocketArray[i].revents == POLLRDNORM) {
+#ifdef Compile_WolfSSL
 				if (_SockType[i] & 1) {// SSL Port
 					_Surrogate sr;
 					char host[NI_MAXHOST] = { 0 }; // Client's IP address
@@ -637,6 +619,7 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 					break;
 				}
 				else {
+#endif
 					_Surrogate sr;
 					char host[NI_MAXHOST] = { 0 }; // Client's IP address
 					if (_SockType[i] & 2) {// IPv6 socket
@@ -662,7 +645,9 @@ int main(int argc, char* argv[])//This is the main server function that fires up
 					sr.clhostname = host;
 					std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
 					break;
+#ifdef Compile_WolfSSL
 				}
+#endif
 				ActiveSocket--; if(!ActiveSocket) break;
 			}
 		}

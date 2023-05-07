@@ -5,7 +5,6 @@
 #pragma once
 #pragma warning(disable : 4996)
 
-
 // Includes
 #include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
 #include "subprocess.h"//https://github.com/sheredom/subprocess.h
@@ -42,12 +41,12 @@
 #endif
 using std::string;
 
-#define Compile_WolfSSL //Define that if you want to compile with SSL support
+//#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
 	#ifndef _WIN32
 		#include <wolfssl/options.h>
 	#else
-		#define WOLFSSL_USER_SETTINGS//Please somebody tell me what is the exact way to making compiler find that fucking user_settings.h file. 
+		#define WOLFSSL_USER_SETTINGS
 		#define CYASSL_USER_SETTINGS
 		#include "user_settings.h"
 	#endif
@@ -81,9 +80,9 @@ typedef struct WOLFSSL {};
 struct _Surrogate {//Surrogator struct that holds essentials for connection which is filled when there is a new connection.
 	SOCKET sock = INVALID_SOCKET;
 	string clhostname = ""; // IP of client
+	WOLFSSL* ssl = NULL;
 #ifdef Compile_WolfSSL
-	WOLFSSL* ssl = NULL; char* ALPN = NULL; unsigned short ALPNSize = 0; 
-	//std::recursive_mutex& SockMtx; i hate myself
+	char* ALPN = NULL; unsigned short ALPNSize = 0; 
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
@@ -112,6 +111,14 @@ struct clientInfoH2 {
 struct IndexEntry {
 	string FileName;	size_t FileSize;
 	bool isDirectory;	string ModifyDate;
+};
+struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
+	int16_t StatusCode;
+	size_t ContentLength = 0;
+	string MimeType;
+	bool HasRange = 0, hasAuth = 0;
+	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
+	std::deque<string> CustomHeaders;// Additional custom headers
 };
 struct H2Stream;
 
@@ -264,8 +271,9 @@ static string HelpString=
 		"\n"
 		//"For usage help please refer to https://pepsimantr.github.io/Alyssa/help\n"
 	;
-
+#ifdef Compile_WolfSSL
 #include "AlyssaH2.h"
+#endif
 #include "DirectoryIndex.h"
 
 extern std::ofstream Log; extern std::mutex logMutex;

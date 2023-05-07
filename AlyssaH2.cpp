@@ -5,6 +5,9 @@
 #ifndef AlyssaHeader
 #include "Alyssa.h"
 #endif
+
+#ifdef Compile_WolfSSL
+
 #include "AlyssaHuffman.h"
 #include "AlyssaH2.h"
 
@@ -15,6 +18,7 @@ string fileMime(string filename);
 
 void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_mutex& SockMtx) {
 	// RFC 7541 will be a guide for you to understand what those all does.
+	if (!s->StrIdent) return;
 	char buf[4096] = { 0 }; uint16_t pos = 9; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
 	buf[3] = H2THEADERS;
 	buf[4] = H2FENDHEADERS;
@@ -422,7 +426,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	else if (std::filesystem::is_directory(std::filesystem::u8path(s->cl.RequestPath))) {
 		if (std::filesystem::exists(s->cl.RequestPath + "/index.html")) { s->cl.RequestPath += "/index.html"; }
 		else if (foldermode) {
-			string asd = DirectoryIndex::DirMain(s->cl.RequestPath); hp.StatusCode = 200; hp.ContentLength = asd.size(); ServerHeaders(s, hp, SockMtx);
+			string asd = DirectoryIndex::DirMain(s->cl.RequestPath); hp.StatusCode = 200; hp.ContentLength = asd.size(); hp.MimeType = "text/html"; ServerHeaders(s, hp, SockMtx);
 			if (s->cl.RequestTypeInt != 5)
 				SendData(s, &asd[0], asd.size(), SockMtx);
 			return;
@@ -568,7 +572,9 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 				case H2TSETTINGS:
 					if (FrameFlags ^ H2FACK) {
 						char options[] = "\0\0\0\4\1\0\0\0\0";
-						Send(options, sr.sock, sr.ssl, 9);
+						SockMtx.lock();
+						wolfSSL_send(sr.ssl, options, 9, 0);
+						SockMtx.unlock();
 					}
 					else if (FrameSize > 0) {//Client sent a ACKed SETTINGS frame with payload, this is a connection error according to HTTP/2 semantics. Send a goaway.
 						GoAway(sr.ssl, 1, 0, "Acknowledged SETTINGS frame with payload data.");
@@ -579,11 +585,13 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 					pos += FrameSize;
 					break;
 				case H2TPING: {
-					char PingPayload[16] = { 0 };
+					char PingPayload[17] = { 0 };
 					PingPayload[2] = 8;//Frame size
 					PingPayload[3] = H2TPING;//Frame type
 					PingPayload[4] = H2FACK;//Frame flags, ACK set to true
-					wolfSSL_send(sr.ssl, PingPayload, 16, 0); 
+					SockMtx.lock();
+					wolfSSL_send(sr.ssl, PingPayload, 17, 0); 
+					SockMtx.unlock();
 					pos += FrameSize;
 					break;
 				}
@@ -628,3 +636,5 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 	DeleteStreamAll(&StrArray);
 	return;
 }
+
+#endif

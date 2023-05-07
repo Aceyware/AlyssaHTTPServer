@@ -39,9 +39,11 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	int8_t result = subprocess_create_ex(cmd, 0, environment, &cgi);
 	if (result != 0) {
 		std::cout << "Custom Actions: Error: Failed to execute CGI: " << exec << std::endl; hp.StatusCode = 500;
+#ifdef Compile_WolfSSL
 		if (h)
 			AlyssaHTTP2::ServerHeaders(h, hp);
 		else
+#endif
 			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 		return;
 	}
@@ -57,6 +59,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		ret += buf;
 	}
 	subprocess_destroy(&cgi); delete[] environment[3]; delete[] environment[4];
+	if (ret.size() == 0) {// Error if no output or it can't be read.
+		std::cout << "Custom Actions: Error: Error reading output of or executing, or no output on CGI " << exec << std::endl; hp.StatusCode = 500;
+#ifdef Compile_WolfSSL
+		if (h)
+			AlyssaHTTP2::ServerHeaders(h, hp);
+		else
+#endif
+			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+		return;
+	}
 	// Parse the CGI data and set headers accordingly.
 	int HeaderEndpoint=0;
 	for (; HeaderEndpoint < ret.size(); HeaderEndpoint++) {// Iterate until end of headers.
@@ -66,9 +78,11 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	}
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
 		std::cout << "Custom Actions: Error: Missing header terminator on CGI " << exec << std::endl; hp.StatusCode = 500;
+#ifdef Compile_WolfSSL
 		if (h)
 			AlyssaHTTP2::ServerHeaders(h, hp);
 		else
+#endif
 			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 		return;
 	}
@@ -87,9 +101,11 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				}
 				std::cout << "Custom Actions: Error: Malformed header on CGI " << exec << std::endl; hp.StatusCode = 500;
 				hp.CustomHeaders.clear();
+#ifdef Compile_WolfSSL
 				if (h)
 					AlyssaHTTP2::ServerHeaders(h, hp);
 				else
+#endif
 					Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
 				return;
 			}
@@ -99,16 +115,19 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		}
 	}
 	hp.StatusCode = 200;
+#ifdef Compile_WolfSSL
 	if (h) {
 		AlyssaHTTP2::ServerHeaders(h, hp);
 		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*(int)environmentMaster[3]], ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
 	}
 	else {
+#endif
 		Send(AlyssaHTTP::serverHeaders(200, cl,"",ret.size()-HeaderEndpoint-2*(int)environmentMaster[3]), cl->Sr->sock, cl->Sr->ssl, 1);
 		Send(&ret[0], cl->Sr->sock, cl->Sr->ssl, ret.size());
 		return;
+#ifdef Compile_WolfSSL
 	}
-
+#endif
 }
 
 	int CustomActions::CAMain(char* path, clientInfo* c, H2Stream* h){
@@ -187,14 +206,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath; return -1;
+							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath << std::endl; return -1;
 						}
 						c[ct] = '\0';
 						if (cl->auth == "") {
 							hp.StatusCode = 401;
+#ifdef Compile_WolfSSL
 							if (h)
 								AlyssaHTTP2::ServerHeaders(h, hp);
 							else
+#endif
 								Send(AlyssaHTTP::serverHeaders(401, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
 							return 0;
 						}
@@ -204,9 +225,11 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							return -1;
 						case 0:
 							hp.StatusCode = 403;
+#ifdef Compile_WolfSSL
 							if (h)
 								AlyssaHTTP2::ServerHeaders(h, hp);
 							else
+#endif
 								Send(AlyssaHTTP::serverHeaders(403, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
 							return 0;
 						case 1:
@@ -218,12 +241,14 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'Redirect' action on node "<<cl->RequestPath; return -1;
+							std::cout<<"Custom actions: Error: Argument required for 'Redirect' action on node "<<cl->RequestPath << std::endl; return -1;
 						}
 						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
+#ifdef Compile_WolfSSL
 						if (h)
 							AlyssaHTTP2::ServerHeaders(h, hp);
 						else
+#endif
 							Send(AlyssaHTTP::serverHeaders(302, cl, rd), cl->Sr->sock, cl->Sr->ssl);
 						return -3;
 					}
@@ -232,7 +257,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath; return -1;
+							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath << std::endl; return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 1;
 					}
@@ -241,7 +266,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while (c[ct] > 32)
 							ct++;
 						if (ct - cn < 2) {
-							std::cout << "Custom actions: Error: Argument required for 'ExecCGI' action on node " << cl->RequestPath; return -1;
+							std::cout << "Custom actions: Error: Argument required for 'ExecCGI' action on node " << cl->RequestPath << std::endl; return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
 					}

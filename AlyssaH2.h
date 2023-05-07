@@ -1,3 +1,4 @@
+#ifdef Compile_WolfSSL
 #pragma once
 // Temporary file for H2 development
 #ifndef AlyssaH2Header
@@ -16,15 +17,6 @@ struct H2Stream{
 
 struct StreamTable {
 	int Stream, Index;
-};
-
-struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
-	int16_t StatusCode;
-	size_t ContentLength=0;
-	string MimeType;
-	bool HasRange = 0, hasAuth = 0;
-	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
-	std::deque<string> CustomHeaders;// Additional custom headers
 };
 
 // Frame Types
@@ -134,3 +126,4 @@ private:
 	static void Get(H2Stream* s, std::recursive_mutex& SockMtx);
 	static void Post(H2Stream* s, std::recursive_mutex& SockMtx);
 };
+#endif

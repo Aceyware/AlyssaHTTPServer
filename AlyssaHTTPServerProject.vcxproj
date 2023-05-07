@@ -164,7 +164,6 @@
     <ClInclude Include="AlyssaH2.h" />
     <ClInclude Include="AlyssaHuffman.h" />
     <ClInclude Include="base64.h" />
-    <ClInclude Include="DirectoryIndex.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="subprocess.h" />
   </ItemGroup>

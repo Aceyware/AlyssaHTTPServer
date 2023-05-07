@@ -59,9 +59,6 @@
     <ClInclude Include="AlyssaH2.h">
       <Filter>Header</Filter>
     </ClInclude>
-    <ClInclude Include="DirectoryIndex.h">
-      <Filter>Header</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">

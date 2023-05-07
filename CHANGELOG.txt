@@ -1,6 +1,43 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v2.0 - 07.05.2023
+• Most of the things are rewritten with this version.
+	• Core server code, HTTP/1.x code
+	• HTTP/2
+	• Directory indexes
+	• Dynamic content code (CGI, custom actions)
+• New HTTP/2 implementation that actually works
+	• Semantically almost complete
+	• Streams are now actually implemented unlike previous implementation.
+		• RST_STREAM is now implemented and actually stops the file operations.
+	• Custom actions including CGI is now supported.
+	• HPack parsing doesn't freak out anymore, works like how it should.
+	• Multiplexed with proper synchronization
+	• POST/PUT/HEAD/OPTIONS requests are now supported.
+• New Directory Index Implementation (formerly called "Folder" Index)
+	• Code is now doesn't like the Zodiac's cipher anymore, now it's much simpler.
+	• CSS added for more fancy fonts and disabling word wrapping.
+	• Output HTML is now about 20% smaller.
+• New Custom Actions Implementation
+	• Deprecated old ".htaccess" files, now ".alyssa" files are used.
+	• Whole new syntax is implemented.
+	• Recursive and directory-wide operations are implemented.
+	• Soft-redirection is implemented as a new feature.
+• New Command-line-arguments feature
+	• Now you can overwrite config values or check for version with command line arguments. This is also useful for launching multiple server instances with a script.
+• Connections are now being listened and poll()ed in main thread instead of spawning a thread per a single listening port.
+• Switched to C-style file operations code from C++ fstreams for better performance.
+• And other performance improvements, which with new C-style file operations code together, makes speed on par with Apache.
+• Fixed the broken client IP address setting for both IPv4 and IPv6
+• Removed the whitelisting feature.
+• Divided the code to multiple files instead of holding them all on Main.cpp for more modularity.
+• Connections are now properly closed, which resolves some clients behaving weird (especially concurrent benchmarks).
+• Fixed some bugs, removed unnecessary code so the code is now much simpler.
+• Code is now really GPLv3 licensed.
+• Fixed quirks on older compilers.
+• Possibly some more changes and improvements.
+
 v1.2.2 - 09.01.2023
 • Added support for listening multiple ports with a single process.
 	• Just add ports to config file (ex: "Port 800 801) and then you're ready.
@@ -19,7 +56,7 @@ v1.2 - 31.12.2022 (Last release of year)
 	• Core HTTP/2 and most features that is available on HTTP/1.x is are implemented (excluding CGI support.)
 	• Connections are initiated with prior knowledge (ALPN).
 	• Can be enabled from config and disabled by default.
-	• Still work in progress and experimental. May not work with some client implementations, some features and semantics are incomplete and may have bugs. Usage on production is not recommended until I say so. (Using Alyssa itself on production is not a excellent idea anyway but still.)
+	• Still work in progress and experimental. May not work with some client implementations, some features and semantics are incomplete and may have bugs. Usage on production is not recommended until I say so.
 • Migration to wolfSSL from OpenSSL
 	• Reason of that is wolfSSL has good features like ALPN, dynamically selecting TLS version and QUIC. (OpenSSL may have that features too but they are not really usable because of reasons like lack of good documentation.)
 • Mitigated a critical security vulnerability that server can respond with literally any file outside of htroot folder
