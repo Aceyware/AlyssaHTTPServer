@@ -8,7 +8,7 @@
 using std::cout; using std::string;
 //#define HPackTEST
 
-string HPack::DecodeHuffman(char* huffstr) {
+string AlyssaHTTP2::DecodeHuffman(char* huffstr) {// How the fuck is this even working?
 	std::bitset<32> Bits; std::bitset<8> Octet; unsigned char pos = 0, pos2 = 7; unsigned int x = 0, i = 0; string out; out.reserve(255);
 	unsigned char start = 0, end = 0, sz = 0; Octet = huffstr[i]; Bits[pos] = Octet[pos2];
 	while (i < strlen(huffstr)) {
@@ -80,17 +80,17 @@ string HPack::DecodeHuffman(char* huffstr) {
 	return out;
 }
 #ifndef HPackTEST
-void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
-	if (pos >= cl->dynIndexHeaders.size()) return;
-	switch (cl->dynIndexHeaders[pos].Key) {
+void HPack::ExecDynIndex(clientInfoH2* clh2, clientInfo* cl, int pos) {
+	if (pos >= clh2->dynIndexHeaders.size()) return;
+	switch (clh2->dynIndexHeaders[pos].Key) {
 	case 1:
-		cl->cl.host = cl->dynIndexHeaders[pos].Value; break;
+		cl->host = clh2->dynIndexHeaders[pos].Value; break;
 	case 2:
-		cl->cl.RequestType = cl->dynIndexHeaders[pos].Value; break;
+		cl->RequestType = clh2->dynIndexHeaders[pos].Value; break;
 	case 4:
-		cl->cl.RequestPath = cl->dynIndexHeaders[pos].Value; break;
+		cl->RequestPath = clh2->dynIndexHeaders[pos].Value; break;
 	case 23:
-		cl->cl.auth = base64_decode(Substring(cl->dynIndexHeaders[pos].Value, 0, 5)); break;
+		cl->auth = base64_decode(Substring(&clh2->dynIndexHeaders[pos].Value[0], 0, 5)); break;
 	default:
 		break;
 	}
@@ -98,7 +98,7 @@ void HPack::ExecDynIndex(clientInfoH2* cl, int pos) {
 
 void Logging(clientInfo* cl);
 #endif
-void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
+void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, clientInfo* cl, int _Size) {
 	std::bitset<8> Single; int Size; string Value = "", Key = ""; bool DynAdd = 0;
 	for (size_t i = 0; i < _Size;) {
 		Single = buf[i];
@@ -112,28 +112,28 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 				{
 				case 2:
 #ifndef HPackTEST
-					cl2->cl.RequestType = "GET"; 
+					cl->RequestType = "GET"; 
 #else
 					cout << ":method: GET\n";
 #endif
 					break;
 				case 3:
 #ifndef HPackTEST
-					cl2->cl.RequestType = "POST"; 
+					cl->RequestType = "POST"; 
 #else
 					cout << ":method: POST\n";
 #endif
 					break;
 				case 4:
 #ifndef HPackTEST
-					cl2->cl.RequestPath = "/"; 
+					cl->RequestPath = "/"; 
 #else
 					cout << ":path: /\n";
 #endif
 					break;
 				case 5:
 #ifndef HPackTEST
-					cl2->cl.RequestPath = "/index.html"; 
+					cl->RequestPath = "/index.html"; 
 #else
 					cout << ":path: /index.html\n";
 #endif
@@ -147,7 +147,7 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 			}
 #ifndef HPackTEST
 			else {
-				ExecDynIndex(cl2, HStatic - 62);
+				ExecDynIndex(cl2, cl, HStatic - 62);
 			}
 #endif
 			i++;
@@ -236,27 +236,27 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 #ifndef HPackTEST
 				switch (HDynamic) {
 				case 1:
-					cl2->cl.host = Value; break;
+					cl->host = Value; break;
 				case 2:
-					cl2->cl.RequestType = Value; break;
+					cl->RequestType = Value; break;
 				case 4:
-					cl2->cl.RequestPath = Value; break;
+					cl->RequestPath = Value; break;
 				case 23:
-					cl2->cl.auth = base64_decode(Substring(Value, 0, 5)); break;
+					cl->auth = base64_decode(Substring(&Value[0], 0, 5)); break;
 				case 50:
-					Value = Substring(Value, 0, 5);
+					Value = Substring(&Value[0], 0, 5);
 					try {
-						cl2->cl.rstart = stoull(Substring(Value, Value.find("-")));
+						cl->rstart = stoull(Substring(&Value[0], Value.find("-")));
 					}
 					catch (const std::invalid_argument) {
 						//Send(serverHeaders(400, cl), sock, ssl); return;
 					}
 					try {
-						cl2->cl.rend = stoull(Substring(Value, 0, Value.find("-") + 1));
+						cl->rend = stoull(Substring(&Value[0], 0, Value.find("-") + 1));
 						//if (cl2->cl.rend > std::filesystem::file_size(std::filesystem::u8path(htroot + cl2->cl.RequestPath))) //{ Send(serverHeaders(416, cl), sock, ssl); return; }
 					}
 					catch (const std::invalid_argument) {
-						cl2->cl.rend = std::filesystem::file_size(std::filesystem::u8path(htroot + cl2->cl.RequestPath));
+						cl->rend = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath));
 					}
 					break;
 				default:
@@ -270,44 +270,67 @@ void HPack::ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size) {
 		}
 	}
 #ifndef HPackTEST
+	//Value.clear(); Size = -1;
+	//for (size_t i = 0; i < cl->RequestPath.size(); i++) {
+	//	if (cl->RequestPath[i] == '%') {
+	//		try {
+	//			Value += (char)std::stoi(Substring(cl2->cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
+	//		}
+	//		catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
+	//			Value += '%';
+	//		}
+	//	}
+	//	else if (cl2->cl.RequestPath[i] == '?') {
+	//		cl2->cl.qStr = Substring(cl2->cl.RequestPath, 0, i + 1);
+	//		cl2->cl.RequestPath = Substring(cl2->cl.RequestPath, i - 1);
+	//	}
+	//	// The latter is mitigation for the vulnerability that server can actually access and send any file outside of htroot if it runs with sufficient permissions
+	//	// Refeer to HTTP/1.x code (Main.cpp > AlyssaHTTP::ParseHeader()) for detailed info, this code is same as it 
+	//	// excluding this code reuses the existing variables instead of creating new ones (Value=temp2, PathDepth=Size) and 400 response is sent outside of this function.
+	//	else if (cl2->cl.RequestPath[i] == '/') { Size++; Value += cl2->cl.RequestPath[i]; }
+	//	else if (cl2->cl.RequestPath[i] == '.') {
+	//		Value += cl2->cl.RequestPath[i]; i++;
+	//		if (cl2->cl.RequestPath[i] == '.') {
+	//			Value += cl2->cl.RequestPath[i]; i++;
+	//			if (cl2->cl.RequestPath[i] == '/') {
+	//				Size--;
+	//				if (Size < 0) {
+	//					
+	//				}
+	//				Value += cl2->cl.RequestPath[i];
+	//			}
+	//		}
+	//		else if (cl2->cl.RequestPath[i] == '/') { Value += cl2->cl.RequestPath[i]; i++; }
+	//		else { Value += cl2->cl.RequestPath[i]; }
+	//	}
+	//	else Value += cl2->cl.RequestPath[i];
+	//}
+	//cl2->cl.RequestPath = Value;
 	Value.clear(); Size = -1;
-	for (size_t i = 0; i < cl2->cl.RequestPath.size(); i++) {
-		if (cl2->cl.RequestPath[i] == '%') {
-			try {
-				Value += (char)std::stoi(Substring(cl2->cl.RequestPath, 2, i + 1), NULL, 16); i += 2;
-			}
+	for (size_t i = 0; i < cl->RequestPath.size(); i++) {
+		if (cl->RequestPath[i] == '%') {
+			try { Value += (char)std::stoi(Substring(&cl->RequestPath[0], 2, i + 1), NULL, 16); i += 2; }
 			catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
 				Value += '%';
 			}
 		}
-		else if (cl2->cl.RequestPath[i] == '?') {
-			cl2->cl.qStr = Substring(cl2->cl.RequestPath, 0, i + 1);
-			cl2->cl.RequestPath = Substring(cl2->cl.RequestPath, i - 1);
-		}
-		// The latter is mitigation for the vulnerability that server can actually access and send any file outside of htroot if it runs with sufficient permissions
-		// Refeer to HTTP/1.x code (Main.cpp > AlyssaHTTP::ParseHeader()) for detailed info, this code is same as it 
-		// excluding this code reuses the existing variables instead of creating new ones (Value=temp2, PathDepth=Size) and 400 response is sent outside of this function.
-		else if (cl2->cl.RequestPath[i] == '/') { Size++; Value += cl2->cl.RequestPath[i]; }
-		else if (cl2->cl.RequestPath[i] == '.') {
-			Value += cl2->cl.RequestPath[i]; i++;
-			if (cl2->cl.RequestPath[i] == '.') {
-				Value += cl2->cl.RequestPath[i]; i++;
-				if (cl2->cl.RequestPath[i] == '/') {
+		else if (cl->RequestPath[i] == '.') {
+			Value += '.'; i++;
+			if (cl->RequestPath[i] == '/') { Value += '/'; }//Current directory, no need to do anything
+			else if (cl->RequestPath[i] == '.') {//May be parent directory...
+				Value += '.'; i++;
+				if (cl->RequestPath[i] == '/') {//It is the parent directory.
 					Size--;
-					if (Size < 0) {
-						cl2->cl.RequestType = "";//Empty request type is reserved for 400 responses.
-						return;
-					}
-					Value += cl2->cl.RequestPath[i];
+					if (Size < 0) { cl->RequestPath = "I"; return; }
 				}
+				Value += cl->RequestPath[i];
 			}
-			else if (cl2->cl.RequestPath[i] == '/') { Value += cl2->cl.RequestPath[i]; i++; }
-			else { Value += cl2->cl.RequestPath[i]; }
+			else Value += cl->RequestPath[i];
 		}
-		else Value += cl2->cl.RequestPath[i];
-	}
-	cl2->cl.RequestPath = Value; 
-	if (logging) Logging(&cl2->cl);
+		else if (cl->RequestPath[i] == '/') { Size++; Value += '/'; }
+		else Value += cl->RequestPath[i];
+	} cl->RequestPath = '.' + Value;
+	if (logging) Logging(cl);
 #endif
 }
 

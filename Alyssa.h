@@ -1,7 +1,9 @@
 // Header file for Alyssa
+#ifndef AlyssaHeader
+#define AlyssaHeader
+
 #pragma once
 #pragma warning(disable : 4996)
-#define AlyssaHeader
 
 // Includes
 #include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
@@ -19,31 +21,38 @@
 #include <mutex>
 #include <bitset>
 #include <math.h>
+#include <stdio.h>
+#include <iomanip>
+#include <deque>
+#include <atomic>
 #ifndef _WIN32
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <signal.h>
+	#include <sys/types.h>
+	#include <unistd.h>
+	#include <sys/socket.h>
+	#include <netdb.h>
+	#include <arpa/inet.h>
+	#include <signal.h>
+	#include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros 
+	#include <poll.h>
 #else
-#include <WS2tcpip.h>
-#pragma comment (lib, "ws2_32.lib")
+	#include <WS2tcpip.h>
+	#pragma comment (lib, "ws2_32.lib")
+	#include <io.h>
 #endif
 using std::string;
 
-#define Compile_WolfSSL //Define that if you want to compile with SSL support
+//#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
-#ifndef _WIN32
-#include <wolfssl/options.h>
-#else
-#define WOLFSSL_USER_SETTINGS
-#define CYASSL_USER_SETTINGS
-#endif
-#include <cyassl/ctaocrypt/settings.h>
-#include <wolfssl/ssl.h>
-#define SSL_recv wolfSSL_read
-#define SSL_send wolfSSL_write
+	#ifndef _WIN32
+		#include <wolfssl/options.h>
+	#else
+		#define WOLFSSL_USER_SETTINGS
+		#define CYASSL_USER_SETTINGS
+		#include "user_settings.h"
+	#endif
+	#include <wolfssl/ssl.h>
+	#define SSL_recv wolfSSL_read
+	#define SSL_send wolfSSL_write
 #endif //Compile_WolfSSL
 
 #ifndef Compile_WolfSSL
@@ -52,62 +61,96 @@ typedef struct WOLFSSL {};
 
 // Definitions for non-Windows platforms
 #ifndef _WIN32
-#define SOCKET_ERROR -1
-#define INVALID_SOCKET -1
-typedef int SOCKET;
-#define closesocket close
-#define Sleep sleep
-static void sigpipe_handler(int unused)
-{
-}
+	#define SOCKET_ERROR -1
+	#define INVALID_SOCKET -1
+	typedef int SOCKET;
+	#define closesocket close
+	#define Sleep sleep
+	static void sigpipe_handler(int unused)
+	{
+	}
 #endif
 // Definitions for Windows
 #ifdef _WIN32
-#define strdup _strdup
+	#define poll WSAPoll
+	#define strdup _strdup
 #endif
 
 // Definition/declaration of functions and classes
+struct _Surrogate {//Surrogator struct that holds essentials for connection which is filled when there is a new connection.
+	SOCKET sock = INVALID_SOCKET;
+	string clhostname = ""; // IP of client
+	WOLFSSL* ssl = NULL;
+#ifdef Compile_WolfSSL
+	char* ALPN = NULL; unsigned short ALPNSize = 0; 
+#endif
+};
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", version = "", host = "", // "Host" header
-		cookies = "", auth = "", clhostname = "", // IP of client
+	string RequestType = "", RequestPath = "", version = "",
+		host = "", // "Host" header
+		cookies = "", auth = "",
 		payload = "",//HTTP POST/PUT Payload
-		qStr = "";//URL Encoded Query String
+		qStr = "";//URL Query string.
 	bool close = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
-	SOCKET sock = INVALID_SOCKET;
-	WOLFSSL* ssl = NULL;
-	char* ALPN = NULL; unsigned short ALPNSize = 0;
+	_Surrogate* Sr=NULL;
+	int8_t RequestTypeInt = 0;
+	void clear() {
+		RequestType = "", RequestPath = "", version = "", host = "",
+			cookies = "", auth = "", payload = "", qStr = ""; close = 0,
+			rstart = 0, rend = 0;
+	}
 };
 struct HPackIndex {
 	int Key = 0;
 	string Value = "";
 };
 struct clientInfoH2 {
-	clientInfo cl;
 	std::vector<HPackIndex> dynIndexHeaders;
-	char StreamIdent[4] = {0};
 };
-class Config
-{
-public:
-	static string getValue(std::string key, std::string value);
-	static void initialRead();
-private:
-	static void Configcache();
+struct IndexEntry {
+	string FileName;	size_t FileSize;
+	bool isDirectory;	string ModifyDate;
 };
-class Folder {
-public:
-	static string folder(std::string path);
-private:
-	static string getFolder(std::string path);
-	static string HTML(std::string payload, std::string relpath);
+struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
+	int16_t StatusCode;
+	size_t ContentLength = 0;
+	string MimeType;
+	bool HasRange = 0, hasAuth = 0;
+	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
+	std::deque<string> CustomHeaders;// Additional custom headers
 };
-class HPack {
-public:
-	static void ParseHPack(unsigned char* buf, clientInfoH2* cl2, int _Size);
-private:
-	static string DecodeHuffman(char* huffstr);
-	static void ExecDynIndex(clientInfoH2* cl, int pos);
+struct H2Stream;
+
+class Config {
+	public:
+		static string getValue(std::string key, std::string value);
+		static void initialRead();
+	private:
+		static void Configcache();
+};
+class AlyssaHTTP {
+	public:
+		static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0);
+		static void parseHeader(clientInfo* cl, char* buf, int sz);
+		static void clientConnection(_Surrogate sr);
+	private:
+		static void Get(clientInfo* cl, bool isHEAD = 0);
+		static void Post(clientInfo* cl);
+};
+class CustomActions {
+	public:
+		static int CAMain(char* path, clientInfo* c, H2Stream* h=NULL);
+	private:
+		static int DoAuthentication(char* p, char* c);
+		static int ParseCA(char* c, int s, clientInfo* cl, H2Stream* h);
+		static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir, H2Stream* h);
+};
+class DirectoryIndex {
+	public:
+		static string DirMain(string p);
+	private:
+		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
 };
 
 static string currentTime() {
@@ -117,38 +160,10 @@ static string currentTime() {
 	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
 	return x.str();
 }
-static std::wstring s2ws(const std::string& str) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-	return converterX.from_bytes(str);
-}
-static std::string ws2s(const std::wstring& wstr) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-	return converterX.to_bytes(wstr);
-}
-static std::string Substring(std::string str, unsigned int size, unsigned int startPoint=0){
-	string x=""; if(size==0) size=str.size()-startPoint;
-	if (size > str.size() - startPoint) throw std::out_of_range("Size argument is larger than input string.");
+static std::string Substring(void* str, unsigned int size, unsigned int startPoint=0){
+	string x; if (size == 0) { size = strlen(&static_cast<char*>(str)[startPoint]); }
 	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
-	return x;
-}
-static std::string Substring(const char* str, unsigned int size, unsigned int startPoint=0){
-	string x=""; if(size==0) size=strlen(str)-startPoint;
-	if (size > strlen(str) - startPoint) throw std::out_of_range("Size argument is larger than input string.");
-	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
-	return x;
-}
-static std::string Substring(const unsigned char* str, unsigned int size, unsigned int startPoint = 0) {
-	string x = ""; if (size == 0) size = strlen((char*)str) - startPoint;
-	//if (size > strlen((char*)str) - startPoint) 
-		//throw std::out_of_range("Size argument is larger than input string.");
-	x.resize(size);
-	memcpy(&x[0], &str[startPoint], size);
+	memcpy(&x[0], &static_cast<char*>(str)[startPoint], size);
 	return x;
 }
 static std::string ToLower(string str) {
@@ -160,6 +175,13 @@ static std::string ToLower(string str) {
 		x += str[i];
 	}
 	return x;
+}
+static void ToLower(char* c, int l){
+	for (int var = 0; var < l; ++var) {
+		if (c[var] < 91 && c[var] > 64) {
+					c[var] += 32;
+		}
+	}
 }
 static size_t btoull(string str, int size) {
 	size_t out = 0;
@@ -178,33 +200,13 @@ static unsigned int Convert24to32(unsigned char* Source) {
 		| (Source[2] << 8)
 		) >> 8;
 }
-static size_t Append(unsigned char* Source,unsigned char* Destination,size_t Position,size_t Size=0) {
+static size_t Append(void* Source,void* Destination,size_t Position,size_t Size=0) {
 	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
+	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
+	return Size+Position;
 }
-static size_t Append(char* Source, char* Destination, size_t Position, size_t Size = 0) {
-	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
-}
-static size_t Append(const char* Source, char* Destination, size_t Position, size_t Size = 0) {
-	if (Size == 0) { Size = strlen((const char*)Source); }
-	size_t i = 0;
-	for (; i < Size; i++) {
-		Destination[Position] = Source[i];
-		Position++;
-	}
-	return i;
-}
+bool CGIEnvInit();
+void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -219,25 +221,80 @@ extern string whitelist;
 extern bool errorpages;
 extern string respath;
 extern string htrespath;
+extern string _htrespath;
 extern bool logOnScreen;
 extern string defaultCorsAllowOrigin; extern bool corsEnabled;
 extern string CSPConnectSrc; extern bool CSPEnabled;
 extern bool logging;
 extern bool EnableH2;
 extern bool EnableIPv6;
+extern bool CAEnabled;
+extern bool CARecursive;
 #ifdef Compile_WolfSSL
-extern bool enableSSL;
-extern string SSLcertpath;
-extern string SSLkeypath;
-extern std::vector<unsigned int> SSLport;
-extern string SSLportStr;
-extern bool HSTS;
+	extern bool enableSSL;
+	extern string SSLcertpath;
+	extern string SSLkeypath;
+	extern std::vector<unsigned int> SSLport;
+	extern string SSLportStr;
+	extern bool HSTS;
 #endif
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v1.2.2-r1";
+static string version = "v2.0";
 static char alpn[] = "h2,http/1.1,http/1.0";
-static char h1[] = "h"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
+static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
 static int on = 1;
+static string GPLDisclaimer=
+	"Copyright (C) 2023 PEPSIMANTR\n"
+	"This program is free software: you can redistribute it and/or modify "
+	"it under the terms of the GNU General Public License as published by "
+	"the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\n"
+
+	"This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of "
+	"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\n"
+
+	"You should have received a copy of the GNU General Public License"
+	"along with this program.  \nIf not, see <https://www.gnu.org/licenses/>.\n";
+static string HelpString=
+		"Alyssa HTTP Server command-line arguments help:\n\n"
+
+		"-version       : Displays the version and license info\n"
+		"-help          : Displays this help message\n"
+		"-port [int]    : Overrides the port on config, comma-separated list for multiple ports\n"
+		"-htroot [str]  : Overrides the htroot path on config\n"
+#ifdef Compile_WolfSSL
+		"-nossl         : Disables the SSL if enabled on config\n"
+		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
+#endif
+		"\n"
+		//"For usage help please refer to https://pepsimantr.github.io/Alyssa/help\n"
+	;
+#ifdef Compile_WolfSSL
+#include "AlyssaH2.h"
+#endif
+#include "DirectoryIndex.h"
+
+extern std::ofstream Log; extern std::mutex logMutex;
+static void Logging(clientInfo* cl) {
+	if (!Log.is_open()) {
+		std::terminate();
+	}
+	// A very basic logging implementation
+	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
+	logMutex.lock();
+	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath;
+	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
+	Log << std::endl;
+	logMutex.unlock();
+}
+// Log a predefined message instead of reading from clientInfo, for things like error logging.
+static void LogString(const char* s) {
+	logMutex.lock(); Log << s; logMutex.unlock();
+}
+static void LogString(string s) {
+	logMutex.lock(); Log << s; logMutex.unlock();
+}
+
+#endif // AlyssaHeader
