@@ -5,10 +5,6 @@
 #ifndef AlyssaHeader
 #include "Alyssa.h"
 #endif
-
-void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1);
-int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
-
 const char* environmentMaster[] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()), "GATEWAY_INTERFACE=\"CGI/1.1\"", NULL, NULL };
 
 bool CGIEnvInit() {// This function initializes master environment array by adding PATH (and maybe some other in the future)
@@ -38,13 +34,14 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	const char* cmd[] = { exec,NULL }; char buf[512] = { 0 };
 	int8_t result = subprocess_create_ex(cmd, 0, environment, &cgi);
 	if (result != 0) {
-		std::cout << "Custom Actions: Error: Failed to execute CGI: " << exec << std::endl; hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+		std::cout << "Failed to execute CGI: " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
-			AlyssaHTTP2::ServerHeaders(h, hp);
+			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
 #endif
-			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+			AlyssaHTTP::ServerHeaders(&hp, cl);
 		return;
 	}
 	FILE* in = subprocess_stdin(&cgi); FILE* out = subprocess_stdout(&cgi);
@@ -60,13 +57,14 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	}
 	subprocess_destroy(&cgi); delete[] environment[3]; delete[] environment[4];
 	if (ret.size() == 0) {// Error if no output or it can't be read.
-		std::cout << "Custom Actions: Error: Error reading output of or executing, or no output on CGI " << exec << std::endl; hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+		std::cout << "Error reading output of or executing, or no output on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
-			AlyssaHTTP2::ServerHeaders(h, hp);
+			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
 #endif
-			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+			AlyssaHTTP::ServerHeaders(&hp, cl);
 		return;
 	}
 	// Parse the CGI data and set headers accordingly.
@@ -77,13 +75,14 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				break;
 	}
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
-		std::cout << "Custom Actions: Error: Missing header terminator on CGI " << exec << std::endl; hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+		std::cout << "Missing header terminator on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
-			AlyssaHTTP2::ServerHeaders(h, hp);
+			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
 #endif
-			Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+			AlyssaHTTP::ServerHeaders(&hp, cl);
 		return;
 	}
 	// Check sanity of headers.
@@ -99,14 +98,15 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				if (!pos) {// First line is not a header. Treat as there's no header at all.
 					HeaderEndpoint = 0; break;
 				}
-				std::cout << "Custom Actions: Error: Malformed header on CGI " << exec << std::endl; hp.StatusCode = 500;
+				ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+				std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
 				hp.CustomHeaders.clear();
 #ifdef Compile_WolfSSL
 				if (h)
-					AlyssaHTTP2::ServerHeaders(h, hp);
+					AlyssaHTTP2::ServerHeaders(&hp, h);
 				else
 #endif
-					Send(AlyssaHTTP::serverHeaders(500, cl) + "\r\n", cl->Sr->sock, cl->Sr->ssl, 1);
+					AlyssaHTTP::ServerHeaders(&hp, cl);
 				return;
 			}
 			hp.CustomHeaders.emplace_back(Substring(&ret[pos], i - pos));
@@ -114,16 +114,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 			pos = i + 1;
 		}
 	}
-	hp.StatusCode = 200;
+	hp.StatusCode = 200; hp.ContentLength = ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3];
 #ifdef Compile_WolfSSL
 	if (h) {
-		AlyssaHTTP2::ServerHeaders(h, hp);
+		AlyssaHTTP2::ServerHeaders(&hp, h);
 		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*(int)environmentMaster[3]], ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
 	}
 	else {
 #endif
-		Send(AlyssaHTTP::serverHeaders(200, cl,"",ret.size()-HeaderEndpoint-2*(int)environmentMaster[3]), cl->Sr->sock, cl->Sr->ssl, 1);
-		Send(&ret[0], cl->Sr->sock, cl->Sr->ssl, ret.size());
+		AlyssaHTTP::ServerHeaders(&hp, cl);
+		Send(&ret[HeaderEndpoint + 2 * (int)environmentMaster[3]], cl->Sr->sock, cl->Sr->ssl, ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
 		return;
 #ifdef Compile_WolfSSL
 	}
@@ -170,7 +170,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		FILE* f=NULL;
 		f=fopen(p,"rb");
 		if(!f){
-			std::cout<<"Custom actions: Error: Cannot open credentials file "<<p; return -1;
+			ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+			std::cout<<"Cannot open credentials file "<<p; ConsoleMutex.unlock(); return -1;
 		}
 		int sz=std::filesystem::file_size(std::filesystem::path(p));
 		char* buf=new char[sz+1];
@@ -206,17 +207,18 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'Authenticate' action on node "<<cl->RequestPath << std::endl; return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+							std::cout<<"Argument required for 'Authenticate' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 						c[ct] = '\0';
 						if (cl->auth == "") {
 							hp.StatusCode = 401;
 #ifdef Compile_WolfSSL
 							if (h)
-								AlyssaHTTP2::ServerHeaders(h, hp);
+								AlyssaHTTP2::ServerHeaders(&hp, h);
 							else
 #endif
-								Send(AlyssaHTTP::serverHeaders(401, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
+								AlyssaHTTP::ServerHeaders(&hp, cl);
 							return 0;
 						}
 						switch (DoAuthentication(&c[cn], &cl->auth[0]))
@@ -227,10 +229,10 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							hp.StatusCode = 403;
 #ifdef Compile_WolfSSL
 							if (h)
-								AlyssaHTTP2::ServerHeaders(h, hp);
+								AlyssaHTTP2::ServerHeaders(&hp, h);
 							else
 #endif
-								Send(AlyssaHTTP::serverHeaders(403, cl)+"\r\n", cl->Sr->sock, cl->Sr->ssl);
+								AlyssaHTTP::ServerHeaders(&hp, cl);
 							return 0;
 						case 1:
 							break;
@@ -241,15 +243,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'Redirect' action on node "<<cl->RequestPath << std::endl; return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+							std::cout<<"Argument required for 'Redirect' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
 #ifdef Compile_WolfSSL
 						if (h)
-							AlyssaHTTP2::ServerHeaders(h, hp);
+							AlyssaHTTP2::ServerHeaders(&hp, h);
 						else
 #endif
-							Send(AlyssaHTTP::serverHeaders(302, cl, rd), cl->Sr->sock, cl->Sr->ssl);
+							AlyssaHTTP::ServerHeaders(&hp, cl);
 						return -3;
 					}
 					else if(!strncmp(&c[cn],"softredirect", 12)){
@@ -257,7 +260,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							std::cout<<"Custom actions: Error: Argument required for 'SoftRedirect' action on node "<<cl->RequestPath << std::endl; return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+							std::cout<<"Argument required for 'SoftRedirect' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 1;
 					}
@@ -266,12 +270,18 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while (c[ct] > 32)
 							ct++;
 						if (ct - cn < 2) {
-							std::cout << "Custom actions: Error: Argument required for 'ExecCGI' action on node " << cl->RequestPath << std::endl; return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+							std::cout << "Argument required for 'ExecCGI' action on node " << cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
 					}
 					else {
-						printf("Custom actions: Error: Unknown command %.*s\n", ct - 1 - cn, &c[cn]); return -1;
+						//ConsoleMutex.lock();
+						ConsoleMsgM(0, "Custom actions: ");
+						//printf("Unknown command: %.*s\n", ct - 1 - cn, &c[cn]);
+						std::cout<<"Unknown command shit\n";
+						//ConsoleMutex.unlock();
+						return -1;
 					}
 					cn=ct;
 				}
@@ -302,8 +312,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		for (; cn < len && buf[cn] < 32; cn++) {} ct = cn; // Iterate to beginning in case of there's empty lines at beginning of file.
 		while(cn<len){
 			if(buf[cn]=='}'){
-				std::cout<<"Custom actions: Error: Syntax error (closure of a non-existent scope) "
-							"at char "<<cn<<" on file "<<p<<std::endl; return -1;
+				ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+				std::cout<<"Syntax error (closure of a non-existent scope) "
+							"at char "<<cn<<" on file "<<p<<std::endl; ConsoleMutex.unlock(); return -1;
 			}
 			else if(buf[cn]=='{'){
 				bool isAffecting=0;
@@ -324,18 +335,25 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 								isAffecting = 1;
 						}
 						else {
-							std::cout << "Custom actions: Error: Syntax error (invalid node identifier keyword) "
-								"at char " << cn << " on file " << p << std::endl; return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+							std::cout << "Syntax error (invalid node identifier keyword) "
+								"at char " << cn << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 					}
 				}
-				ct = cn+1;
+				cn++; ct = cn;
 				while(cn<len+1) {
 					if(buf[cn]=='}') {buf[cn]=0; break;}
+					else if (buf[cn] == '{') {
+						ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+						std::cout << "Syntax error (beginning of another scope before previous one closed) "
+							"at char " << cn << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
+					}
 					cn++; }
 				if (cn == len) {
-					std::cout << "Custom actions: Error: Syntax error (missing '}' "
-						"for scope beginning at  " << ct << " on file " << p << std::endl; return -1;
+					ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+					std::cout << "Syntax error (missing '}' "
+						"for scope beginning at  " << ct << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
 				}
 				for (; cn < len && buf[cn] < 32; cn++) {}
 				if (!isAffecting) {

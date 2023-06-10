@@ -41,7 +41,7 @@
 #endif
 using std::string;
 
-//#define Compile_WolfSSL //Define that if you want to compile with SSL support
+#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
 	#ifndef _WIN32
 		#include <wolfssl/options.h>
@@ -131,7 +131,7 @@ class Config {
 };
 class AlyssaHTTP {
 	public:
-		static string serverHeaders(int statusCode, clientInfo* cl, string mime = "", int contentlength = 0);
+		static void ServerHeaders(HeaderParameters* h, clientInfo* c);
 		static void parseHeader(clientInfo* cl, char* buf, int sz);
 		static void clientConnection(_Surrogate sr);
 	private:
@@ -153,60 +153,31 @@ class DirectoryIndex {
 		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
 };
 
-static string currentTime() {
-	std::ostringstream x;
-	std::time_t tt = time(0);
-	std::tm* gmt = std::gmtime(&tt);
-	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
-	return x.str();
-}
-static std::string Substring(void* str, unsigned int size, unsigned int startPoint=0){
-	string x; if (size == 0) { size = strlen(&static_cast<char*>(str)[startPoint]); }
-	x.resize(size);
-	memcpy(&x[0], &static_cast<char*>(str)[startPoint], size);
-	return x;
-}
-static std::string ToLower(string str) {
-	string x = ""; x.reserve(str.size());
-	for (size_t i = 0; i < str.size(); i++) {
-		if (str[i] < 91 && str[i] > 64) {
-			str[i] += 32;
-		}
-		x += str[i];
-	}
-	return x;
-}
-static void ToLower(char* c, int l){
-	for (int var = 0; var < l; ++var) {
-		if (c[var] < 91 && c[var] > 64) {
-					c[var] += 32;
-		}
-	}
-}
-static size_t btoull(string str, int size) {
-	size_t out = 0;
-	for (int i = str.size(); size >= 0; i--) {
-		if (str[i] == '1') {
-			out += pow(2, size);
-		}
-		size--;
-	}
-	return out;
-}
-static unsigned int Convert24to32(unsigned char* Source) {
-	return (
-		(Source[0] << 24)
-		| (Source[1] << 16)
-		| (Source[2] << 8)
-		) >> 8;
-}
-static size_t Append(void* Source,void* Destination,size_t Position,size_t Size=0) {
-	if (Size == 0) { Size = strlen((const char*)Source); }
-	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
-	return Size+Position;
-}
+void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText = 1);
+int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
+string fileMime(string filename);
+string currentTime();
+std::string Substring(void* str, unsigned int size, unsigned int startPoint = 0);
+std::string ToLower(string str);
+void ToLower(char* c, int l);
+size_t btoull(string str, int size);
+unsigned int Convert24to32(unsigned char* Source);
+size_t Append(void* Source, void* Destination, size_t Position, size_t Size = 0);
 bool CGIEnvInit();
 void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
+void Logging(clientInfo* cl);
+void LogString(const char* s);
+void LogString(string s);
+void SetPredefinedHeaders();
+void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
+void ConsoleMsgM(int8_t MsgType, const char* UnitName);
+
+extern std::ofstream Log; extern std::mutex logMutex; extern std::mutex ConsoleMutex;
+// Response headers that's never changing in lifetime of server.
+extern std::string PredefinedHeaders;
+#ifdef Compile_WolfSSL
+extern std::string PredefinedHeadersH2; extern short int PredefinedHeadersH2Size;
+#endif // Compile_WolfSSL
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -230,6 +201,7 @@ extern bool EnableH2;
 extern bool EnableIPv6;
 extern bool CAEnabled;
 extern bool CARecursive;
+extern bool ColorOut;
 #ifdef Compile_WolfSSL
 	extern bool enableSSL;
 	extern string SSLcertpath;
@@ -241,7 +213,7 @@ extern bool CARecursive;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "v2.0";
+static string version = "2.0.1";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
@@ -269,32 +241,20 @@ static string HelpString=
 		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
 #endif
 		"\n"
-		//"For usage help please refer to https://pepsimantr.github.io/Alyssa/help\n"
+		//"For usage help please refer to https://4lyssa.net/AlyssaHTTP/help\n"
 	;
+// Values for color console output
+static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
+#ifndef _WIN32
+	static const char* MsgColors[] = { "\033[31m", "\033[33m", "\033[36m", "\033[37m", "\033[0;39m" };
+#else
+	void AlyssaNtSetConsole();
+	static HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	extern char MsgColors[];
+#endif // !_WIN32
+
 #ifdef Compile_WolfSSL
 #include "AlyssaH2.h"
 #endif
-#include "DirectoryIndex.h"
-
-extern std::ofstream Log; extern std::mutex logMutex;
-static void Logging(clientInfo* cl) {
-	if (!Log.is_open()) {
-		std::terminate();
-	}
-	// A very basic logging implementation
-	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
-	logMutex.lock();
-	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath;
-	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
-	Log << std::endl;
-	logMutex.unlock();
-}
-// Log a predefined message instead of reading from clientInfo, for things like error logging.
-static void LogString(const char* s) {
-	logMutex.lock(); Log << s; logMutex.unlock();
-}
-static void LogString(string s) {
-	logMutex.lock(); Log << s; logMutex.unlock();
-}
 
 #endif // AlyssaHeader

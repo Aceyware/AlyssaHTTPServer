@@ -43,10 +43,10 @@ struct StreamTable {
 class AlyssaHTTP2 {
 public:
 	static void ClientConnection(_Surrogate sr);
-	static void ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_mutex& SockMtx);
-	static void ServerHeaders(H2Stream* s, HeaderParameters p) {
+	static void ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive_mutex& SockMtx);
+	static void ServerHeaders(HeaderParameters* p, H2Stream* s) {
 		std::recursive_mutex asd;
-		ServerHeaders(s, p, asd);
+		ServerHeaders(p, s, asd);
 	};
 	static void ParseHeaders(H2Stream* s, char* buf, int sz, std::recursive_mutex& SockMtx);
 	static void SendData(H2Stream* s, void* d, size_t sz, std::recursive_mutex& SockMtx);

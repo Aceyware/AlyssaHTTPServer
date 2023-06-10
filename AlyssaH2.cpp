@@ -11,19 +11,16 @@
 #include "AlyssaHuffman.h"
 #include "AlyssaH2.h"
 
-bool fileExists(std::string filepath);
-void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText=1);
-int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
-string fileMime(string filename);
+std::string PredefinedHeadersH2; short int PredefinedHeadersH2Size = 0;
 
-void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_mutex& SockMtx) {
+void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive_mutex& SockMtx) {
 	// RFC 7541 will be a guide for you to understand what those all does.
 	if (!s->StrIdent) return;
 	char buf[4096] = { 0 }; uint16_t pos = 9; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
 	buf[3] = H2THEADERS;
 	buf[4] = H2FENDHEADERS;
 	buf[5] = s->StrIdent >> 24; buf[6] = s->StrIdent >> 16; buf[7] = s->StrIdent >> 8; buf[8] = s->StrIdent >> 0;
-	switch (p.StatusCode) {//Add "status" header.
+	switch (p->StatusCode) {//Add "status" header.
 	case 200:
 		buf[pos] = 128 | 8; pos++; break;
 	case 204:
@@ -54,9 +51,9 @@ void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_
 			buf[pos + buf[pos] + 1] = '*'; buf[pos]++;
 		}
 		buf[pos]++;
-		sprintf(&buf[pos + buf[pos] + 1], "%lld", p.ContentLength);
-		while (p.ContentLength) {// Increase the corresponding byte for length.
-			buf[pos]++; p.ContentLength /= 10;
+		sprintf(&buf[pos + buf[pos] + 1], "%lld", p->ContentLength);
+		while (p->ContentLength) {// Increase the corresponding byte for length.
+			buf[pos]++; p->ContentLength /= 10;
 		} pos += buf[pos] + 1;
 		break;
 	case 304:
@@ -70,47 +67,47 @@ void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_
 	default:
 		buf[pos] = 64 | 8; pos++;
 		buf[pos] = 3; //Value length
-		sprintf(&buf[pos + 1], "%ld", p.StatusCode); pos += 4;
-		switch (p.StatusCode) {
+		sprintf(&buf[pos + 1], "%ld", p->StatusCode); pos += 4;
+		switch (p->StatusCode) {
 		case 302://302 Found, redirection.
 			buf[pos] = 64 | 46;// Literal indexed 46: location
-			buf[pos + 1] = p.AddParamStr.size(); pos += 2;// Additional parameter string here is used for location value.
-			strcpy(&buf[pos], p.AddParamStr.c_str()); pos += buf[pos - 1];
+			buf[pos + 1] = p->AddParamStr.size(); pos += 2;// Additional parameter string here is used for location value.
+			strcpy(&buf[pos], p->AddParamStr.c_str()); pos += buf[pos - 1];
 			break;
 		default:
 			break;
 		}
 		break;
 	}
-	if (p.StatusCode > 300) {
+	if (p->StatusCode > 300) {
 		buf[4] |= H2FENDSTREAM; s->StrOpen = 0;
 	}
 	// Content-length
-	if (p.StatusCode != 206) {
+	if (p->StatusCode != 206) {
 		buf[pos] = 64 | 28; pos++;//Left a byte for value length
-		sprintf(&buf[pos + 1], "%lld", p.ContentLength);
-		if (!p.ContentLength)// If length is 0, below code won't work, we handle is specially here.
+		sprintf(&buf[pos + 1], "%lld", p->ContentLength);
+		if (!p->ContentLength)// If length is 0, below code won't work, we handle is specially here.
 			buf[pos]++;
 		else {
-			while (p.ContentLength) {// Increase the corresponding byte for length.
-				buf[pos]++; p.ContentLength /= 10;
+			while (p->ContentLength) {// Increase the corresponding byte for length.
+				buf[pos]++; p->ContentLength /= 10;
 			}
 		}
 		pos += buf[pos] + 1;
 	};
 	// Accept-ranges
-	if (p.HasRange) {
+	if (p->HasRange) {
 		buf[pos] = 64 | 18; pos++;//Literal indexed 18: accept-ranges
 		buf[pos] = 5;pos++;//Length: 5
 		memcpy(&buf[pos], "bytes", 5); pos += 5;
 	}
 	// Content-type
-	if (p.MimeType != "") {
-		buf[pos] = 64 | 31; buf[pos + 1] = p.MimeType.size(); pos += 2;//Type and value length.
-		memcpy(&buf[pos], &p.MimeType[0], buf[pos - 1]); pos += buf[pos - 1];
+	if (p->MimeType != "") {
+		buf[pos] = 64 | 31; buf[pos + 1] = p->MimeType.size(); pos += 2;//Type and value length.
+		memcpy(&buf[pos], &p->MimeType[0], buf[pos - 1]); pos += buf[pos - 1];
 	}
 	// WWW-Authenticate
-	if (p.hasAuth) {
+	if (p->hasAuth) {
 		buf[pos] = 64 | 61; buf[pos + 1] = 5; pos += 2;//Type and value length.
 		strcpy(&buf[pos], "basic"); pos += 5;
 	}
@@ -118,27 +115,25 @@ void AlyssaHTTP2::ServerHeaders(H2Stream* s, HeaderParameters p, std::recursive_
 	buf[pos] = 64 | 33;//Lit. indexed 33: date
 	buf[pos + 1] = 29; pos += 2;//Size: 29. Date header always has this size.
 	memcpy(&buf[pos], &currentTime()[0], 29); pos += 29;
-	// Server
-	buf[pos] = 64 | 54;//Lit. indexed 54: server
-	buf[pos + 1] = 7 + version.size() - 1; pos += 2;//Size
-	memcpy(&buf[pos], "Alyssa/", 7); memcpy(&buf[pos + 7], &version[1], version.size()-1); pos += buf[pos - 1];
 	// Add the additional custom headers as literal non-indexed header
-	for (int8_t i = 0; i < p.CustomHeaders.size(); i++) {
+	for (int8_t i = 0; i < p->CustomHeaders.size(); i++) {
 		pos++;// Lit. non-indexed 0: new name
 		int8_t j = 0;
-		while (j < p.CustomHeaders[i].size()) {
-			j++; if (p.CustomHeaders[i][j] == ':') break;
+		while (j < p->CustomHeaders[i].size()) {
+			j++; if (p->CustomHeaders[i][j] == ':') break;
 		}
 		buf[pos] = j;
 		string temp;
-		temp = Substring(&p.CustomHeaders[i][0], j);
+		temp = Substring(&p->CustomHeaders[i][0], j);
 		temp = ToLower(temp);
 		strcpy(&buf[pos+1], temp.c_str());
 		pos += buf[pos] + 1;
-		temp = Substring(&p.CustomHeaders[i][j + 2], p.CustomHeaders[i].size() - j - 1);
+		temp = Substring(&p->CustomHeaders[i][j + 2], p->CustomHeaders[i].size() - j - 1);
 		buf[pos] = temp.size()-1;
 		strcpy(&buf[pos + 1], temp.c_str()); pos += buf[pos] + 1;
 	}
+	// Add the predefined headers
+	memcpy(&buf[pos], PredefinedHeadersH2.c_str(), PredefinedHeadersH2Size); pos += PredefinedHeadersH2Size;
 	// Set the size of the frame
 	buf[1] = pos - 9 << 8; buf[2] = pos - 9 << 0;
 	// Send the frame to the client.
@@ -354,7 +349,7 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 								temp += '.'; i++;
 								if (s->cl.RequestPath[i] == '/') {//It is the parent directory.
 									pos--;
-									if (pos < 0) { HeaderParameters p; p.StatusCode = 400; ServerHeaders(s, p, SockMtx); return; }
+									if (pos < 0) { HeaderParameters p; p.StatusCode = 400; ServerHeaders(&p, s, SockMtx); return; }
 								}
 								temp += s->cl.RequestPath[i];
 							}
@@ -400,7 +395,7 @@ void AlyssaHTTP2::SendData(H2Stream* s, void* d, size_t sz, std::recursive_mutex
 }
 
 void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty similar to its HTTP/1.1 counterpart.
-	HeaderParameters hp; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+	HeaderParameters h; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
 	if (logging) {
 		Logging(&s->cl);
 	}
@@ -410,7 +405,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 			case 0:
 				return;
 			case -1:
-				hp.StatusCode = 500; ServerHeaders(s, hp, SockMtx); return;
+				h.StatusCode = 500; ServerHeaders(&h, s, SockMtx); return;
 			case -3:
 				//shutdown(s->cl.Sr->sock, 2); closesocket(s->cl.Sr->sock); 
 			return;
@@ -426,13 +421,13 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	else if (std::filesystem::is_directory(std::filesystem::u8path(s->cl.RequestPath))) {
 		if (std::filesystem::exists(s->cl.RequestPath + "/index.html")) { s->cl.RequestPath += "/index.html"; }
 		else if (foldermode) {
-			string asd = DirectoryIndex::DirMain(s->cl.RequestPath); hp.StatusCode = 200; hp.ContentLength = asd.size(); hp.MimeType = "text/html"; ServerHeaders(s, hp, SockMtx);
+			string asd = DirectoryIndex::DirMain(s->cl.RequestPath); h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s, SockMtx);
 			if (s->cl.RequestTypeInt != 5)
 				SendData(s, &asd[0], asd.size(), SockMtx);
 			return;
 		}
 		else {
-			hp.StatusCode = 404; ServerHeaders(s, hp, SockMtx); return;
+			h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
 		}
 	}
 
@@ -446,15 +441,15 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 #endif
 
 	if (file) {
-		filesize = std::filesystem::file_size(std::filesystem::u8path(s->cl.RequestPath)); hp.ContentLength = filesize; hp.MimeType = fileMime(s->cl.RequestPath);
+		filesize = std::filesystem::file_size(std::filesystem::u8path(s->cl.RequestPath)); h.ContentLength = filesize; h.MimeType = fileMime(s->cl.RequestPath);
 		if (s->cl.rstart || s->cl.rend) {
-			hp.StatusCode = 206;
+			h.StatusCode = 206;
 			fseek(file, s->cl.rstart, 0); if (s->cl.rend) filesize = s->cl.rend + 1 - s->cl.rstart;
 		}
 		else {
-			hp.StatusCode = 200;
+			h.StatusCode = 200; h.HasRange = 1;
 		}
-		ServerHeaders(s, hp, SockMtx);
+		ServerHeaders(&h, s, SockMtx);
 		if (s->cl.RequestTypeInt == 5) {// Equal of if(isHEAD)
 			fclose(file); s->StrMtx.unlock(); return;
 		}
@@ -480,12 +475,12 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 		fclose(file); delete[] buf; return;
 	}
 	else {
-		hp.StatusCode = 404; ServerHeaders(s, hp, SockMtx); return;
+		h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
 	}
 }
 
 void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
-	HeaderParameters hp; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+	HeaderParameters h; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
 	if (logging) {
 		Logging(&s->cl);
 	}
@@ -495,7 +490,7 @@ void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 		case 0:
 			s->StrMtx.unlock(); return;
 		case -1:
-			hp.StatusCode = 500; ServerHeaders(s, hp, SockMtx); return;
+			h.StatusCode = 500; ServerHeaders(&h, s, SockMtx); return;
 		case -3: 
 			return;
 		default:
@@ -503,11 +498,11 @@ void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 		}
 		SockMtx.unlock();
 	}
-	hp.StatusCode = 404; ServerHeaders(s, hp, SockMtx); return;
+	h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
 }
 
 void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
-	std::deque<H2Stream*> StrArray; std::deque<StreamTable> StrTable; std::mutex StrMtx; 
+	std::deque<H2Stream*> StrArray; std::deque<StreamTable> StrTable; std::mutex StrMtx;//Stream array, table and mutex of that arrays.
 	std::recursive_mutex SockMtx;// We have to add one more argument to all functions now because i cant add this fucking shit to any struct
 	StrArray.emplace_back(new H2Stream); StrTable.emplace_back();
 	char* buf = new char[16600]; memset(buf, 0, 16600);
@@ -615,7 +610,7 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 						case 4:
 							{
 								HeaderParameters h; h.StatusCode = 204;
-								ServerHeaders(StrArray[Index], h, SockMtx);
+								ServerHeaders(&h, StrArray[Index], SockMtx);
 							}
 							break;
 						case 5:
@@ -623,7 +618,7 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 						default:
 							{
 								HeaderParameters h; h.StatusCode = 501;
-								ServerHeaders(StrArray[Index], h, SockMtx);
+								ServerHeaders(&h, StrArray[Index], SockMtx);
 							}
 							break;
 					}
