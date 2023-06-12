@@ -1,6 +1,8 @@
 /*
 	Alyssa HTTP Server Project
+	Idk what to type here lol
 
+	Main.cpp: Main thread code that launches the server, starts and listens the sockets, and launches threads.
 */
 
 
@@ -13,14 +15,14 @@ std::ofstream Log; std::mutex logMutex; std::mutex ConsoleMutex;
 
 int main(int argc, char* argv[]) {//This is the main server function that fires up the server and listens for connections.
 	//Set the locale and stdout to Unicode
-	fwide(stdout, 0);
+	fwide(stdout, 0); setlocale(LC_ALL, "");
+	// Do platform spesific operations
 #ifndef _WIN32
-	signal(SIGPIPE, sigpipe_handler); //Workaround for some *nix killing the server when server tries to access an socket which is closed by remote peer.
+	signal(SIGPIPE, sigpipe_handler); // Workaround for some *nix killing the server when server tries to access an socket which is closed by remote peer.
 #endif
 #ifdef _WIN32
 	if (ColorOut) AlyssaNtSetConsole(); // Set console colors on NT
 #endif
-	setlocale(LC_ALL, "");
 	//Read the config file
 	Config::initialRead();
 	//Parse the command line arguments
@@ -37,7 +39,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #ifdef Compile_WolfSSL
 				cout<<"WolfSSL Library Version: "<<WOLFSSL_VERSION<<std::endl;
 #endif
-				cout<<std::endl<<GPLDisclaimer;
+				cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl; 
+				cout << std::endl << GPLDisclaimer;
 				return 0;
 			}
 			else if(!strcmp(argv[i],"help")){
@@ -130,13 +133,6 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		}
 	}
 #endif // Compile_WolfSSL
-
-	std::filesystem::current_path(std::filesystem::u8path(htroot));
-
-	if (CGIEnvInit()) {
-		cout << "CGIEnvInit() Error!" << std::endl;
-		terminate();
-	}
 
 #ifdef _WIN32
 	// Initialze winsock
@@ -264,7 +260,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
 	//cout << std::endl << "WARNING: This build is from work-in-progress experimental '{branch name}' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
+	// After setting sockets successfully, define the predefined headers that will used until lifetime of executable and will never change.
 	SetPredefinedHeaders(); 
+	std::filesystem::current_path(std::filesystem::u8path(htroot));
+	if (CGIEnvInit()) {
+		cout << "CGIEnvInit() Error!" << std::endl;
+		terminate();
+	}
 
 	std::cout << "Alyssa HTTP Server " << version << std::endl << "Listening on HTTP: ";
 	for (size_t i = 0; i < port.size() - 1; i++) std::cout << port[i] << ", ";

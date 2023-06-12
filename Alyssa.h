@@ -8,6 +8,7 @@
 // Includes
 #include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
 #include "subprocess.h"//https://github.com/sheredom/subprocess.h
+#include "Crc32.h"//https://github.com/stbrumme/crc32
 #include <iostream>
 #include <string>
 #include <thread>
@@ -86,7 +87,7 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
-	string RequestType = "", RequestPath = "", version = "",
+	string RequestPath = "", version = "",
 		host = "", // "Host" header
 		cookies = "", auth = "",
 		payload = "",//HTTP POST/PUT Payload
@@ -96,7 +97,7 @@ struct clientInfo {//This structure has the information from client request.
 	_Surrogate* Sr=NULL;
 	int8_t RequestTypeInt = 0;
 	void clear() {
-		RequestType = "", RequestPath = "", version = "", host = "",
+		RequestPath = "", version = "", host = "",
 			cookies = "", auth = "", payload = "", qStr = ""; close = 0,
 			rstart = 0, rend = 0;
 	}
@@ -119,6 +120,7 @@ struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) fu
 	bool HasRange = 0, hasAuth = 0;
 	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
 	std::deque<string> CustomHeaders;// Additional custom headers
+	uint32_t _Crc = 0;// File CRC that will used for ETag.
 };
 struct H2Stream;
 
@@ -135,7 +137,7 @@ class AlyssaHTTP {
 		static void parseHeader(clientInfo* cl, char* buf, int sz);
 		static void clientConnection(_Surrogate sr);
 	private:
-		static void Get(clientInfo* cl, bool isHEAD = 0);
+		static void Get(clientInfo* cl);
 		static void Post(clientInfo* cl);
 };
 class CustomActions {
@@ -171,6 +173,7 @@ void LogString(string s);
 void SetPredefinedHeaders();
 void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
 void ConsoleMsgM(int8_t MsgType, const char* UnitName);
+uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning);
 
 extern std::ofstream Log; extern std::mutex logMutex; extern std::mutex ConsoleMutex;
 // Response headers that's never changing in lifetime of server.
@@ -213,7 +216,7 @@ extern bool ColorOut;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "2.0.1";
+static string version = "2.0.2";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;

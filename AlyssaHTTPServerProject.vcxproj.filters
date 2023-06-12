@@ -39,6 +39,15 @@
     <ClCompile Include="DirectoryIndex.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="AlyssaHTTP.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="AlyssaCommon.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Crc32.cpp">
+      <Filter>Source\External</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Alyssa.h">
@@ -58,6 +67,9 @@
     </ClInclude>
     <ClInclude Include="AlyssaH2.h">
       <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Crc32.h">
+      <Filter>Header\External</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

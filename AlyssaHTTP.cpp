@@ -8,26 +8,27 @@ std::string PredefinedHeaders;
 void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 	std::string ret = "HTTP/1.1 "; ret.reserve(512);
 	switch (h->StatusCode) {
-	case 200:	ret += "200 OK\r\n"; break;
-	case 206:	ret += "206 Partial Content\r\n"
-		"Content-Range: bytes " + std::to_string(c->rstart) + "-" + std::to_string(c->rend) + "/" + std::to_string(h->ContentLength); break;
-	case 302:	ret += "302 Found\r\n"
-		"Location: " + h->AddParamStr + "\r\n";
-		break;
-	case 400:	ret += "400 Bad Request\r\n"; break;
-	case 401:	ret += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
-	case 403:	ret += "403 Forbidden\r\n"; break;
-	case 404:	ret += "404 Not Found\r\n"; break;
-	case 416:	ret += "416 Range Not Satisfiable"; break;
-	case 418:	ret += "418 I'm a teapot\r\n"; break;
-	case 500:	ret += "500 Internal Server Error\r\n"; break;
-	case 501:	ret += "501 Not Implemented\r\n"; break;
-	default:	ret += "501 Not Implemented\r\n"; break;
+		case 200:	ret += "200 OK\r\n"; break;
+		case 206:	ret += "206 Partial Content\r\n"
+			"Content-Range: bytes " + std::to_string(c->rstart) + "-" + std::to_string(c->rend) + "/" + std::to_string(h->ContentLength); break;
+		case 302:	ret += "302 Found\r\n"
+			"Location: " + h->AddParamStr + "\r\n";
+			break;
+		case 400:	ret += "400 Bad Request\r\n"; break;
+		case 401:	ret += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
+		case 403:	ret += "403 Forbidden\r\n"; break;
+		case 404:	ret += "404 Not Found\r\n"; break;
+		case 416:	ret += "416 Range Not Satisfiable"; break;
+		case 418:	ret += "418 I'm a teapot\r\n"; break;
+		case 500:	ret += "500 Internal Server Error\r\n"; break;
+		case 501:	ret += "501 Not Implemented\r\n"; break;
+		default:	ret += "501 Not Implemented\r\n"; break;
 	}
 	ret += "Content-Length: " + std::to_string(h->ContentLength) + "\r\n";
 	if (h->HasRange) ret += "Accept-Ranges: bytes\r\n";
 	if (h->MimeType != "") ret += "Content-Type: " + h->MimeType + "\r\n";
 	if (h->hasAuth) ret += "WWW-Authenticate: basic\r\n";
+	if (h->_Crc) ret += "ETag: " + std::to_string(h->_Crc) + "\r\n";
 	ret += "Date: " + currentTime() + "\r\n";
 	for (size_t i = 0; i < h->CustomHeaders.size(); i++) {
 		ret += h->CustomHeaders[i] + "\r\n";
@@ -46,13 +47,19 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 		if (cl->version == "") { // First line of header
 			pos = line.find(" ", pos);
 			if (pos < 0) { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
-			cl->RequestType = Substring(&line[0], pos);
+			cl->version = Substring(&line[0], pos);// Reuse version for request type
+			if (cl->version == "GET") { cl->RequestTypeInt = 1; }
+			else if (cl->version == "POST") { cl->RequestTypeInt = 2; }
+			else if (cl->version == "PUT") { cl->RequestTypeInt = 3; }
+			else if (cl->version == "OPTIONS") { cl->RequestTypeInt = 4; }
+			else if (cl->version == "HEAD") { cl->RequestTypeInt = 5; }
+			else { h.StatusCode = 501; ServerHeaders(&h, cl); return; }
 			pos = line.find(" ", pos + 1);
 			if (pos < 0) { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
-			cl->RequestPath = Substring(&line[0], pos - cl->RequestType.size() - 1, cl->RequestType.size() + 1);
+			cl->RequestPath = Substring(&line[0], pos - cl->version.size() - 1, cl->version.size() + 1);
 			cl->version = Substring(&line[0], 0, pos + 1);
 			cl->version = Substring(&cl->version[0], 3, 5);
-			if (cl->version == "" || cl->RequestType == "" || cl->RequestPath == "") { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
+			if (cl->version == "" || cl->RequestPath == "") { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
 			line.clear(); pos = -1;
 			for (size_t i = 0; i < cl->RequestPath.size(); i++) {
 				if (cl->RequestPath[i] == '%') {
@@ -82,22 +89,24 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			pos = i + 1;
 		}
 		else if (line == "") { // Empty line that indicates end of header
-			if (cl->RequestType == "GET") AlyssaHTTP::Get(cl);
-			else if (cl->RequestType == "HEAD") AlyssaHTTP::Get(cl, 1);
-			else if (cl->RequestType == "POST") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "PUT") AlyssaHTTP::Post(cl);
-			else if (cl->RequestType == "OPTIONS") { h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET, HEAD, POST, PUT, OPTIONS"); ServerHeaders(&h, cl); }
-			else { h.StatusCode = 501; ServerHeaders(&h, cl); }
+			switch (cl->RequestTypeInt) {
+				case 1:	Get(cl); break;
+				case 2:	Post(cl); break;
+				case 3: Post(cl); break;
+				case 4:	h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); ServerHeaders(&h, cl); break;
+				case 5: Get(cl); break;
+				default: break;
+			}
 			cl->clear(); return;
 		}
 		else {
 			pos = line.find(":");
 			if (pos < 0) { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
-			string key = Substring(&line[0], pos); pos += 2; string value = Substring(&line[0], 0, pos);
-			if (key == "Authorization") { cl->auth = Substring(&value[0], 0, 6); cl->auth = base64_decode(cl->auth); }
-			else if (key == "Connection") { if (value == "close") cl->close = 1; }
-			else if (key == "Host") { cl->host = value; }
-			else if (key == "Range") {
+			string key = ToLower(Substring(&line[0], pos)); pos += 2; string value = Substring(&line[0], 0, pos);
+			if (key == "authorization") { cl->auth = Substring(&value[0], 0, 6); cl->auth = base64_decode(cl->auth); }
+			else if (key == "connection") { if (value == "close") cl->close = 1; }
+			else if (key == "host") { cl->host = value; }
+			else if (key == "range") {
 				value = Substring(&value[0], 0, 6);
 				pos = value.find("-"); if (pos < 0) {}
 				try {
@@ -112,7 +121,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 	}
 }
 
-void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
+void AlyssaHTTP::Get(clientInfo* cl) {
 	HeaderParameters h;
 	if (logging) {
 		Logging(cl);
@@ -141,7 +150,7 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 			string asd = DirectoryIndex::DirMain(cl->RequestPath);
 			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html";
 			ServerHeaders(&h, cl);
-			if (!isHEAD)
+			if (cl->RequestTypeInt!=5)
 				Send(asd, cl->Sr->sock, cl->Sr->ssl, 1);
 			return;
 		}
@@ -166,17 +175,17 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 		filesize = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath)); h.MimeType = fileMime(cl->RequestPath);
 		if (cl->rstart || cl->rend) {
 			h.StatusCode = 206;
-			ServerHeaders(&h, cl);
 			fseek(file, cl->rstart, 0); if (cl->rend)  filesize = cl->rend + 1 - cl->rstart;
 		}
 		else {
 			h.StatusCode = 200; h.ContentLength = filesize; h.HasRange = 1;
-			ServerHeaders(&h, cl);
-		}
-		if (isHEAD) {
-			fclose(file); return;
 		}
 		char* buf = new char[32768];
+		h._Crc = FileCRC(file, filesize, buf, cl->rstart);
+		ServerHeaders(&h, cl);
+		if (cl->RequestTypeInt == 5) {
+			fclose(file); delete[] buf; return;
+		}
 		while (filesize) {
 			if (filesize >= 32768) {
 				fread(buf, 32768, 1, file); filesize -= 32768;
@@ -197,7 +206,6 @@ void AlyssaHTTP::Get(clientInfo* cl, bool isHEAD) {
 	if (cl->close) {
 		shutdown(cl->Sr->sock, 2);
 	}
-
 }
 void AlyssaHTTP::Post(clientInfo* cl) {
 	HeaderParameters h;

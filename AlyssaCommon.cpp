@@ -103,7 +103,7 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
 	logMutex.lock();
 	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath;
-	if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
+	//if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
 	Log << std::endl;
 	logMutex.unlock();
  }
@@ -185,4 +185,18 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 		 std::cout << MsgTypeStr[MsgType] << UnitName;
 	 }
 	 return;
+ }
+ uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning=0) {
+	 uint32_t ret = 0;
+	 while (s) {
+		 if (s >= 32768) {
+			 fread(buf, 32768, 1, f);
+			 ret = crc32_fast(buf, 32768, ret); s -= 32768;
+		 }
+		 else {
+			 fread(buf, s, 1, f);
+			 ret = crc32_fast(buf, s, ret); break;
+		 }
+	 }
+	 fseek(f, _Beginning, 0); return ret;
  }
