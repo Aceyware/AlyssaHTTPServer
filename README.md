@@ -10,5 +10,6 @@ Detailed guides will be available later. Compilation is only about of giving all
 - Redirection(soft and hard), authentication
 - CGI applications
 - IPv6 ready
-- Directory index pages.
+- Directory index pages
+- Name-based virtual hosts
 And more.

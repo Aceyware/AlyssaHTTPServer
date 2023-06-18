@@ -99,7 +99,7 @@ struct clientInfo {//This structure has the information from client request.
 	int8_t RequestTypeInt = 0; short VHostNum=0;
 	void clear() {
 		RequestPath = "", _RequestPath="", version = "", host = "",
-			cookies = "", auth = "", payload = "", qStr = ""; close = 0,
+			cookies = "", auth = "", payload = "", qStr = "",
 			rstart = 0, rend = 0, VHostNum=0;
 	}
 	std::filesystem::path _RequestPath;

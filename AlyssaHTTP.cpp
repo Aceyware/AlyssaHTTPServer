@@ -172,14 +172,15 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 			h.StatusCode = 500;
 			ServerHeaders(&h, cl); return;
 		case -3:
-			shutdown(cl->Sr->sock, 2); return;
+			//shutdown(cl->Sr->sock, 2);
+			return;
 		default:
 			break;
 		}
 	}
 
 	if (std::filesystem::is_directory(cl->_RequestPath)) {
-		if (std::filesystem::exists(cl->_RequestPath.u8string() + "/index.html")) { cl->RequestPath += "/index.html"; }
+		if (std::filesystem::exists(cl->_RequestPath.u8string() + "/index.html")) { cl->RequestPath += "/index.html"; cl->_RequestPath+="/index.html"; }
 		else if (foldermode) {
 			string asd = DirectoryIndex::DirMain(cl->_RequestPath, cl->RequestPath);
 			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html";
@@ -196,7 +197,7 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 
 	FILE* file = NULL; size_t filesize = 0;
 #ifndef _WIN32
-	file = fopen(&cl->RequestPath[0], "rb");
+	file = fopen(&cl->_RequestPath.u8string()[0], "rb");
 #else //WinAPI accepts ANSI for standard fopen, unlike sane operating systems which accepts UTF-8 instead. 
 	//Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 	std::wstring RequestPathW;

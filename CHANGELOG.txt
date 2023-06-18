@@ -1,6 +1,26 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+v2.1 - 19.06.2023
+- Name-based virtual hosts implemented
+	- Now separate htroots can be used per hostname, or you can do redirections with a hostname too.
+	- HTTP Host/Authority header is used for selecting a host
+		- This way you can use both domain names and IP addresses as both are always included in such header.
+		- Dependent on port number, as port number is included in such header when non-80/443 port is used. You have to define hosts by paying attention to that.
+- Fixed bug of server takes invalid IP for client (204.204.204.204 or cccc:cccc...)
+
+v2.0.2 - 12.06.2023
+- Entity tag (ETag) support implemented with decimal CRC32 of file.
+- Request headers are now parsed as case independent.
+
+v2.0.1 - 10.06.2023
+ Now the headers that never changes in lifetime of server is precalculated at startup, resulting performance boost.
+ Color output support for console messages implemented.
+ Now HTTP/1.1 Server headers uses the new HeaderParameters introduced on 2.0 on HTTP/2
+ Moved HTTP/1.1 code from Main.cpp to it's own file, AlyssaHTTP.cpp (source change)
+ Moved functions from Alyssa.h to AlyssaCommon.cpp for more clean source (source change)
+ Some bugs fixed.
+
 v2.0 - 07.05.2023
 • Most of the things are rewritten with this version.
 	• Core server code, HTTP/1.x code

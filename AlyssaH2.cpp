@@ -239,9 +239,9 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 			case 3://:method: POST
 				s->cl.RequestTypeInt = 2; break;
 			case 4://:path: /
-				s->cl.RequestPath = "./"; break;
+				s->cl.RequestPath = "/"; break;
 			case 5://:path: /index.html
-				s->cl.RequestPath = "./index.html"; break;
+				s->cl.RequestPath = "/index.html"; break;
 			default:
 				break;
 			}
@@ -340,7 +340,7 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 						s->cl.RequestTypeInt = 5;
 				}
 				else if (Name == ":path") {
-					s->cl.RequestPath = "." + Value; 
+					s->cl.RequestPath = Value; 
 					string temp; uint8_t pos=-1;
 					for (size_t i = 0; i < s->cl.RequestPath.size(); i++) {
 						if (s->cl.RequestPath[i] == '%') {
@@ -408,7 +408,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	}
 
 	if (!strncmp(&s->cl.RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, skip custom actions if so.
-		s->cl.RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, htrespath.size());
+		s->cl._RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, htrespath.size());
 	}
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl,s)) {
@@ -426,7 +426,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 
 	FILE* file = NULL; size_t filesize = 0; 
 	if (std::filesystem::is_directory(s->cl._RequestPath)) {
-		if (std::filesystem::exists(s->cl._RequestPath.u8string() + "/index.html")) { s->cl.RequestPath += "/index.html"; }
+		if (std::filesystem::exists(s->cl._RequestPath.u8string() + "/index.html")) { s->cl.RequestPath += "/index.html"; s->cl._RequestPath+="/index.html"; }
 		else if (foldermode) {
 			string asd = DirectoryIndex::DirMain(s->cl._RequestPath,s->cl.RequestPath); 
 			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s, SockMtx);
@@ -440,12 +440,13 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	}
 
 #ifndef _WIN32
-	file = fopen(&s->cl.RequestPath[0], "rb");
+	file = fopen(&s->cl._RequestPath.u8string()[0], "rb");
 #else //WinAPI accepts ANSI for standard fopen, unlike some *nix systems which accepts UTF-8 instead. Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 	std::wstring RequestPathW;
 	RequestPathW.resize(s->cl._RequestPath.u8string().size());
 	MultiByteToWideChar(CP_UTF8, 0, &s->cl._RequestPath.u8string()[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
 	file = _wfopen(&RequestPathW[0], L"rb");
+
 #endif
 
 	if (file) {
