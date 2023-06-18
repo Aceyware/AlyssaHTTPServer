@@ -34,13 +34,15 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 		ret += h->CustomHeaders[i] + "\r\n";
 	}
 	ret += PredefinedHeaders;
-	ret += "\r\n"; Send(ret, c->Sr->sock, c->Sr->ssl, 1); return;
+	ret += "\r\n"; Send(ret, c->Sr->sock, c->Sr->ssl, 1);
+	c->clear();
+	return;
 }
 
 void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 	string line = ""; int pos = 0; HeaderParameters	h;
 	for (size_t i = 0; i < sz; i++) {
-		while (buf[i] > 31) { i++; } // Potential buffer overrun here
+		while (buf[i] > 31) i++;
 		if (i - pos > 0) { line = Substring(buf, i - pos, pos); }
 		else line.clear();
 		pos = 0;
@@ -83,21 +85,49 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				}
 				else if (cl->RequestPath[i] == '/') { pos++; line += '/'; }
 				else line += cl->RequestPath[i];
-			} cl->RequestPath = '.' + line;
+			} cl->RequestPath = line;
 			if ((int)cl->RequestPath.find(".alyssa") >= 0) { h.StatusCode = 403; ServerHeaders(&h, cl); return; }
 			if (cl->version == "1.0") { cl->close = 1; }
 			pos = i + 1;
 		}
 		else if (line == "") { // Empty line that indicates end of header
+			if (cl->LastLineHadMissingTerminator) { // See the note on Alyssa.h about that.
+				cl->LastLineHadMissingTerminator = 0; pos++;
+				if (buf[i + 1] < 32) i++;
+				pos = i;
+				continue;
+			} 
+			if (HasVHost) {
+				if (cl->host == "") { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
+				for (int i = 1; i < VirtualHosts.size(); i++) {
+					if (VirtualHosts[i].Hostname == cl->host) {
+						cl->VHostNum = i;
+						if (VirtualHosts[i].Type == 0) // Standard virtual host
+							cl->_RequestPath = VirtualHosts[i].Location;
+						if (VirtualHosts[i].Type == 1) { // Redirecting virtual host
+							h.StatusCode = 302; h.AddParamStr = VirtualHosts[i].Location;
+							ServerHeaders(&h, cl); return;
+						}
+					}
+				}
+				if (cl->_RequestPath=="") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
+					cl->_RequestPath = VirtualHosts[0].Location;
+				cl->_RequestPath += std::filesystem::u8path(cl->RequestPath);
+				//cl->RequestPath = cl->_RequestPath.u8string();
+			}
+			else {
+				cl->_RequestPath = htroot + cl->RequestPath;
+				//cl->RequestPath = cl->_RequestPath.u8string();
+			}
 			switch (cl->RequestTypeInt) {
 				case 1:	Get(cl); break;
 				case 2:	Post(cl); break;
 				case 3: Post(cl); break;
 				case 4:	h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); ServerHeaders(&h, cl); break;
 				case 5: Get(cl); break;
-				default: break;
+				default:h.StatusCode = 501; ServerHeaders(&h, cl); break;
 			}
-			cl->clear(); return;
+			return;
 		}
 		else {
 			pos = line.find(":");
@@ -117,7 +147,11 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			}
 			pos = i + 1;
 		}
-		if (buf[i] < 32) { i++; pos++; }
+		if (buf[i+1] < 32) { 
+			if (!buf[i]) cl->LastLineHadMissingTerminator = 1;
+			else cl->LastLineHadMissingTerminator = 0;
+			i++; pos++; 
+		}
 	}
 }
 
@@ -127,8 +161,8 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 		Logging(cl);
 	}
 
-	if (!strncmp(&cl->RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource, set path to respath and also skip custom actions
-		cl->RequestPath = respath + Substring(&cl->RequestPath[0], 0, _htrespath.size());
+	if (!strncmp(&cl->RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, set path to respath and also skip custom actions
+		cl->_RequestPath = respath + Substring(&cl->RequestPath[0], 0, htrespath.size());
 	}
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl)) {
@@ -144,10 +178,10 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 		}
 	}
 
-	if (std::filesystem::is_directory(std::filesystem::u8path(cl->RequestPath))) {
-		if (std::filesystem::exists(cl->RequestPath + "/index.html")) { cl->RequestPath += "/index.html"; }
+	if (std::filesystem::is_directory(cl->_RequestPath)) {
+		if (std::filesystem::exists(cl->_RequestPath.u8string() + "/index.html")) { cl->RequestPath += "/index.html"; }
 		else if (foldermode) {
-			string asd = DirectoryIndex::DirMain(cl->RequestPath);
+			string asd = DirectoryIndex::DirMain(cl->_RequestPath, cl->RequestPath);
 			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html";
 			ServerHeaders(&h, cl);
 			if (cl->RequestTypeInt!=5)
@@ -166,13 +200,13 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 #else //WinAPI accepts ANSI for standard fopen, unlike sane operating systems which accepts UTF-8 instead. 
 	//Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 	std::wstring RequestPathW;
-	RequestPathW.resize(cl->RequestPath.size());
-	MultiByteToWideChar(CP_UTF8, 0, &cl->RequestPath[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
-	file = _wfopen(&RequestPathW[0], L"rb");
+	RequestPathW.resize(cl->_RequestPath.u8string().size());
+	MultiByteToWideChar(CP_UTF8, 0, cl->_RequestPath.u8string().c_str(), RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
+	file = _wfopen(RequestPathW.c_str(), L"rb");
 #endif
 
 	if (file) {
-		filesize = std::filesystem::file_size(std::filesystem::u8path(cl->RequestPath)); h.MimeType = fileMime(cl->RequestPath);
+		filesize = std::filesystem::file_size(cl->_RequestPath); h.MimeType = fileMime(cl->RequestPath);
 		if (cl->rstart || cl->rend) {
 			h.StatusCode = 206;
 			fseek(file, cl->rstart, 0); if (cl->rend)  filesize = cl->rend + 1 - cl->rstart;
@@ -231,21 +265,23 @@ void AlyssaHTTP::Post(clientInfo* cl) {
 }
 
 void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function that gets data from client.
-	char buf[4096] = { 0 }; clientInfo cl; cl.Sr = &sr; int Received = 0;
+	char* buf = new char[4097]; memset(buf, 0, 4097);
+	clientInfo cl; cl.Sr = &sr; int Received = 0;
 #ifdef Compile_WolfSSL // Wait for client to send data
 	if (sr.ssl != NULL) {
 		while ((Received = SSL_recv(sr.ssl, buf, sizeof buf)) > 0) {
 			AlyssaHTTP::parseHeader(&cl, buf, Received);
+			memset(buf, 0, Received);
 		}
 	}
 	else {
 #endif // Compile_WolfSSL
 		while ((Received = recv(sr.sock, buf, 4096, 0)) > 0) {
 			AlyssaHTTP::parseHeader(&cl, buf, Received);
+			memset(buf, 0, Received);
 		}
 #ifdef Compile_WolfSSL
 	} wolfSSL_free(sr.ssl);
 #endif
-	closesocket(sr.sock);
-	return;
+	closesocket(sr.sock); delete[] buf; return;
 }

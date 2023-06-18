@@ -3,16 +3,17 @@
 #endif
 using namespace std;
 //Redefinition of options
-std::vector<string> configcache,configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = ""; bool foldermode = 0;
-string whitelist = ""; bool forbiddenas404 = 0; string respath = ""; bool errorpages = 0; string htrespath = ""; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
-string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled = 0; bool CARecursive = 0; bool ColorOut = 1;
+std::vector<string> configcache,configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = "./htroot"; bool foldermode = 0;
+/*string whitelist = "";*/ bool forbiddenas404 = 0; string respath = "./res"; bool errorpages = 0; string htrespath = "/res"; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
+string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled = 0; bool CARecursive = 0; 
+bool ColorOut = 1; bool HasVHost = 0; string VHostFilePath = "";
 #ifdef Compile_WolfSSL
-std::vector<unsigned int> SSLport; string SSLportStr; string SSLkeypath; string SSLcertpath; bool enableSSL = 0; bool HSTS = 0;
+std::vector<unsigned int> SSLport; string SSLportStr="443"; string SSLkeypath="./key.key"; string SSLcertpath="./crt.pem"; bool enableSSL = 0; bool HSTS = 0;
 #endif
-void Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
+bool Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
 	ifstream conf; conf.open("Alyssa.cfg"); conf.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	if (!conf) { 
-		ConsoleMsg(0, "Config: ", "cannot open Alyssa.cfg, using default values.."); return; 
+		return 0; 
 	}
 	string buf(std::filesystem::file_size("Alyssa.cfg"), '\0');
 	conf.read(&buf[0], std::filesystem::file_size("Alyssa.cfg")); buf += "\1"; string temp = "";
@@ -32,7 +33,7 @@ void Config::Configcache() {//This function reads the config file and caches all
 		}
 		else temp += buf[i];
 	}
-	conf.close();
+	conf.close(); return 1;
 }
 
 string Config::getValue(std::string key, std::string value) {//Interface function for getting a value from config. If value isn't found then value variable on this function will be returned as default value.
@@ -44,8 +45,8 @@ string Config::getValue(std::string key, std::string value) {//Interface functio
 		return value;
 }
 
-void Config::initialRead() {//Initial read of the config file and setup of setting variables at the startup of the program.
-	Configcache();
+bool Config::initialRead() {//Initial read of the config file and setup of setting variables at the startup of the program.
+	if (!Configcache()) return 0;
 	portStr = getValue("port", "80")+'\1';
 	string temp = "";
 	for (size_t i = 0; i < portStr.size(); i++) {
@@ -64,12 +65,12 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 		}
 	}
 	htroot = getValue("htrootpath", "./htroot");
-	respath = getValue("respath", "./htroot/res");
+	respath = getValue("respath", "./res");
 	htrespath = getValue("htrespath", "/res");
 	_htrespath = '.' + htrespath;
 	foldermode = stoi(getValue("foldermode", "0"));
 	errorpages = stoi(getValue("errorpages", "0"));
-	whitelist = getValue("whitelist", "");
+	//whitelist = getValue("whitelist", "");
 	logOnScreen = stoi(getValue("printconnections", "0"));
 	defaultCorsAllowOrigin = getValue("corsalloworigin", "");
 	if (defaultCorsAllowOrigin != "") corsEnabled = 1;
@@ -78,6 +79,8 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	logging = stoi(getValue("logging", "0"));
 	EnableIPv6 = stoi(getValue("ipv6", "0"));
 	ColorOut = stoi(getValue("coloroutput", "1"));
+	VHostFilePath = getValue("virtualhosts", "");
+	if (VHostFilePath != "") HasVHost = 1;
 #ifdef Compile_WolfSSL
 	enableSSL = stoi(getValue("enablessl", "0"));
 	if (enableSSL) {
@@ -115,5 +118,5 @@ void Config::initialRead() {//Initial read of the config file and setup of setti
 	}
 	EnableH2 = stoi(getValue("http2", "0"));
 #endif
-	return;
+	return 1;
 }

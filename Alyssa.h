@@ -50,6 +50,7 @@ using std::string;
 		#define WOLFSSL_USER_SETTINGS
 		#define CYASSL_USER_SETTINGS
 		#include "user_settings.h"
+		#pragma comment (lib, "wolfssl.lib")
 	#endif
 	#include <wolfssl/ssl.h>
 	#define SSL_recv wolfSSL_read
@@ -67,9 +68,7 @@ typedef struct WOLFSSL {};
 	typedef int SOCKET;
 	#define closesocket close
 	#define Sleep sleep
-	static void sigpipe_handler(int unused)
-	{
-	}
+	static void sigpipe_handler(int unused){}
 #endif
 // Definitions for Windows
 #ifdef _WIN32
@@ -84,6 +83,7 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 	WOLFSSL* ssl = NULL;
 #ifdef Compile_WolfSSL
 	char* ALPN = NULL; unsigned short ALPNSize = 0; 
+	string host = ""; // Authority header. "host" on surrogator is only used on HTTP/2 connections as it is only sent once by client.
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
@@ -92,15 +92,17 @@ struct clientInfo {//This structure has the information from client request.
 		cookies = "", auth = "",
 		payload = "",//HTTP POST/PUT Payload
 		qStr = "";//URL Query string.
-	bool close = 0;
+	bool close = 0; // Connection: close parameter
+	bool LastLineHadMissingTerminator = 0;//If last received header line had line terminator. If didn't, don't finish parsing headers. Workaround for some faulty clients that sends header line and \r\n separately.
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr=NULL;
-	int8_t RequestTypeInt = 0;
+	int8_t RequestTypeInt = 0; short VHostNum=0;
 	void clear() {
-		RequestPath = "", version = "", host = "",
+		RequestPath = "", _RequestPath="", version = "", host = "",
 			cookies = "", auth = "", payload = "", qStr = ""; close = 0,
-			rstart = 0, rend = 0;
+			rstart = 0, rend = 0, VHostNum=0;
 	}
+	std::filesystem::path _RequestPath;
 };
 struct HPackIndex {
 	int Key = 0;
@@ -122,14 +124,19 @@ struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) fu
 	std::deque<string> CustomHeaders;// Additional custom headers
 	uint32_t _Crc = 0;// File CRC that will used for ETag.
 };
+struct VirtualHost {
+	string Hostname;
+	string Location;
+	char Type; //0: Standard, 1: redirect...
+};
 struct H2Stream;
 
 class Config {
 	public:
 		static string getValue(std::string key, std::string value);
-		static void initialRead();
+		static bool initialRead();
 	private:
-		static void Configcache();
+		static bool Configcache();
 };
 class AlyssaHTTP {
 	public:
@@ -150,7 +157,7 @@ class CustomActions {
 };
 class DirectoryIndex {
 	public:
-		static string DirMain(string p);
+		static string DirMain(std::filesystem::path p, std::string& RelPath);
 	private:
 		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
 };
@@ -185,7 +192,6 @@ extern std::string PredefinedHeadersH2; extern short int PredefinedHeadersH2Size
 // Declaration of config variables
 extern bool isCRLF;
 extern char delimiter;
-//extern unsigned int port;
 extern std::vector<unsigned int> port;
 extern string portStr;
 extern string htroot;
@@ -205,6 +211,9 @@ extern bool EnableIPv6;
 extern bool CAEnabled;
 extern bool CARecursive;
 extern bool ColorOut;
+extern bool HasVHost;
+extern string VHostFilePath;
+extern std::deque<VirtualHost> VirtualHosts;
 #ifdef Compile_WolfSSL
 	extern bool enableSSL;
 	extern string SSLcertpath;
@@ -216,7 +225,7 @@ extern bool ColorOut;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "2.0.2";
+static string version = "2.1";
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
@@ -231,7 +240,7 @@ static string GPLDisclaimer=
 	"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\n"
 
 	"You should have received a copy of the GNU General Public License"
-	"along with this program.  \nIf not, see <https://www.gnu.org/licenses/>.\n";
+	"along with this program. \nIf not, see \"https://www.gnu.org/licenses/\".\n";
 static string HelpString=
 		"Alyssa HTTP Server command-line arguments help:\n\n"
 
@@ -244,7 +253,7 @@ static string HelpString=
 		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
 #endif
 		"\n"
-		//"For usage help please refer to https://4lyssa.net/AlyssaHTTP/help\n"
+		//"For server manual please refer to \"https://4lyssa.net/AlyssaHTTP/help\"\n"
 	;
 // Values for color console output
 static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };

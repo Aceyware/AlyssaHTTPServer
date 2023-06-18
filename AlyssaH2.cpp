@@ -115,6 +115,15 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 	buf[pos] = 64 | 33;//Lit. indexed 33: date
 	buf[pos + 1] = 29; pos += 2;//Size: 29. Date header always has this size.
 	memcpy(&buf[pos], &currentTime()[0], 29); pos += 29;
+	// ETag
+	if (p->_Crc) {
+		buf[pos] = 64 | 34; pos++;
+		sprintf(&buf[pos + 1], "%lld", p->_Crc);
+		while (p->_Crc) {// Increase the corresponding byte for length.
+			buf[pos]++; p->_Crc/= 10;
+		}
+		pos += buf[pos] + 1;
+	}
 	// Add the additional custom headers as literal non-indexed header
 	for (int8_t i = 0; i < p->CustomHeaders.size(); i++) {
 		pos++;// Lit. non-indexed 0: new name
@@ -226,9 +235,9 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 			_Byte ^= isIndexed;
 			switch (_Byte) {//Refer to Appendix A of RFC 7541
 			case 2://:method: GET
-				s->cl.RequestTypeInt = 1; s->cl.RequestType = "GET"; break;
+				s->cl.RequestTypeInt = 1; break;
 			case 3://:method: POST
-				s->cl.RequestTypeInt = 2; s->cl.RequestType = "POST"; break;
+				s->cl.RequestTypeInt = 2; break;
 			case 4://:path: /
 				s->cl.RequestPath = "./"; break;
 			case 5://:path: /index.html
@@ -261,9 +270,8 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 				i += _Size;
 				switch (_Index) {//Refer to Appendix A of RFC 7541
 				case 1://:authority
-					s->cl.host = Value; break;
+					s->cl.Sr->host = Value; break;
 				case 2://:method
-					s->cl.RequestType = Value;
 					if(Value=="GET")
 						s->cl.RequestTypeInt = 1;
 					else if(Value=="POST")
@@ -320,7 +328,6 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 				if(Name==":authority")
 					s->cl.host = Value;
 				else if (Name == ":method") {
-					s->cl.RequestType = Value;
 					if (Value == "GET")
 						s->cl.RequestTypeInt = 1;
 					else if (Value == "POST")
@@ -400,7 +407,10 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 		Logging(&s->cl);
 	}
 
-	if (CAEnabled) {
+	if (!strncmp(&s->cl.RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, skip custom actions if so.
+		s->cl.RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, htrespath.size());
+	}
+	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl,s)) {
 			case 0:
 				return;
@@ -415,13 +425,11 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	}
 
 	FILE* file = NULL; size_t filesize = 0; 
-	if (!strncmp(&s->cl.RequestPath[0], &_htrespath[0], _htrespath.size())) {//Resource
-		s->cl.RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, _htrespath.size());
-	}
-	else if (std::filesystem::is_directory(std::filesystem::u8path(s->cl.RequestPath))) {
-		if (std::filesystem::exists(s->cl.RequestPath + "/index.html")) { s->cl.RequestPath += "/index.html"; }
+	if (std::filesystem::is_directory(s->cl._RequestPath)) {
+		if (std::filesystem::exists(s->cl._RequestPath.u8string() + "/index.html")) { s->cl.RequestPath += "/index.html"; }
 		else if (foldermode) {
-			string asd = DirectoryIndex::DirMain(s->cl.RequestPath); h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s, SockMtx);
+			string asd = DirectoryIndex::DirMain(s->cl._RequestPath,s->cl.RequestPath); 
+			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s, SockMtx);
 			if (s->cl.RequestTypeInt != 5)
 				SendData(s, &asd[0], asd.size(), SockMtx);
 			return;
@@ -435,13 +443,13 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	file = fopen(&s->cl.RequestPath[0], "rb");
 #else //WinAPI accepts ANSI for standard fopen, unlike some *nix systems which accepts UTF-8 instead. Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 	std::wstring RequestPathW;
-	RequestPathW.resize(s->cl.RequestPath.size());
-	MultiByteToWideChar(CP_UTF8, 0, &s->cl.RequestPath[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
+	RequestPathW.resize(s->cl._RequestPath.u8string().size());
+	MultiByteToWideChar(CP_UTF8, 0, &s->cl._RequestPath.u8string()[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
 	file = _wfopen(&RequestPathW[0], L"rb");
 #endif
 
 	if (file) {
-		filesize = std::filesystem::file_size(std::filesystem::u8path(s->cl.RequestPath)); h.ContentLength = filesize; h.MimeType = fileMime(s->cl.RequestPath);
+		filesize = std::filesystem::file_size(s->cl._RequestPath); h.ContentLength = filesize; h.MimeType = fileMime(s->cl.RequestPath);
 		if (s->cl.rstart || s->cl.rend) {
 			h.StatusCode = 206;
 			fseek(file, s->cl.rstart, 0); if (s->cl.rend) filesize = s->cl.rend + 1 - s->cl.rstart;
@@ -449,11 +457,13 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 		else {
 			h.StatusCode = 200; h.HasRange = 1;
 		}
+		char* buf = new char[16393]; 
+		h._Crc = FileCRC(file, filesize, buf, s->cl.rstart);
+		memset(buf, 0, 9);
 		ServerHeaders(&h, s, SockMtx);
 		if (s->cl.RequestTypeInt == 5) {// Equal of if(isHEAD)
-			fclose(file); s->StrMtx.unlock(); return;
+			fclose(file); delete[] buf; return;
 		}
-		char* buf = new char[16393]; memset(buf, 0, 9);
 		buf[5] = s->StrIdent << 24; buf[6] = s->StrIdent << 16; buf[7] = s->StrIdent << 8; buf[8] = s->StrIdent << 0;
 		buf[0] = (16384 >> 16) & 0xFF; buf[1] = (16384 >> 8) & 0xFF; buf[2] = (16384 >> 0) & 0xFF;
 		while (s->StrAtom) {
@@ -603,10 +613,42 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 					pos += FrameSize; break;
 			}
 			if (!StrArray[Index]->StrOpen) {
+				if (HasVHost) {
+					if(StrArray[Index]->cl.Sr->host=="") {
+						HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, StrArray[Index], SockMtx);
+						DeleteStream(&StrArray, &StrTable, FrameStrId, StrMtx); break;
+					}
+					bool Break = 0;// Break from main loop
+					for (int i = 1; i < VirtualHosts.size(); i++) {
+						if(VirtualHosts[i].Hostname==StrArray[Index]->cl.Sr->host){
+							StrArray[Index]->cl.VHostNum = i;
+							if (VirtualHosts[i].Type == 0) { // Standard VHost
+								StrArray[Index]->cl._RequestPath=VirtualHosts[i].Location; break;
+							}
+							else if (VirtualHosts[i].Type == 1) { // Redirecting VHost
+								HeaderParameters h; h.StatusCode = 302; h.AddParamStr = VirtualHosts[i].Location;
+								ServerHeaders(&h, StrArray[Index], SockMtx); DeleteStream(&StrArray, &StrTable, FrameStrId, StrMtx); Break = 1; break;
+							}
+						}
+					}
+					if (Break) break;
+					if (StrArray[Index]->cl._RequestPath == "") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
+							StrArray[Index]->cl._RequestPath = VirtualHosts[0].Location;
+					StrArray[Index]->cl._RequestPath += StrArray[Index]->cl.RequestPath;
+					//StrArray[Index]->cl.RequestPath = StrArray[Index]->cl._RequestPath.u8string();
+				}
+				else {
+					StrArray[Index]->cl._RequestPath = htroot + StrArray[Index]->cl.RequestPath;
+					//StrArray[Index]->cl.RequestPath = StrArray[Index]->cl._RequestPath.u8string();
+				}
 				std::thread([&, Index, FrameStrId](){	
 					switch (StrArray[Index]->cl.RequestTypeInt) {
 						case 1:
 							Get(StrArray[Index], SockMtx); break;
+						case 2:
+							Post(StrArray[Index], SockMtx); break;
+						case 3:
+							Post(StrArray[Index], SockMtx); break;
 						case 4:
 							{
 								HeaderParameters h; h.StatusCode = 204;

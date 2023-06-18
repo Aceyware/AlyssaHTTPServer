@@ -33,14 +33,12 @@ std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
 	return ret;
 }
 
-string DirectoryIndex::DirMain(string p) {
+string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 	std::deque<IndexEntry> Array = GetDirectory(p);
-	p=p.substr(1);
-	//char* ret = new char[DirectorySize(&Array)]; 
-	string ret; uint8_t DirCnt = 0;
+	string ret; uint8_t DirCnt = 0; ret.reserve(4096);
 	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:135;}pre{display:inline;font-family:sans-serif;}img{height:12px;width:15px;}</style>"
-		"<title>Index of " + p + "</title></head><body><h1>Index of " + p + "</h1><hr><div>";
-	if (p != "/")
+		"<title>Index of " + RelPath + "</title></head><body><h1>Index of " + RelPath + "</h1><hr><div>";
+	if (RelPath != "/")
 		ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
 	for (uint8_t i = 0; i < Array.size(); i++) {
 		if (Array[i].isDirectory) {

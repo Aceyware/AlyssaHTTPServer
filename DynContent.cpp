@@ -28,7 +28,7 @@ bool CGIEnvInit() {// This function initializes master environment array by addi
 void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver function.
 	string ret; subprocess_s cgi; HeaderParameters hp;
 	const char* environment[] = { environmentMaster[0],environmentMaster[1],environmentMaster[2],
-									strdup(string("REQUEST_METHOD=" + cl->RequestType).c_str()),
+									//strdup(string("REQUEST_METHOD=" + cl->RequestType).c_str()),
 									strdup(string("QUERY_STRING=" + cl->qStr).c_str()),NULL };
 
 	const char* cmd[] = { exec,NULL }; char buf[512] = { 0 };
@@ -131,7 +131,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 }
 
 	int CustomActions::CAMain(char* path, clientInfo* c, H2Stream* h){
-		bool isDirectory=std::filesystem::is_directory(std::filesystem::path(path));
+		bool isDirectory=std::filesystem::is_directory(VirtualHosts[c->VHostNum].Location + path);
 		int sz=strlen(path); std::deque<std::filesystem::path> fArray;
 		char* _Path=new char[sz+8];//Duplicate of path for usage on this function.
 		memcpy(_Path, path, sz);
@@ -143,8 +143,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		for (int var = sz - 1; var >= 0; var--) {// Search for all folders until root of htroot recursively.
 			if (_Path[var] == '/') {
 				memcpy(&_Path[var + 1], ".alyssa", 8);
-				if (std::filesystem::exists(std::filesystem::path(_Path)))
-					fArray.emplace_back(std::filesystem::path(_Path).relative_path());
+				if (std::filesystem::exists(VirtualHosts[c->VHostNum].Location+_Path))
+					fArray.emplace_back(VirtualHosts[c->VHostNum].Location + _Path);
 				if (!CARecursive) break; // If recursive is not set, break so only current directory will be added.
 			}
 		}

@@ -12,6 +12,7 @@ using std::string; using std::cout;
 using std::terminate;
 #endif
 std::ofstream Log; std::mutex logMutex; std::mutex ConsoleMutex;
+std::deque<VirtualHost> VirtualHosts;
 
 int main(int argc, char* argv[]) {//This is the main server function that fires up the server and listens for connections.
 	//Set the locale and stdout to Unicode
@@ -21,10 +22,12 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	signal(SIGPIPE, sigpipe_handler); // Workaround for some *nix killing the server when server tries to access an socket which is closed by remote peer.
 #endif
 #ifdef _WIN32
-	if (ColorOut) AlyssaNtSetConsole(); // Set console colors on NT
+	if (ColorOut) AlyssaNtSetConsole(); // Set console colors on Windows NT
 #endif
 	//Read the config file
-	Config::initialRead();
+	if(!Config::initialRead()){
+		if(argc<2) ConsoleMsg(0, "Config: ", "cannot open Alyssa.cfg, using default values..");// Don't output that if there is command line arguments.
+	}
 	//Parse the command line arguments
 	if (argc>1) {
 		for (int i = 1; i < argc; i++) {
@@ -139,7 +142,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
 	if (WSAStartup(ver, &wsData))
 	{
-		std::cerr << "Can't Initialize winsock! Quitting" << std::endl;
+		ConsoleMsg(0, "Server: ", "Can't Initialize winsock! Quitting\n");
 		return -1;
 	}
 #endif
@@ -147,24 +150,29 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	std::vector<pollfd> _SocketArray;
 	std::vector<int8_t> _SockType;
 
+	sockaddr_in hint;
 	for (size_t i = 0; i < port.size(); i++) {
 		// Create sockets
 		SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
 		if (listening == INVALID_SOCKET) {
-			std::cerr << "Can't create a socket! Quitting" << std::endl;
+			ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
 			return -1;
 		}
-		sockaddr_in hint;
 		hint.sin_family = AF_INET;
 		hint.sin_port = htons(port[i]);
 		inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
 		socklen_t len = sizeof(hint);
 		bind(listening, (sockaddr*)&hint, sizeof(hint));
 		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-			std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; exit(-2);
+			ConsoleMsgM(0, "Server: ");
+			std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; 
+			exit(-2);
 		}
 		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-		else if (port[i] != ntohs(hint.sin_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+		else if (port[i] != ntohs(hint.sin_port)) { 
+			ConsoleMsgM(0, "Server: ");
+			std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl 
+				<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
 		listen(listening, SOMAXCONN);
 		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
 		_SocketArray.emplace_back(pollfd{listening, POLLRDNORM, 0});
@@ -172,24 +180,29 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 
 #ifdef Compile_WolfSSL
-	sockaddr_in HTTPShint;
 	if (enableSSL) {
 		for (size_t i = 0; i < SSLport.size(); i++) {
 			SOCKET listening;
 			listening = socket(AF_INET, SOCK_STREAM, 0);
 			if (listening == INVALID_SOCKET) {
-				std::cerr << "Can't create a socket! Quitting" << std::endl;
+				ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
 				return -1;
 			}
-			HTTPShint.sin_family = AF_INET;
-			HTTPShint.sin_port = htons(SSLport[i]);
-			inet_pton(AF_INET, "0.0.0.0", &HTTPShint.sin_addr);
-			socklen_t Slen = sizeof(HTTPShint);
-			bind(listening, (sockaddr*)&HTTPShint, sizeof(HTTPShint));
-			if (getsockname(listening, (struct sockaddr*)&HTTPShint, &Slen) == -1) {
-				std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program."; exit(-2);
+			hint.sin_family = AF_INET;
+			hint.sin_port = htons(SSLport[i]);
+			inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+			socklen_t Slen = sizeof(hint);
+			bind(listening, (sockaddr*)&hint, sizeof(hint));
+			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
+				ConsoleMsgM(0, "Server: ");
+				std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program.";
+				exit(-2);
 			}
-			else if (SSLport[i] != ntohs(HTTPShint.sin_port)) { std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+			else if (SSLport[i] != ntohs(hint.sin_port)) {
+				ConsoleMsgM(0, "Server: ");
+				std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl
+					<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
+			}
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 			_SockType.emplace_back(1);
@@ -203,7 +216,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			// Create sockets
 			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
 			if (listening == INVALID_SOCKET) {
-				std::cerr << "Can't create a socket! Quitting" << std::endl;
+				ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
 				return -1;
 			}
 			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
@@ -216,10 +229,16 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			socklen_t len = sizeof(hint);
 			bind(listening, (sockaddr*)&hint, sizeof(hint));
 			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-				std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; exit(-2);
+				ConsoleMsgM(0, "Server: ");
+				std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program.";
+				exit(-2);
 			}
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-			else if (port[i] != ntohs(hint.sin6_port)) { std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+			else if (port[i] != ntohs(hint.sin6_port)) {
+				ConsoleMsgM(0, "Server: ");
+				std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl
+					<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
+			}
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 			_SockType.emplace_back(2);
@@ -231,7 +250,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				// Create sockets
 				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
 				if (listening == INVALID_SOCKET) {
-					std::cerr << "Can't create a socket! Quitting" << std::endl;
+					ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
 					return -1;
 				}
 				setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
@@ -244,11 +263,15 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				socklen_t len = sizeof(hint);
 				bind(listening, (sockaddr*)&hint, sizeof(hint));
 				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-					std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program."; exit(-2);
+					ConsoleMsgM(0, "Server: ");
+					std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program.";
+					exit(-2);
 				}
 				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 				else if (SSLport[i] != ntohs(hint.sin6_port)) {
-					std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl << "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; exit(-2);
+					ConsoleMsgM(0, "Server: ");
+					std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl
+						<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
@@ -257,18 +280,50 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		}
 #endif // Compile_WolfSSL
 	}
-	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
-	//cout << std::endl << "WARNING: This build is from work-in-progress experimental '{branch name}' branch." << std::endl << "It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only." << std::endl << "If you don't know what any of that all means, get the latest stable release from here: " << std::endl << "https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest" << std::endl;
 
-	// After setting sockets successfully, define the predefined headers that will used until lifetime of executable and will never change.
-	SetPredefinedHeaders(); 
-	std::filesystem::current_path(std::filesystem::u8path(htroot));
-	if (CGIEnvInit()) {
-		cout << "CGIEnvInit() Error!" << std::endl;
-		terminate();
+	// After setting sockets successfully, do the initial setup of rest of server
+	SetPredefinedHeaders(); // Define the predefined headers that will used until lifetime of executable and will never change.
+	if (CAEnabled) {
+		if (CGIEnvInit()) {// Define CGI environment variables
+			ConsoleMsg(0, "Custom actions: ", "failed to set up CGI environment variables.\n");
+			return -3;
+		}
+	}
+	// Set up virtual hosts
+	if (HasVHost) {
+		VirtualHost Element; VirtualHosts.emplace_back(Element);// Leave a space for default host.
+		std::ifstream VHostFile(VHostFilePath);
+		string hostname, type, value;
+		if (!VHostFile) { ConsoleMsg(0, "Virtual hosts: ", "Cannot open virtual hosts config file.\n"); HasVHost = 0; }
+		while (VHostFile >> hostname >> type >> value) {
+			Element.Hostname = hostname; Element.Location = value;
+			if (type == "standard") Element.Type = 0;
+			else if (type == "redirect") Element.Type = 1;
+			else if (type == "copy") {
+				for (int i = 0; i < VirtualHosts.size(); i++) {
+					if (VirtualHosts[i].Hostname == hostname) {
+						Element = VirtualHosts[i]; Element.Hostname = hostname;
+					}
+				}
+				ConsoleMsg(1, "Virtual hosts: ", "source element not found for copying, ignoring.\n"); continue;
+			}
+			if (hostname == "default") VirtualHosts[0] = Element;
+			else VirtualHosts.emplace_back(Element);
+		}
+		VHostFile.close();
+		if (VirtualHosts[0].Location == "") {// No "default" on vhost config, inherit from main config.
+			VirtualHosts[0].Location = htroot;
+		}
 	}
 
-	std::cout << "Alyssa HTTP Server " << version << std::endl << "Listening on HTTP: ";
+	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
+	//ConsoleMsg(1, "Server: ", "This build is from work-in-progress experimental '{branch name}' branch.\n"
+	//	"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
+	//	"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
+
+	std::cout << "Alyssa HTTP Server " << version;
+	if (HasVHost) std::cout << " | " << VirtualHosts.size() << " virtual hosts set";
+	std::cout << std::endl << "Listening on HTTP: ";
 	for (size_t i = 0; i < port.size() - 1; i++) std::cout << port[i] << ", ";
 	std::cout << port[port.size() - 1];
 #ifdef Compile_WolfSSL
@@ -296,8 +351,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 					}
 					else {// IPv4 socket
 						sockaddr_in client;
@@ -305,9 +360,9 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 						unsigned int clientSize = sizeof(client);
 #else
 						int clientSize = sizeof(client);
-#endif
-						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
+#endif						
 						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 					}
 					sr.clhostname = host;
 					WOLFSSL* ssl;
@@ -346,8 +401,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 				}
 					else {// IPv4 socket
 						sockaddr_in client;
@@ -356,8 +411,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 					}
 					sr.clhostname = host;
 					std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
