@@ -3,7 +3,7 @@
 #endif
 using namespace std;
 //Redefinition of options
-std::vector<string> configcache,configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port; string htroot = "./htroot"; bool foldermode = 0;
+std::vector<string> configcache, configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port = { 80 }; string htroot = "./htroot"; bool foldermode = 0;
 /*string whitelist = "";*/ bool forbiddenas404 = 0; string respath = "./res"; bool errorpages = 0; string htrespath = "/res"; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
 string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled = 0; bool CARecursive = 0; 
 bool ColorOut = 1; bool HasVHost = 0; string VHostFilePath = "";
