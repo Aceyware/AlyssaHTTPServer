@@ -43,6 +43,23 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				cout<<"WolfSSL Library Version: "<<WOLFSSL_VERSION<<std::endl;
 #endif
 				cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl; 
+				cout << "Features: Core, "
+#ifdef Compile_WolfSSL
+					<< "SSL, "
+#endif
+#ifdef Compile_H2
+					<< "HTTP/2, "
+#endif
+#ifdef Compile_CustomActions
+					<< "Custom Actions, "
+#endif
+#ifdef Compile_CGI
+					<< "CGI, "
+#endif
+#ifdef Compile_DirIndex
+					<< "Directory Index, "
+#endif
+					<< std::endl;
 				cout << std::endl << GPLDisclaimer;
 				return 0;
 			}
@@ -127,7 +144,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 	if (enableSSL) {
 		if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL certificate file, SSL is disabled.");
+			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL certificate file, SSL is disabled."); enableSSL = 0;
 		}
 	}
 	if (enableSSL) {
@@ -283,12 +300,14 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 
 	// After setting sockets successfully, do the initial setup of rest of server
 	SetPredefinedHeaders(); // Define the predefined headers that will used until lifetime of executable and will never change.
+#ifdef Compile_CGI
 	if (CAEnabled) {
 		if (CGIEnvInit()) {// Define CGI environment variables
 			ConsoleMsg(0, "Custom actions: ", "failed to set up CGI environment variables.\n");
 			return -3;
 		}
 	}
+#endif
 	// Set up virtual hosts
 	if (HasVHost) {
 		VirtualHost Element; VirtualHosts.emplace_back(Element);// Leave a space for default host.
@@ -377,16 +396,20 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 						wolfSSL_free(ssl);
 						closesocket(sr.sock);
 					}
+
 					else {
+						sr.ssl = ssl;
+#ifdef Compile_H2
 						if (EnableH2)
 							wolfSSL_ALPN_GetProtocol(ssl, &sr.ALPN,
 								&sr.ALPNSize);
 						else
 							sr.ALPN = h1;
-						sr.ssl = ssl;
-
 						if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
 						else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
+#else
+						std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
+#endif
 					}
 					break;
 				}

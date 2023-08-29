@@ -1,6 +1,16 @@
 # Alyssa HTTP Server Changelog
 ------------------------------
 
+2.1.1 - 30.08.2023 - Anniversary update!
+- Error pages implemented
+	- You can use either your custom error pages or pages synthetized by server.
+	- Just copy your .html files to your resource path with error codes (i.e. 404.html) then enable from config (errorpages 2), and you're good to go.
+- Added compile-time modularization
+	- You can choose what features will be added while compiling. (i.e. compile SSL and directory index, but don't compile custom actions; etc.)
+- Fixed some issues.
+- Renamed "foldermode" to "directoryindex" in config.
+- Possibly some other things that I forgot.
+
 v2.1 - 19.06.2023
 - Name-based virtual hosts implemented
 	- Now separate htroots can be used per hostname, or you can do redirections with a hostname too.

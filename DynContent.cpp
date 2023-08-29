@@ -5,6 +5,9 @@
 #ifndef AlyssaHeader
 #include "Alyssa.h"
 #endif
+
+#ifdef Compile_CGI
+
 const char* environmentMaster[] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()), "GATEWAY_INTERFACE=\"CGI/1.1\"", NULL, NULL };
 
 bool CGIEnvInit() {// This function initializes master environment array by adding PATH (and maybe some other in the future)
@@ -129,7 +132,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	}
 #endif
 }
+#endif
 
+#ifdef Compile_CustomActions
 	int CustomActions::CAMain(char* path, clientInfo* c, H2Stream* h){
 		bool isDirectory=std::filesystem::is_directory(VirtualHosts[c->VHostNum].Location + path);
 		int sz=strlen(path); std::deque<std::filesystem::path> fArray;
@@ -367,7 +372,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		delete[] buf; return -2;
 	}
 
-
+#endif
 
 
 

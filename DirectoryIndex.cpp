@@ -2,6 +2,8 @@
 #include "Alyssa.h"
 #endif
 
+#ifdef Compile_DirIndex
+
 template <typename TP>
 std::time_t to_time_t(TP tp)
 {
@@ -66,3 +68,6 @@ string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 	ret += "<br>Alyssa HTTP Server " + version + "</body></html>";
 	return ret;
 }
+
+
+#endif

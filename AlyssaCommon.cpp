@@ -2,18 +2,18 @@
 #include "Alyssa.h"
 #endif // !AlyssaHeader
 
-void Send(string payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
+void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
 	size_t size = 0;
 	if (isText)
-		size = strlen(&payload[0]);
-	else size = payload.size();
+		size = strlen(&payload->at(0));
+	else size = payload->size();
 #ifdef Compile_WolfSSL
 	if (ssl != NULL) {
-		SSL_send(ssl, payload.c_str(), size);
+		SSL_send(ssl, payload->c_str(), size);
 	}
-	else { send(sock, payload.c_str(), size, 0); }
+	else { send(sock, payload->c_str(), size, 0); }
 #else
-	send(sock, payload.c_str(), size, 0);
+	send(sock, payload->c_str(), size, 0);
 #endif // Compile_WolfSSL
 }
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
@@ -43,20 +43,20 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	}
 	return "application/octet-stream";
 }
- string currentTime() {
+string currentTime() {
 	std::ostringstream x;
 	std::time_t tt = time(0);
 	std::tm* gmt = std::gmtime(&tt);
 	x << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
 	return x.str();
 }
- std::string Substring(void* str, unsigned int size, unsigned int startPoint) {
+std::string Substring(void* str, unsigned int size, unsigned int startPoint) {
 	string x; if (size == 0) { size = strlen(&static_cast<char*>(str)[startPoint]); }
 	x.resize(size);
 	memcpy(&x[0], &static_cast<char*>(str)[startPoint], size);
 	return x;
 }
- std::string ToLower(string str) {
+std::string ToLower(string str) {
 	string x = ""; x.reserve(str.size());
 	for (size_t i = 0; i < str.size(); i++) {
 		if (str[i] < 91 && str[i] > 64) {
@@ -66,14 +66,14 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	}
 	return x;
 }
- void ToLower(char* c, int l) {
+void ToLower(char* c, int l) {
 	for (int var = 0; var < l; ++var) {
 		if (c[var] < 91 && c[var] > 64) {
 			c[var] += 32;
 		}
 	}
 }
- size_t btoull(string str, int size) {
+size_t btoull(string str, int size) {
 	size_t out = 0;
 	for (int i = str.size(); size >= 0; i--) {
 		if (str[i] == '1') {
@@ -83,19 +83,19 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	}
 	return out;
 }
- unsigned int Convert24to32(unsigned char* Source) {
+unsigned int Convert24to32(unsigned char* Source) {
 	return (
 		(Source[0] << 24)
 		| (Source[1] << 16)
 		| (Source[2] << 8)
 		) >> 8;
 }
- size_t Append(void* Source, void* Destination, size_t Position, size_t Size) {
+size_t Append(void* Source, void* Destination, size_t Position, size_t Size) {
 	if (Size == 0) { Size = strlen((const char*)Source); }
 	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
 	return Size + Position;
 }
- void Logging(clientInfo* cl) {
+void Logging(clientInfo* cl) {
 	if (!Log.is_open()) {
 		std::terminate();
 	}
@@ -108,13 +108,13 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	logMutex.unlock();
  }
  // Log a predefined message instead of reading from clientInfo, for things like error logging.
- void LogString(const char* s) {
+void LogString(const char* s) {
 	logMutex.lock(); Log << s; logMutex.unlock();
- }
- void LogString(string s) {
+}
+void LogString(string s) {
 	logMutex.lock(); Log << s; logMutex.unlock();
- }
- void SetPredefinedHeaders() {
+}
+void SetPredefinedHeaders() {
 	std::string ret;
 #ifdef Compile_WolfSSL
 	if (HSTS) ret += "Strict-Transport-Security: max-age=31536000\r\n";
@@ -143,17 +143,17 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	}
 #endif // Compile_WolfSSL
 	 return;
- }
+}
 #ifdef _WIN32
- char MsgColors[] = { 12,14,11,15,0 };
- void AlyssaNtSetConsole() {
+char MsgColors[] = { 12,14,11,15,0 };
+void AlyssaNtSetConsole() {
 	 CONSOLE_SCREEN_BUFFER_INFO cbInfo;
 	 GetConsoleScreenBufferInfo(hConsole, &cbInfo); // Get the original text color
 	 MsgColors[4] = cbInfo.wAttributes;
- }
+}
 #endif // _WIN32
 
- void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg) {// Function for color output on console
+void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg) {// Function for color output on console
 																		 // Ex: "Error: Custom actions: Redirect requires an argument" MsgType: Error, UnitName: "Custom actions", Msg is the latter.
 																		 // Note that this function can be abused in the future for outputting various things. 
 	 if (MsgType > 2) std::terminate(); std::lock_guard<std::mutex> lock(ConsoleMutex);
@@ -170,8 +170,8 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 		 std::cout << MsgTypeStr[MsgType] << UnitName << Msg << std::endl;
 	 }
 	 return;
- }
- void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one above but this one only prints msgtype and unit name in color, and then resets color for manual output such as printf.
+}
+void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one above but this one only prints msgtype and unit name in color, and then resets color for manual output such as printf.
 	 if (MsgType > 2) std::terminate();
 	 if (ColorOut) {
 #ifndef _WIN32 
@@ -186,7 +186,7 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 	 }
 	 return;
  }
- uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning=0) {
+uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning=0) {
 	 uint32_t ret = 0;
 	 while (s) {
 		 if (s >= 32768) {
@@ -199,4 +199,42 @@ string fileMime(string filename) {//This function returns the MIME type from fil
 		 }
 	 }
 	 fseek(f, _Beginning, 0); return ret;
- }
+}
+
+std::string ErrorPage(unsigned short ErrorCode) {
+	std::string ret;
+	if (errorpages==2) {// True : custom error pages 
+		FILE* f;
+		if ((f = fopen(std::string(respath + "/" + std::to_string(ErrorCode) + ".html").c_str(), "r"))!=NULL) {
+			ret.resize(std::filesystem::file_size(respath + "/" + std::to_string(ErrorCode) + ".html"));
+			fread(&ret[0], ret.size(), 1, f); fclose(f); return ret;
+		}
+	}
+	// Synthetic error pages
+	ret = "<!DOCTYPE html><html><head><style>html{font-family:sans-serif;background:black;color:white;text-align:center;font-size:140%}</style><title>";
+	switch (ErrorCode) {
+	case 400:	ret += "400 Bad Request"; break;
+	case 401:	ret += "401 Unauthorized"; break;
+	case 403:	ret += "403 Forbidden"; break;
+	case 404:	ret += "404 Not Found"; break;
+	case 416:	ret += "416 Range Not Satisfiable"; break;
+	case 418:	ret += "418 I'm a teapot"; break;
+	case 500:	ret += "500 Internal Server Error"; break;
+	case 501:	ret += "501 Not Implemented"; break;
+	default:	ret += "501 Not Implemented"; break;
+	}
+	ret += "</title></head><body><h1>";
+	switch (ErrorCode) {
+	case 400:	ret += "400 Bad Request</h1><p>You've made an invalid request."; break;
+	case 401:	ret += "401 Unauthorized</h1><p>You haven't provided any credentials."; break;
+	case 403:	ret += "403 Forbidden</h1><p>You're not authorized to view this document."; break;
+	case 404:	ret += "404 Not Found</h1><p>Requested documented is not found on server."; break;
+	case 416:	ret += "416 Range Not Satisfiable</h1><p>Requested range is invalid (i.e. beyond the size of document)."; break;
+	case 418:	ret += "418 I'm a teapot</h1><p>Wanna some tea?"; break;
+	case 500:	ret += "500 Internal Server Error</h1><p>An error occurred in our side."; break;
+	case 501:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
+	default:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
+	}
+	ret += "</p><hr><pre>Alyssa HTTP Server " + version + "</pre></body></html>";
+	return ret;
+}

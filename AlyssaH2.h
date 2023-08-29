@@ -1,4 +1,4 @@
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 #pragma once
 // Temporary file for H2 development
 #ifndef AlyssaH2Header
@@ -49,8 +49,8 @@ public:
 		ServerHeaders(p, s, asd);
 	};
 	static void ParseHeaders(H2Stream* s, char* buf, int sz, std::recursive_mutex& SockMtx);
-	static void SendData(H2Stream* s, void* d, size_t sz, std::recursive_mutex& SockMtx);
-	static void SendData(H2Stream* s, void* d, size_t sz) {
+	static void SendData(H2Stream* s, const void* d, size_t sz, std::recursive_mutex& SockMtx);
+	static void SendData(H2Stream* s, const void* d, size_t sz) {
 		std::recursive_mutex asd;
 		SendData(s, d, sz, asd);
 	};
@@ -124,6 +124,8 @@ private:
 		}
 	}
 	static void Get(H2Stream* s, std::recursive_mutex& SockMtx);
+#ifdef Compile_CustomActions
 	static void Post(H2Stream* s, std::recursive_mutex& SockMtx);
+#endif
 };
 #endif

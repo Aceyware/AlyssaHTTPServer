@@ -4,7 +4,7 @@
 using namespace std;
 //Redefinition of options
 std::vector<string> configcache, configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port = { 80 }; string htroot = "./htroot"; bool foldermode = 0;
-/*string whitelist = "";*/ bool forbiddenas404 = 0; string respath = "./res"; bool errorpages = 0; string htrespath = "/res"; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
+/*string whitelist = "";*/ bool forbiddenas404 = 0; string respath = "./res"; char errorpages = 0; string htrespath = "/res"; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
 string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPConnectSrc = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled = 0; bool CARecursive = 0; 
 bool ColorOut = 1; bool HasVHost = 0; string VHostFilePath = "";
 #ifdef Compile_WolfSSL
@@ -37,18 +37,18 @@ bool Config::Configcache() {//This function reads the config file and caches all
 }
 
 string Config::getValue(std::string key, std::string value) {//Interface function for getting a value from config. If value isn't found then value variable on this function will be returned as default value.
-		for (size_t i = 0; i < configcache.size(); i++) {
-			if (configcache[i] == key) {
-				return configcache_value[i];
-			}
+	for (size_t i = 0; i < configcache.size(); i++) {
+		if (configcache[i] == key) {
+			return configcache_value[i];
 		}
-		return value;
+	}
+	return value;
 }
 
 bool Config::initialRead() {//Initial read of the config file and setup of setting variables at the startup of the program.
 	if (!Configcache()) return 0;
 	portStr = getValue("port", "80")+'\1';
-	string temp = "";
+	string temp = ""; port.clear();
 	for (size_t i = 0; i < portStr.size(); i++) {
 		if (portStr[i] >= 48) temp += portStr[i];
 		else {
@@ -68,7 +68,7 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	respath = getValue("respath", "./res");
 	htrespath = getValue("htrespath", "/res");
 	_htrespath = '.' + htrespath;
-	foldermode = stoi(getValue("foldermode", "0"));
+	foldermode = stoi(getValue("directoryindex", "0"));
 	errorpages = stoi(getValue("errorpages", "0"));
 	//whitelist = getValue("whitelist", "");
 	logOnScreen = stoi(getValue("printconnections", "0"));

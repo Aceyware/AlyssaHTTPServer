@@ -6,7 +6,7 @@
 #include "Alyssa.h"
 #endif
 
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 
 #include "AlyssaHuffman.h"
 #include "AlyssaH2.h"
@@ -26,8 +26,13 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 	case 204:
 		buf[pos] = 128 | 9;
 		buf[pos + 1] = 64 | 22;//Literal indexed 22: allow
+#ifdef Compile_CustomActions
 		buf[pos + 2] = 25;
 		memcpy(&buf[pos + 2], "GET,HEAD,POST,PUT,OPTIONS", 25); pos += 28;
+#else
+		buf[pos + 2] = 25;
+		memcpy(&buf[pos + 2], "GET,HEAD,OPTIONS", 16); pos += 19;
+#endif
 		break;
 	case 206:
 		buf[pos] = 128 | 10; buf[pos + 1] = 64 | 30; pos += 2;
@@ -79,7 +84,7 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 		}
 		break;
 	}
-	if (p->StatusCode > 300) {
+	if (p->StatusCode > 300 && p->EndStream) {
 		buf[4] |= H2FENDSTREAM; s->StrOpen = 0;
 	}
 	// Content-length
@@ -118,7 +123,7 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 	// ETag
 	if (p->_Crc) {
 		buf[pos] = 64 | 34; pos++;
-		sprintf(&buf[pos + 1], "%lld", p->_Crc);
+		sprintf(&buf[pos + 1], "%uld", p->_Crc);
 		while (p->_Crc) {// Increase the corresponding byte for length.
 			buf[pos]++; p->_Crc/= 10;
 		}
@@ -371,7 +376,7 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 	}
 }
 
-void AlyssaHTTP2::SendData(H2Stream* s, void* d, size_t sz, std::recursive_mutex& SockMtx) {
+void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz, std::recursive_mutex& SockMtx) {
 	std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
 	char FrameHeader[9] = { 0 };
 	FrameHeader[5] = s->StrIdent >> 24; FrameHeader[6] = s->StrIdent >> 16; FrameHeader[7] = s->StrIdent >> 8; FrameHeader[8] = s->StrIdent >> 0;
@@ -384,7 +389,7 @@ void AlyssaHTTP2::SendData(H2Stream* s, void* d, size_t sz, std::recursive_mutex
 			wolfSSL_send(s->cl.Sr->ssl, FrameHeader, 9, 0);
 			wolfSSL_send(s->cl.Sr->ssl, d, 16384, 0);
 			SockMtx.unlock();
-			d = static_cast<char*>(d) + 16384; sz -= 16384;
+			d = static_cast<const char*>(d) + 16384; sz -= 16384;
 		}
 		else {
 			FrameHeader[0] = (sz >> 16) & 0xFF;
@@ -410,6 +415,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	if (!strncmp(&s->cl.RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, skip custom actions if so.
 		s->cl._RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, htrespath.size());
 	}
+#ifdef Compile_CustomActions
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl,s)) {
 			case 0:
@@ -423,6 +429,7 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 				break;
 		}
 	}
+#endif
 
 	FILE* file = NULL; size_t filesize = 0; 
 	if (std::filesystem::is_directory(s->cl._RequestPath)) {
@@ -435,7 +442,19 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 			return;
 		}
 		else {
-			h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
+			h.StatusCode = 404; 
+			if (errorpages) {
+				std::string ep = ErrorPage(404); h.ContentLength = ep.size();
+				if (ep != "") {
+					h.EndStream = 0; ServerHeaders(&h, s, SockMtx);
+					SendData(s, ep.c_str(), ep.size(), SockMtx);
+				}
+				else
+					ServerHeaders(&h, s, SockMtx);
+			}
+			else
+				ServerHeaders(&h, s, SockMtx); 
+			return;
 		}
 	}
 
@@ -446,7 +465,6 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 	RequestPathW.resize(s->cl._RequestPath.u8string().size());
 	MultiByteToWideChar(CP_UTF8, 0, &s->cl._RequestPath.u8string()[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
 	file = _wfopen(&RequestPathW[0], L"rb");
-
 #endif
 
 	if (file) {
@@ -486,20 +504,33 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 		fclose(file); delete[] buf; return;
 	}
 	else {
-		h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
+		h.StatusCode = 404;
+		if (errorpages) {
+			std::string ep = ErrorPage(404); h.ContentLength = ep.size();
+			if (ep != "") {
+				h.EndStream = 0; ServerHeaders(&h, s, SockMtx);
+				SendData(s, ep.c_str(), ep.size(), SockMtx);
+			}
+			else
+				ServerHeaders(&h, s, SockMtx);
+		}
+		else
+			ServerHeaders(&h, s, SockMtx);
+		return;
 	}
 }
 
+#ifdef Compile_CustomActions
 void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 	HeaderParameters h; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+	std::lock_guard<std::recursive_mutex> lock2(SockMtx);
 	if (logging) {
 		Logging(&s->cl);
 	}
 	if (CAEnabled) {
-		SockMtx.lock();
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl, s)) {
 		case 0:
-			s->StrMtx.unlock(); return;
+			return;
 		case -1:
 			h.StatusCode = 500; ServerHeaders(&h, s, SockMtx); return;
 		case -3: 
@@ -507,10 +538,17 @@ void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 		default:
 			break;
 		}
-		SockMtx.unlock();
 	}
-	h.StatusCode = 404; ServerHeaders(&h, s, SockMtx); return;
+	h.StatusCode = 404; if (errorpages) {
+		std::string ep = ErrorPage(404); h.ContentLength = ep.size();
+		ServerHeaders(&h, s, SockMtx);
+		if (ep != "") SendData(s, ep.c_str(), ep.size(), SockMtx);
+	}
+	else
+		ServerHeaders(&h, s, SockMtx); 
+	return;
 }
+#endif
 
 void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 	std::deque<H2Stream*> StrArray; std::deque<StreamTable> StrTable; std::mutex StrMtx;//Stream array, table and mutex of that arrays.
@@ -646,10 +684,12 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 					switch (StrArray[Index]->cl.RequestTypeInt) {
 						case 1:
 							Get(StrArray[Index], SockMtx); break;
+#ifdef Compile_CustomActions
 						case 2:
 							Post(StrArray[Index], SockMtx); break;
 						case 3:
 							Post(StrArray[Index], SockMtx); break;
+#endif
 						case 4:
 							{
 								HeaderParameters h; h.StatusCode = 204;
@@ -674,5 +714,7 @@ void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
 	DeleteStreamAll(&StrArray);
 	return;
 }
+
+
 
 #endif

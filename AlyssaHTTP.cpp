@@ -34,7 +34,7 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 		ret += h->CustomHeaders[i] + "\r\n";
 	}
 	ret += PredefinedHeaders;
-	ret += "\r\n"; Send(ret, c->Sr->sock, c->Sr->ssl, 1);
+	ret += "\r\n"; Send(&ret, c->Sr->sock, c->Sr->ssl, 1);
 	c->clear();
 	return;
 }
@@ -121,9 +121,13 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			}
 			switch (cl->RequestTypeInt) {
 				case 1:	Get(cl); break;
+#ifdef Compile_CustomActions
 				case 2:	Post(cl); break;
 				case 3: Post(cl); break;
 				case 4:	h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); ServerHeaders(&h, cl); break;
+#else
+				case 4:	h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD"); ServerHeaders(&h, cl); break;
+#endif
 				case 5: Get(cl); break;
 				default:h.StatusCode = 501; ServerHeaders(&h, cl); break;
 			}
@@ -133,9 +137,11 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			pos = line.find(":");
 			if (pos < 0) { h.StatusCode = 400; ServerHeaders(&h, cl); return; }
 			string key = ToLower(Substring(&line[0], pos)); pos += 2; string value = Substring(&line[0], 0, pos);
-			if (key == "authorization") { cl->auth = Substring(&value[0], 0, 6); cl->auth = base64_decode(cl->auth); }
+			if (key == "host") { cl->host = value; }
+#ifdef Compile_CustomActions
+			else if (key == "authorization") { cl->auth = Substring(&value[0], 0, 6); cl->auth = base64_decode(cl->auth); }
+#endif
 			else if (key == "connection") { if (value == "close") cl->close = 1; }
-			else if (key == "host") { cl->host = value; }
 			else if (key == "range") {
 				value = Substring(&value[0], 0, 6);
 				pos = value.find("-"); if (pos < 0) {}
@@ -164,6 +170,7 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 	if (!strncmp(&cl->RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, set path to respath and also skip custom actions
 		cl->_RequestPath = respath + Substring(&cl->RequestPath[0], 0, htrespath.size());
 	}
+#ifdef Compile_CustomActions
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl)) {
 		case 0:
@@ -178,20 +185,30 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 			break;
 		}
 	}
+#endif
 
 	if (std::filesystem::is_directory(cl->_RequestPath)) {
 		if (std::filesystem::exists(cl->_RequestPath.u8string() + "/index.html")) { cl->RequestPath += "/index.html"; cl->_RequestPath+="/index.html"; }
+#ifdef Compile_DirIndex
 		else if (foldermode) {
 			string asd = DirectoryIndex::DirMain(cl->_RequestPath, cl->RequestPath);
 			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html";
 			ServerHeaders(&h, cl);
 			if (cl->RequestTypeInt!=5)
-				Send(asd, cl->Sr->sock, cl->Sr->ssl, 1);
+				Send(&asd, cl->Sr->sock, cl->Sr->ssl, 1);
 			return;
 		}
+#endif
 		else {
 			h.StatusCode = 404;
-			ServerHeaders(&h, cl); return;
+			if (errorpages) {
+				string ep = ErrorPage(404); h.ContentLength = ep.size();
+				ServerHeaders(&h, cl);
+				if (ep != "") Send(&ep, cl->Sr->sock, cl->Sr->ssl, 1);
+			}
+			else
+				ServerHeaders(&h, cl);
+			return;
 		}
 	}
 
@@ -235,13 +252,21 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 		fclose(file); delete[] buf;
 	}
 	else {
-		h.StatusCode = 404; ServerHeaders(&h, cl);
+		h.StatusCode = 404; 
+		if (errorpages) {
+			string ep = ErrorPage(404); h.ContentLength = ep.size();
+			ServerHeaders(&h, cl);
+			if (ep != "") Send(&ep, cl->Sr->sock, cl->Sr->ssl, 1);
+		}
+		else
+			ServerHeaders(&h, cl);
 	}
 
 	if (cl->close) {
 		shutdown(cl->Sr->sock, 2);
 	}
 }
+#ifdef Compile_CustomActions
 void AlyssaHTTP::Post(clientInfo* cl) {
 	HeaderParameters h;
 	if (logging) {
@@ -262,8 +287,17 @@ void AlyssaHTTP::Post(clientInfo* cl) {
 			ServerHeaders(&h, cl); return;
 		}
 	}
-	h.StatusCode = 404; ServerHeaders(&h, cl); return;
+	h.StatusCode = 404; 
+	if (errorpages) {
+		string ep = ErrorPage(404); h.ContentLength = ep.size();
+		ServerHeaders(&h, cl);
+		if (ep != "") Send(&ep, cl->Sr->sock, cl->Sr->ssl, 1);
+	}
+	else
+		ServerHeaders(&h, cl); 
+	return;
 }
+#endif
 
 void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function that gets data from client.
 	char* buf = new char[4097]; memset(buf, 0, 4097);

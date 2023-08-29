@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,0,2,0
- PRODUCTVERSION 2,0,2,0
+ FILEVERSION 2,1,1,0
+ PRODUCTVERSION 2,1,1,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -65,21 +65,21 @@ VS_VERSION_INFO VERSIONINFO
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        BLOCK "040004b0"
+        BLOCK "000004b0"
         BEGIN
             VALUE "CompanyName", "PEPSIMANTR"
             VALUE "FileDescription", "Alyssa HTTP Server Project"
-            VALUE "FileVersion", "v2.0.2"
+            VALUE "FileVersion", "v2.1.1"
             VALUE "InternalName", "AlyssaHTTP.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2023 PEPSIMANTR"
+            VALUE "LegalCopyright", "Copyright (C) 2024 PEPSIMANTR"
             VALUE "OriginalFilename", "AlyssaHTTP.exe"
             VALUE "ProductName", "Alyssa HTTP Server Project"
-            VALUE "ProductVersion", "v2.0.2"
+            VALUE "ProductVersion", "v2.1.1"
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x400, 1200
+        VALUE "Translation", 0x0, 1200
     END
 END
 
