@@ -71,6 +71,9 @@
     <ClInclude Include="Crc32.h">
       <Filter>Header\External</Filter>
     </ClInclude>
+    <ClInclude Include="AlyssaBuildConfig.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">
