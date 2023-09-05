@@ -30,3 +30,21 @@
 *.exe
 *.out
 *.app
+
+# WolfSSL user_settings.h file
+user_settings.h
+
+# Secret files
+*.pem
+*.key
+
+# Config files
+*.cfg
+
+# Visual Studio IntelliSense directory
+.vs
+
+# VS output directories
+x64
+Debug
+Release

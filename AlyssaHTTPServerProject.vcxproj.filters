@@ -21,58 +21,58 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Main.cpp">
+    <ClCompile Include="src/AlyssaCommon.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="Config.cpp">
+    <ClCompile Include="src/AlyssaH2.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="base64.cpp">
+    <ClCompile Include="src/AlyssaHTTP.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src/Config.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src/DirectoryIndex.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src/DynContent.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src/Main.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src/external/Crc32.cpp">
       <Filter>Source\External</Filter>
     </ClCompile>
-    <ClCompile Include="AlyssaH2.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="DynContent.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="DirectoryIndex.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="AlyssaHTTP.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="AlyssaCommon.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="Crc32.cpp">
+    <ClCompile Include="src/external/base64.cpp">
       <Filter>Source\External</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Alyssa.h">
+    <ClInclude Include="src/Alyssa.h">
       <Filter>Header</Filter>
     </ClInclude>
-    <ClInclude Include="base64.h">
+    <ClInclude Include="src/AlyssaBuildConfig.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src/AlyssaH2.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src/AlyssaHuffman.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src/resource.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src/external/Crc32.h">
       <Filter>Header\External</Filter>
     </ClInclude>
-    <ClInclude Include="subprocess.h">
+    <ClInclude Include="src/external/base64.h">
       <Filter>Header\External</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h">
-      <Filter>Header</Filter>
-    </ClInclude>
-    <ClInclude Include="AlyssaHuffman.h">
-      <Filter>Header</Filter>
-    </ClInclude>
-    <ClInclude Include="AlyssaH2.h">
-      <Filter>Header</Filter>
-    </ClInclude>
-    <ClInclude Include="Crc32.h">
+    <ClInclude Include="src/external/subprocess.h">
       <Filter>Header\External</Filter>
-    </ClInclude>
-    <ClInclude Include="AlyssaBuildConfig.h">
-      <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -28,6 +28,8 @@ And more.
 - [ ] Optimize some parts if possible
 - [ ] Switch to dual stack IPv6 sockets if possible (maybe)
 - [ ] Guides for compilation, usage, configuration etc.
-- {x] Server generated and custom error pages
+- [x] Server generated and custom error pages
+- [ ] Modularization
+- [ ] Kernel mode acceleration
 - [ ] Get a girlfriend
 

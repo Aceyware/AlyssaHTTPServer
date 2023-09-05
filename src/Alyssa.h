@@ -9,12 +9,12 @@
 #include "AlyssaBuildConfig.h"
 
 #ifdef Compile_CustomActions
-#include "base64.h"//https://github.com/ReneNyffenegger/cpp-base64
+#include "external/base64.h"//https://github.com/ReneNyffenegger/cpp-base64
 #endif
 #ifdef Compile_CGI
-#include "subprocess.h"//https://github.com/sheredom/subprocess.h
+#include "external/subprocess.h"//https://github.com/sheredom/subprocess.h
 #endif
-#include "Crc32.h"//https://github.com/stbrumme/crc32
+#include "external/Crc32.h"//https://github.com/stbrumme/crc32
 #include <iostream>
 #include <string>
 #include <thread>
@@ -48,7 +48,6 @@
 #endif
 using std::string;
 
-//#define Compile_WolfSSL //Define that if you want to compile with SSL support
 #ifdef Compile_WolfSSL
 	#ifndef _WIN32
 		#include <wolfssl/options.h>
@@ -56,8 +55,9 @@ using std::string;
 		// Add your WolfSSL library and include files directory from Visual Studio project settings.
 		#define WOLFSSL_USER_SETTINGS
 		#define CYASSL_USER_SETTINGS
-		#include "user_settings.h"
 		#pragma comment (lib, "wolfssl.lib")
+		// You also need to copy WolfSSL's user_settings.h header to src directory.
+		#include "user_settings.h"
 	#endif
 	#include <wolfssl/ssl.h>
 	#define SSL_recv wolfSSL_read
@@ -65,7 +65,7 @@ using std::string;
 #endif //Compile_WolfSSL
 
 #ifndef Compile_WolfSSL
-typedef struct WOLFSSL {};
+	typedef struct WOLFSSL {};
 #endif
 
 // Definitions for non-Windows platforms
