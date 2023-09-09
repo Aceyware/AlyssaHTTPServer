@@ -26,20 +26,46 @@ int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
 	return send(sock, payload, size, 0);
 #endif // Compile_WolfSSL
 }
-string fileMime(string filename) {//This function returns the MIME type from file extension.
-	string extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "bin", "bmp", "bz", "bz2", "cda", "csh", "css", "csv", "doc", "docx", "eot", "epub", "gz", "gif", "htm", "html", "ico", "ics", "jar", "jpeg", "jpg", "js", "json", "jsonld", "mid", "midi", "mjs", "mp3", "mp4", "mpeg", "mpkg", "odp", "ods", "odt", "oga", "ogv", "ogx", "opus", "otf", "png", "pdf", "php", "ppt", "pptx", "rar", "rtf", "sh", "svg", "tar", "tif", "tiff", "ts", "ttf", "txt", "vsd", "wav", "weba", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xml", "xul", "zip", "3gp", "3g2", "7z" };
-	string mimes[] = { "audio/aac", "application/x-abiword", "application/x-freearc", "image/avif", "video/x-msvideo", "application/vnd.amazon.ebook", "application/octet-stream", "image/bmp", "application/x-bzip", "application/x-bzip2", "application/x-cdf", "application/x-csh", "text/css", "text/csv", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-fontobject", "application/epub+zip", "application/gzip", "image/gif", "text/html", "text/html", "image/vnd.microsoft.icon", "text/calendar", "application/java-archive", "image/jpeg", "image/jpeg", "text/javascript", "application/json", "application/ld+json", "audio/midi", "audio/midi", "text/javascript", "audio/mpeg", "video/mp4", "video/mpeg", "application/vnd.apple.installer+xml", "application/vnd.oasis.opendocument.presentation", "application/vnd.oasis.opendocument.spreadsheet", "application/vnd.oasis.opendocument.text", "audio/ogg", "video/ogg", "application/ogg", "audio/opus", "font/otf", "image/png", "application/pdf", "application/x-httpd-php", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.rar", "application/rtf", "application/x-sh", "image/svg+xml", "application/x-tar", "image/tiff", "image/tiff", "video/mp2t", "font/ttf", "text/plain", "application/vnd.visio", "audio/wav", "audio/webm", "video/webm", "image/webp", "font/woff", "font/woff2", "application/xhtml+xml", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/xml", "application/vnd.mozilla.xul+xml", "application/zip", "video/3gpp", "video/3gpp2", "application/x-7z-compressed" };
-	bool hasExtension = 0; string ext = "";
-	for (size_t i = filename.size() - 1; i > 0 && !hasExtension; i--) {
-		if (filename[i] != '.') ext += filename[i];
-		else hasExtension = 1;
+string fileMime(string& filename) {//This function returns the MIME type from file extension.
+	char ExtOffset = 0;
+	for (size_t i = filename.size() - 1; i > 0; i--) {
+		if (filename[i] == '.') {
+			ExtOffset = i + 1; break;
+		}
 	}
-	filename = ext; ext = "";
-	for (int i = filename.size() - 1; i >= 0; i--) {
-		ext += filename[i];
-	}
-	for (size_t i = 0; i < 76; i++) {
-		if (ext == extensions[i]) return mimes[i];
+	if(!ExtOffset) return "application/octet-stream";
+	char start,end;
+    // Okay, you may say WTF when you see that switch, its just for limiting which periods of
+    // MIME types array will be searched because comparing with whole array is waste of time
+    // (i.e. if our extension is PNG we don't need to compare other extensions that doesn't
+    // start with P). I don't know if compiler does a smilar thing, or this isn't really
+    // improves performance. If so, or some reason numbers are incorrrect for some reason,
+    // please kindly inform me, do a pull request. Thank you.
+    switch (filename[ExtOffset]) {
+        case 'a': start=0; end=5; break;
+        case 'b': start=6; end=9; break;
+        case 'c': start=10; end=13; break;
+        case 'd': start=14; end=15; break;
+        case 'e': start=16; end=17; break;
+        case 'g': start=18; end=19; break;
+        case 'h': start=20; end=21; break;
+        case 'i': start=22; end=23; break;
+        case 'j': start=24; end=29; break;
+        case 'm': start=30; end=36; break;
+        case 'o': start=37; end=44; break;
+        case 'p': start=45; end=49; break;
+        case 'r': start=50; end=51; break;
+        case 's': start=52; end=53; break;
+        case 't': start=54; end=59; break;
+        case 'v': start=60; end=60; break;
+        case 'w': start=61; end=66; break;
+        case 'x': start=67; end=71; break;
+        case 'z': start=72; end=72; break;
+        case '1': start=73; end=75; break;
+        default: return "application/octet-stream";
+    }
+    for (; start <= end; start++) {
+        if (!strcmp(&filename[ExtOffset],extensions[start])) return mimes[start];
 	}
 	return "application/octet-stream";
 }

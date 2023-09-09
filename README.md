@@ -31,5 +31,9 @@ And more.
 - [x] Server generated and custom error pages
 - [ ] Modularization
 - [ ] Kernel mode acceleration
+- [ ] Conditional requests handling
+- [ ] Extend custom actions
+- [ ] Implement FastCGI support
+- [ ] Add code testing (i.e. unit testing)
 - [ ] Get a girlfriend
 

@@ -180,7 +180,7 @@ class DirectoryIndex {
 
 void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText = 1);
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
-string fileMime(string filename);
+string fileMime(string& filename);
 string currentTime();
 std::string Substring(void* str, unsigned int size, unsigned int startPoint = 0);
 std::string ToLower(string str);
@@ -248,7 +248,11 @@ extern std::deque<VirtualHost> VirtualHosts;
 
 // Definition of constant values
 static char separator = 1;
-static string version = "2.1.1";
+#ifdef _DEBUG
+static string version = "2.1.2d";
+#else
+static string version = "2.1.2";
+#endif
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
@@ -278,6 +282,10 @@ static string HelpString=
 		"\n"
 		//"For server manual please refer to \"https://4lyssa.net/AlyssaHTTP/help\"\n"
 	;
+static const char* extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "bin", "bmp", "bz", "bz2", "cda", "csh", "css", "csv", "doc", "docx", "eot", "epub", "gz", "gif", "htm", "html", "ico", "ics", "jar", "jpeg", "jpg", "js", "json", "jsonld", "mid", "midi", "mjs", "mp3", "mp4", "mpeg", "mpkg", "odp", "ods", "odt", "oga", "ogv", "ogx", "opus", "otf", "png", "pdf", "php", "ppt", "pptx", "rar", "rtf", "sh", "svg", "tar", "tif", "tiff", "ts", "ttf", "txt", "vsd", "wav", "weba", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xml", "xul", "zip", "3gp", "3g2", "7z" };
+
+static const char* mimes[] = { "audio/aac", "application/x-abiword", "application/x-freearc", "image/avif", "video/x-msvideo", "application/vnd.amazon.ebook", "application/octet-stream", "image/bmp", "application/x-bzip", "application/x-bzip2", "application/x-cdf", "application/x-csh", "text/css", "text/csv", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-fontobject", "application/epub+zip", "application/gzip", "image/gif", "text/html", "text/html", "image/vnd.microsoft.icon", "text/calendar", "application/java-archive", "image/jpeg", "image/jpeg", "text/javascript", "application/json", "application/ld+json", "audio/midi", "audio/midi", "text/javascript", "audio/mpeg", "video/mp4", "video/mpeg", "application/vnd.apple.installer+xml", "application/vnd.oasis.opendocument.presentation", "application/vnd.oasis.opendocument.spreadsheet", "application/vnd.oasis.opendocument.text", "audio/ogg", "video/ogg", "application/ogg", "audio/opus", "font/otf", "image/png", "application/pdf", "application/x-httpd-php", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.rar", "application/rtf", "application/x-sh", "image/svg+xml", "application/x-tar", "image/tiff", "image/tiff", "video/mp2t", "font/ttf", "text/plain", "application/vnd.visio", "audio/wav", "audio/webm", "video/webm", "image/webp", "font/woff", "font/woff2", "application/xhtml+xml", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/xml", "application/vnd.mozilla.xul+xml", "application/zip", "video/3gpp", "video/3gpp2", "application/x-7z-compressed" };
+
 // Values for color console output
 static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #ifndef _WIN32

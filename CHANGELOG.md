@@ -1,5 +1,13 @@
 # Alyssa HTTP Server Changelog
 
+## 2.1.2 - 10.09.2023
+- Added new custom action directive "Forbid"
+	- This new directive will respond to all clients with HTTP 403 no matter what.
+- Server will now print a warning when running as root.
+- Debug-compiled binary versions is now postfixed with 'd' letter. (i.e. 2.1.2d)
+- Made some performance improvements.
+- Fixed some errors and typos.
+
 ## 2.1.1 - 30.08.2023 - Anniversary update!
 - Error pages implemented
 	- You can use either your custom error pages or pages synthesized by server.

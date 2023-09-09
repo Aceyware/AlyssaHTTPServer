@@ -17,9 +17,12 @@ std::deque<VirtualHost> VirtualHosts;
 int main(int argc, char* argv[]) {//This is the main server function that fires up the server and listens for connections.
 	//Set the locale and stdout to Unicode
 	fwide(stdout, 0); setlocale(LC_ALL, "");
-	// Do platform spesific operations
+    // Do platform specific operations
 #ifndef _WIN32
 	signal(SIGPIPE, sigpipe_handler); // Workaround for some *nix killing the server when server tries to access an socket which is closed by remote peer.
+    if(geteuid()==0) ConsoleMsg(1,"Server: ","Server is running as root, this is not necessary. "
+                                  "Only use if you know what are you doing. "
+                                  "(There's also ways for listening port 80/443 without root.)");
 #endif
 #ifdef _WIN32
 	if (ColorOut) AlyssaNtSetConsole(); // Set console colors on Windows NT

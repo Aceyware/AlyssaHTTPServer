@@ -30,6 +30,7 @@
 *.exe
 *.out
 *.app
+*.elf
 
 # WolfSSL user_settings.h file
 user_settings.h
@@ -48,3 +49,10 @@ user_settings.h
 x64
 Debug
 Release
+
+# Alyssa HTTP Server specific stuff
+htroot
+Alyssa.log
+
+# macOS persistent storage(?) stuff
+._*

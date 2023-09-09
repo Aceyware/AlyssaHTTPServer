@@ -279,7 +279,17 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							std::cout << "Argument required for 'ExecCGI' action on node " << cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
-					}
+                    }
+                    else if (!strcmp(&c[cn], "forbid")){
+                        hp.StatusCode = 403;
+#ifdef Compile_WolfSSL
+                        if (h)
+                            AlyssaHTTP2::ServerHeaders(&hp, h);
+                        else
+#endif
+                            AlyssaHTTP::ServerHeaders(&hp, cl);
+                        return 0;
+                    }
 					else {
 						//ConsoleMutex.lock();
 						ConsoleMsgM(0, "Custom actions: ");
