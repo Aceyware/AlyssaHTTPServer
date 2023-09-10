@@ -1,6 +1,6 @@
 # Alyssa HTTP Server Changelog
 
-## 2.1.2 - 10.09.2023
+## 2.1.2 - 09.09.2023
 - Added new custom action directive "Forbid"
 	- This new directive will respond to all clients with HTTP 403 no matter what.
 - Server will now print a warning when running as root.
@@ -31,12 +31,12 @@
 - Request headers are now parsed as case independent.
 
 ## v2.0.1 - 10.06.2023
- Now the headers that never changes in lifetime of server is precalculated at startup, resulting performance boost.
- Color output support for console messages implemented.
- Now HTTP/1.1 Server headers uses the new HeaderParameters introduced on 2.0 on HTTP/2
- Moved HTTP/1.1 code from Main.cpp to it's own file, AlyssaHTTP.cpp (source change)
- Moved functions from Alyssa.h to AlyssaCommon.cpp for more clean source (source change)
- Some bugs fixed.
+- Now the headers that never changes in lifetime of server is precalculated at startup, resulting performance boost.
+- Color output support for console messages implemented.
+- Now HTTP/1.1 Server headers uses the new HeaderParameters introduced on 2.0 on HTTP/2
+- Moved HTTP/1.1 code from Main.cpp to it's own file, AlyssaHTTP.cpp (source change)
+- Moved functions from Alyssa.h to AlyssaCommon.cpp for more clean source (source change)
+- Some bugs fixed.
 
 ## v2.0 - 07.05.2023
 - Most of the things are rewritten with this version.

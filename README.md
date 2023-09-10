@@ -1,9 +1,10 @@
 # Alyssa HTTP Server Project
 Alyssa is a lightweight, multiplatform HTTP server. It can just work without hours of configuration, on anywhere.
 ## How to use?
-You can use it just out of the box! Just get the latest release, edit ports or other stuff if needed, and run the executable.
-## Guides for configuration/compiling/etc.
-Detailed guides will be available later. Compilation is only about of giving all .cpp files as input to gcc, setting language standard to C++17 and adding libraries depeding on case. It can work on any platform that has a C++17 compiler.
+You can use it just out of the box! Just get the latest release, 
+edit ports or other stuff if needed, and run the executable.
+## Documentation
+Documentation about configuration, compiling and much more is available [here.](docs/Home.md)
 ## Features
 - HTTP/2 
 - SSL/TLS
@@ -12,6 +13,7 @@ Detailed guides will be available later. Compilation is only about of giving all
 - IPv6 ready
 - Directory index pages
 - Name-based virtual hosts
+
 And more.
 
 ## To-do list (random order)
@@ -27,7 +29,7 @@ And more.
 - [ ] Proxy server implementation
 - [ ] Optimize some parts if possible
 - [ ] Switch to dual stack IPv6 sockets if possible (maybe)
-- [ ] Guides for compilation, usage, configuration etc.
+- [x] Guides for compilation, usage, configuration etc.
 - [x] Server generated and custom error pages
 - [ ] Modularization
 - [ ] Kernel mode acceleration

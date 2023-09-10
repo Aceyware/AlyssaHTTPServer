@@ -1,5 +1,7 @@
 # Code of Conduct
 
+**TLDR:** KEEP IT PROFESSIONAL! Do not move anything other than software work here. Here is not a theater and there's no place for drama.
+
 I'll keep it simple. Here is a place that people interacts with each other with the aim of doing software. And there should be some rules and guidelines for making sure this purpose is served well.
 
 ## That such rules and guidelines:
@@ -18,4 +20,4 @@ I have the right of replying to violations in range from just warning up to perm
 
 Tag me (@PEPSIMANTR) in the crime scene or message me from one of available contact options.
 
-Version 1
+Version 1 Amendment A

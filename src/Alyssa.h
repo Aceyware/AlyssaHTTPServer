@@ -266,7 +266,7 @@ static string GPLDisclaimer=
 	"This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of "
 	"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\n"
 
-	"You should have received a copy of the GNU General Public License"
+	"You should have received a copy of the GNU General Public License "
 	"along with this program. \nIf not, see \"https://www.gnu.org/licenses/\".\n";
 static string HelpString=
 		"Alyssa HTTP Server command-line arguments help:\n\n"
