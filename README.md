@@ -37,5 +37,9 @@ And more.
 - [ ] Extend custom actions
 - [ ] Implement FastCGI support
 - [ ] Add code testing (i.e. unit testing)
+- [ ] Digest authentication
+- [ ] Source code documentation (maybe)
+- [ ] Add code for ease of developing APIs on top of server code directly (maybe)
+- [ ] Modules/extensions support (maybe)
 - [ ] Get a girlfriend
 

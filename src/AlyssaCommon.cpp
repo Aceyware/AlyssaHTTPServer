@@ -2,6 +2,8 @@
 #include "Alyssa.h"
 #endif // !AlyssaHeader
 
+using std::cout;
+
 void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
 	size_t size = 0;
 	if (isText)
@@ -9,7 +11,7 @@ void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
 	else size = payload->size();
 #ifdef Compile_WolfSSL
 	if (ssl != NULL) {
-		SSL_send(ssl, payload->c_str(), size);
+		wolfSSL_send(ssl, payload->c_str(), size, 0);
 	}
 	else { send(sock, payload->c_str(), size, 0); }
 #else
@@ -19,7 +21,7 @@ void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size) {
 #ifdef Compile_WolfSSL
 	if (ssl != NULL) {
-		return SSL_send(ssl, payload, size);
+		return wolfSSL_send(ssl, payload, size, 0);
 	}
 	else { return send(sock, payload, size, 0); }
 #else
@@ -145,11 +147,8 @@ void SetPredefinedHeaders() {
 #ifdef Compile_WolfSSL
 	if (HSTS) ret += "Strict-Transport-Security: max-age=31536000\r\n";
 #endif // Compile_WolfSSL
-	if (corsEnabled) {
-		ret += "Access-Control-Allow-Origin: " + defaultCorsAllowOrigin + "\r\n";
-	}
 	if (CSPEnabled) {
-		ret += "Content-Security-Policy: connect-src " + CSPConnectSrc + "\r\n";
+		ret += "Content-Security-Policy: " + CSPHeaders + "\r\n";
 	}
 	ret += "Server: Alyssa/" + version + "\r\n"; PredefinedHeaders = ret; ret.clear();
 #ifdef Compile_WolfSSL
@@ -157,12 +156,12 @@ void SetPredefinedHeaders() {
 		if (HSTS) {
 			ret += 64 | 56; ret += sizeof "max-age=31536000"; ret += "max-age=31536000";
 		}
-		if (corsEnabled) {
-			ret += 64 | 20; ret += (char)defaultCorsAllowOrigin.size(); ret += defaultCorsAllowOrigin;
-		}
+		//if (corsEnabled) {
+		//	ret += 64 | 20; ret += (char)defaultCorsAllowOrigin.size(); ret += defaultCorsAllowOrigin;
+		//}
 		if (CSPEnabled) {
 			ret += '\0'; ret += sizeof "content-security-policy" - 1; ret += "content-security-policy";
-			ret += CSPConnectSrc.size() + sizeof "connect-src"; ret += "connect-src " + CSPConnectSrc;
+			ret += CSPHeaders.size(); ret += CSPHeaders;
 		}
 		ret += 64 | 54; ret += sizeof"Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
 		PredefinedHeadersH2 = ret; PredefinedHeadersH2Size = ret.size();
@@ -262,5 +261,129 @@ std::string ErrorPage(unsigned short ErrorCode) {
 	default:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
 	}
 	ret += "</p><hr><pre>Alyssa HTTP Server " + version + "</pre></body></html>";
+	return ret;
+}
+
+char ParseCL(int argc, char** argv) {// This func parses command line arguments.
+	for (int i = 1; i < argc; i++) {
+		while (argv[i][0] < 48) {//Get rid of delimiters first, by shifting string to left.
+			for (int var = 1; var < strlen(argv[i]); var++) {
+				argv[i][var - 1] = argv[i][var];
+			}
+			argv[i][strlen(argv[i]) - 1] = 0;
+		}
+		if (!strcmp(argv[i], "version")) {
+			cout << "Alyssa HTTP Server " << version << std::endl;
+#ifdef Compile_WolfSSL
+			cout << "WolfSSL Library Version: " << WOLFSSL_VERSION << std::endl;
+#endif
+			cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl;
+			cout << "Features: Core, "
+#ifdef Compile_WolfSSL
+				<< "SSL, "
+#endif
+#ifdef Compile_H2
+				<< "HTTP/2, "
+#endif
+#ifdef Compile_CustomActions
+				<< "Custom Actions, "
+#endif
+#ifdef Compile_CGI
+				<< "CGI, "
+#endif
+#ifdef Compile_DirIndex
+				<< "Directory Index, "
+#endif
+				<< std::endl;
+			cout << std::endl << GPLDisclaimer;
+			return 0;
+		}
+		else if (!strcmp(argv[i], "help")) {
+			cout << HelpString; return 0;
+		}
+		else if (!strcmp(argv[i], "port")) {
+			if (i + 1 < argc) {
+				i++; port.clear(); string temp = "";
+				for (int var = 0; var <= strlen(argv[i]); var++) {
+					if (argv[i][var] > 47) temp += argv[i][var];
+					else {
+						try {
+							port.emplace_back(stoi(temp)); temp.clear();
+						}
+						catch (std::invalid_argument&) {
+							cout << "Usage: -port [port number]{,port num2,port num3...}" << std::endl; return -4;
+						}
+					}
+				}
+			}
+			else { cout << "Usage: -port [port number]{,port num2,port num3...}" << std::endl; return -4; }
+		}
+		else if (!strcmp(argv[i], "htroot")) {
+			if (i + 1 < argc) {
+				htroot = argv[i + 1]; i++;
+			}
+			else { cout << "Usage: -htroot [path]" << std::endl; return -4; }
+		}
+#ifdef Compile_WolfSSL
+		else if (!strcmp(argv[i], "nossl")) { enableSSL = 0; }
+		else if (!strcmp(argv[i], "sslport")) {
+			if (i + 1 < argc) {
+				i++; SSLport.clear(); string temp = "";
+				for (int var = 0; var <= strlen(argv[i]); var++) {
+					if (argv[i][var] > 47) temp += argv[i][var];
+					else {
+						try {
+							SSLport.emplace_back(stoi(temp)); temp.clear();
+						}
+						catch (std::invalid_argument&) {
+							cout << "Usage: -sslport [port number]{,port num2,port num3...}" << std::endl; return -4;
+						}
+					}
+				}
+			}
+			else { cout << "Usage: -sslport [port number]{,port num2,port num3...}" << std::endl; return -4; }
+		}
+#endif
+		else { cout << "Invalid argument: " << argv[i] << ". See -help for valid arguments." << std::endl; return -4; }
+	}
+	return 1;
+}
+
+unsigned char hexconv(char* _Arr) {// Lame hexadecimal string to decimal byte converter for % decoding.
+	unsigned char ret = 0;
+	if (_Arr[0] & 64) {// Letter
+		if (_Arr[0] & 32) {// Lowercase letter
+			_Arr[0] ^= (64 | 32);
+			if (_Arr[0] & 128 || _Arr[0] > 9) throw std::invalid_argument("not a valid hex.");
+			ret = _Arr[0] * 16;
+		}
+		else {// Uppercase letter
+			_Arr[0] ^= 64;
+			if (_Arr[0] & 128 || _Arr[0] > 9) throw std::invalid_argument("not a valid hex.");
+			ret = _Arr[0] * 16;
+		}
+	}
+	else {// Number
+		_Arr[0] ^= (32 | 16);
+		if (_Arr[0] & 128 ||_Arr[0]>9) throw std::invalid_argument("not a valid hex.");
+		ret = _Arr[0] * 16;
+	}
+	if (_Arr[1] & 64) {// Letter
+		if (_Arr[1] & 32) {// Lowercase letter
+			_Arr[1] ^= (64 | 32);
+			if (_Arr[1] & 128 || _Arr[1] > 9) throw std::invalid_argument("not a valid hex.");
+			ret += _Arr[1];
+		}
+		else {// Uppercase letter
+			_Arr[1] ^= 64;
+			if (_Arr[1] & 128 || _Arr[1] > 9) throw std::invalid_argument("not a valid hex.");
+			ret += _Arr[1];
+		}
+	}
+	else {// Number
+		_Arr[1] ^= (32 | 16);
+		if (_Arr[1] & 128 || _Arr[1] > 9) throw std::invalid_argument("not a valid hex.");
+		ret += _Arr[1];
+	}
 	return ret;
 }

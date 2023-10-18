@@ -33,82 +33,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 	//Parse the command line arguments
 	if (argc>1) {
-		for (int i = 1; i < argc; i++) {
-			while(argv[i][0]<48) {//Get rid of delimiters first, by shifting string to left.
-				for (int var = 1; var < strlen(argv[i]); var++) {
-					argv[i][var-1]=argv[i][var];
-				}
-				argv[i][strlen(argv[i])-1]=0;
-			}
-			if(!strcmp(argv[i],"version")){
-				cout<<"Alyssa HTTP Server "<<version<<std::endl;
-#ifdef Compile_WolfSSL
-				cout<<"WolfSSL Library Version: "<<WOLFSSL_VERSION<<std::endl;
-#endif
-				cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl; 
-				cout << "Features: Core, "
-#ifdef Compile_WolfSSL
-					<< "SSL, "
-#endif
-#ifdef Compile_H2
-					<< "HTTP/2, "
-#endif
-#ifdef Compile_CustomActions
-					<< "Custom Actions, "
-#endif
-#ifdef Compile_CGI
-					<< "CGI, "
-#endif
-#ifdef Compile_DirIndex
-					<< "Directory Index, "
-#endif
-					<< std::endl;
-				cout << std::endl << GPLDisclaimer;
-				return 0;
-			}
-			else if(!strcmp(argv[i],"help")){
-				cout<<HelpString; return 0;
-			}
-			else if(!strcmp(argv[i],"port")){
-				if(i+1<argc){
-					i++; port.clear(); string temp="";
-					for (int var = 0; var <= strlen(argv[i]); var++) {
-						if(argv[i][var]>47) temp+=argv[i][var];
-						else{
-							try {
-								port.emplace_back(stoi(temp)); temp.clear();
-							} catch (std::invalid_argument&) {
-								cout<<"Usage: -port [port number]{,port num2,port num3...}"<<std::endl; return -4;
-							}
-						}
-					}
-				} else{cout<<"Usage: -port [port number]{,port num2,port num3...}"<<std::endl; return -4;}
-			}
-			else if(!strcmp(argv[i],"htroot")) {
-				if(i+1<argc){
-					htroot=argv[i+1]; i++;
-				} else{cout<<"Usage: -htroot [path]"<<std::endl; return -4;}
-			}
-#ifdef Compile_WolfSSL
-			else if(!strcmp(argv[i],"nossl")) {enableSSL=0;}
-			else if(!strcmp(argv[i],"sslport")) {
-				if(i+1<argc){
-					i++; SSLport.clear(); string temp="";
-					for (int var = 0; var <= strlen(argv[i]); var++) {
-						if(argv[i][var]>47) temp+=argv[i][var];
-						else{
-							try {
-								SSLport.emplace_back(stoi(temp)); temp.clear();
-							} catch (std::invalid_argument&) {
-								cout<<"Usage: -sslport [port number]{,port num2,port num3...}"<<std::endl; return -4;
-							}
-						}
-					}
-				} else{cout<<"Usage: -sslport [port number]{,port num2,port num3...}"<<std::endl; return -4;}
-			}
-#endif
-			else {cout<<"Invalid argument: "<<argv[i]<<". See -help for valid arguments."<<std::endl; return -4;}
-		}
+		char _ret = ParseCL(argc, argv);
+		if (_ret != 1) return _ret;
 	}
 	
 	try {
@@ -142,19 +68,16 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	WOLFSSL_CTX* ctx = NULL;
 	if (enableSSL) {
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
-			ConsoleMsg(0, "WolfSSL: ", "internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."); enableSSL = 0;
+			ConsoleMsg(0, "WolfSSL: ", "internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."); enableSSL = 0; goto SSLEnd;
 		}
-	}
-	if (enableSSL) {
-		if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL certificate file, SSL is disabled."); enableSSL = 0;
-		}
-	}
-	if (enableSSL) {
 		if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL private key file, SSL is disabled."); enableSSL = 0;
+			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL private key file, SSL is disabled."); enableSSL = 0; goto SSLEnd;
+		}
+		if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL certificate file, SSL is disabled."); enableSSL = 0; goto SSLEnd;
 		}
 	}
+	SSLEnd:
 #endif // Compile_WolfSSL
 
 #ifdef _WIN32
@@ -337,11 +260,12 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			VirtualHosts[0].Location = htroot;
 		}
 	}
-
-	// Warning message for indicating this builds are work-in-progress builds and not recommended. Uncomment this and replace {branch name} accordingly in this case.
-	//ConsoleMsg(1, "Server: ", "This build is from work-in-progress experimental '{branch name}' branch.\n"
-	//	"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
-	//	"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
+#ifdef branch
+	// Warning message for indicating these builds are work-in-progress builds and not recommended.
+	ConsoleMsg(1, "Server: ", "This build is from work-in-progress experimental " branch " branch.\n"
+		"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
+		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
+#endif
 
 	std::cout << "Alyssa HTTP Server " << version;
 	if (HasVHost) std::cout << " | " << VirtualHosts.size() << " virtual hosts set";

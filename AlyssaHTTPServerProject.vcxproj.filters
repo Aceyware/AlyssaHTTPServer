@@ -74,6 +74,9 @@
     <ClInclude Include="src/external/subprocess.h">
       <Filter>Header\External</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">

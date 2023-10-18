@@ -1,8 +1,10 @@
 #pragma once
 // Configuration for building.
-#if __cplusplus < 201703L
+#if __cplusplus < 201700L
 #error C++17 compatible compiler is required.
 #endif
+// Define that if this code is of another branch.
+//#define branch "polling"
 
 // Compile with SSL support
 #define Compile_WolfSSL

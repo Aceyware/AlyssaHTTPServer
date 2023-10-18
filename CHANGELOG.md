@@ -1,5 +1,20 @@
 # Alyssa HTTP Server Changelog
 
+## 2.2 - 18.10.2023
+- Rewrote client header parsing
+	- Now the code is much simpler and slightly faster.
+	- Properly supports receiving payload from client.
+	- Now can handle partial data (i.e. sent line-by-line with periods).
+	- **Improved safeguards for requests outside of server root** (not sure if previous versions were vulnerable to anything)
+- Added support for multiple Access-Control-Allow-Origins
+	- You can define multiple origins on config, and then server will return the one on client if available.
+- Behavioral changes
+	- Removed fast-fail behavior when parsing headers. Now server will return 400 Bad Request only when request is received completely, but won't keep parsing when bad request occurs.
+	- Request handling is case-sensitive again for now.
+	- "connect-src" won't be added by default when CSP headers are set on config.
+- Fixed default virtual host always being inherited as standard vhost even though it's not (i.e. when it's a redirection vhost)
+- Some errors and bugs fixed.
+
 ## 2.1.2 - 09.09.2023
 - Added new custom action directive "Forbid"
 	- This new directive will respond to all clients with HTTP 403 no matter what.

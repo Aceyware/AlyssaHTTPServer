@@ -56,3 +56,8 @@ Alyssa.log
 
 # macOS persistent storage(?) stuff
 ._*
+
+# Compiled resources
+*.res
+*.aps
+resource.h

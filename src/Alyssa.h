@@ -60,8 +60,6 @@ using std::string;
 		#include "user_settings.h"
 	#endif
 	#include <wolfssl/ssl.h>
-	#define SSL_recv wolfSSL_read
-	#define SSL_send wolfSSL_write
 #endif //Compile_WolfSSL
 
 #ifndef Compile_WolfSSL
@@ -98,16 +96,19 @@ struct clientInfo {//This structure has the information from client request.
 		host = "", // "Host" header
 		cookies = "", auth = "",
 		payload = "",//HTTP POST/PUT Payload
-		qStr = "";//URL Query string.
+		qStr = "",//URL Query string.
+		LastLine = "", // Last incomplete header line.
+		Origin = "";
 	bool close = 0; // Connection: close parameter
-	bool LastLineHadMissingTerminator = 0;//If last received header line had line terminator. If didn't, don't finish parsing headers. Workaround for some faulty clients that sends header line and \r\n separately.
+	char flags = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr=NULL;
-	int8_t RequestTypeInt = 0; short VHostNum=0;
+	int8_t RequestTypeInt = 0; short VHostNum = 0; 
+	unsigned short ContentLength = 0; // Length of HTTP POST/PUT payload to be received from client.
 	void clear() {
-		RequestPath = "", _RequestPath="", version = "", host = "",
-			cookies = "", auth = "", payload = "", qStr = "",
-			rstart = 0, rend = 0, VHostNum=0;
+		RequestPath = "", _RequestPath = "", version = "", host = "",
+			cookies = "", auth = "", payload = "", qStr = "", LastLine = "", Origin = "";
+			rstart = 0, rend = 0, VHostNum = 0, flags = 0, ContentLength = 0;
 	}
 	std::filesystem::path _RequestPath;
 };
@@ -116,7 +117,7 @@ struct HPackIndex {
 	string Value = "";
 };
 struct clientInfoH2 {
-	std::vector<HPackIndex> dynIndexHeaders;
+	std::deque<HPackIndex> dynIndexHeaders;
 };
 struct IndexEntry {
 	string FileName;	size_t FileSize;
@@ -151,6 +152,7 @@ class Config {
 class AlyssaHTTP {
 	public:
 		static void ServerHeaders(HeaderParameters* h, clientInfo* c);
+		static void ServerHeadersM(clientInfo* c, unsigned short statusCode);
 		static void parseHeader(clientInfo* cl, char* buf, int sz);
 		static void clientConnection(_Surrogate sr);
 	private:
@@ -188,10 +190,6 @@ void ToLower(char* c, int l);
 size_t btoull(string str, int size);
 unsigned int Convert24to32(unsigned char* Source);
 size_t Append(void* Source, void* Destination, size_t Position, size_t Size = 0);
-#ifdef Compile_CGI
-bool CGIEnvInit();
-void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
-#endif
 void Logging(clientInfo* cl);
 void LogString(const char* s);
 void LogString(string s);
@@ -200,6 +198,12 @@ void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
 void ConsoleMsgM(int8_t MsgType, const char* UnitName);
 uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning);
 std::string ErrorPage(unsigned short ErrorCode);
+char ParseCL(int argc, char** argv);
+unsigned char hexconv(char* _Arr);
+#ifdef Compile_CGI
+	bool CGIEnvInit();
+	void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
+#endif
 
 extern std::ofstream Log; extern std::mutex logMutex; extern std::mutex ConsoleMutex;
 // Response headers that's never changing in lifetime of server.
@@ -222,14 +226,14 @@ extern string respath;
 extern string htrespath;
 extern string _htrespath;
 extern bool logOnScreen;
-extern string defaultCorsAllowOrigin; extern bool corsEnabled;
-extern string CSPConnectSrc; extern bool CSPEnabled;
+extern string CSPHeaders; extern bool CSPEnabled;
 extern bool logging;
 extern bool EnableIPv6;
 extern bool ColorOut;
 extern bool HasVHost;
 extern string VHostFilePath;
 extern std::deque<VirtualHost> VirtualHosts;
+extern std::deque<std::string> ACAOList; extern bool corsEnabled;
 #ifdef Compile_H2
 	extern bool EnableH2;
 #endif
@@ -248,11 +252,6 @@ extern std::deque<VirtualHost> VirtualHosts;
 
 // Definition of constant values
 static char separator = 1;
-#ifdef _DEBUG
-static string version = "2.1.2d";
-#else
-static string version = "2.1.2";
-#endif
 static char alpn[] = "h2,http/1.1,http/1.0";
 static char h1[] = "a"; //Constant char array used as a placeholder when APLN is not used for preventing null pointer exception.
 static int off = 0;
@@ -273,14 +272,15 @@ static string HelpString=
 
 		"-version       : Displays the version and license info\n"
 		"-help          : Displays this help message\n"
+		"-config [path] : Config file to read, overriding default \"./Alyssa.cfg\" path.\n"
 		"-port [int]    : Overrides the port on config, comma-separated list for multiple ports\n"
-		"-htroot [str]  : Overrides the htroot path on config\n"
+		"-htroot [path] : Overrides the htroot path on config\n"
 #ifdef Compile_WolfSSL
 		"-nossl         : Disables the SSL if enabled on config\n"
 		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
 #endif
 		"\n"
-		//"For server manual please refer to \"https://4lyssa.net/AlyssaHTTP/help\"\n"
+		"Full server documentation is available on: \n \"https://github.com/PEPSIMANTR/AlyssaHTTPServer/blob/master/docs/Home.md\"\n"
 	;
 static const char* extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "bin", "bmp", "bz", "bz2", "cda", "csh", "css", "csv", "doc", "docx", "eot", "epub", "gz", "gif", "htm", "html", "ico", "ics", "jar", "jpeg", "jpg", "js", "json", "jsonld", "mid", "midi", "mjs", "mp3", "mp4", "mpeg", "mpkg", "odp", "ods", "odt", "oga", "ogv", "ogx", "opus", "otf", "png", "pdf", "php", "ppt", "pptx", "rar", "rtf", "sh", "svg", "tar", "tif", "tiff", "ts", "ttf", "txt", "vsd", "wav", "weba", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xml", "xul", "zip", "3gp", "3g2", "7z" };
 
@@ -295,6 +295,21 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 	static HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	extern char MsgColors[];
 #endif // !_WIN32
+
+// Version number
+#ifdef branch
+#ifdef _DEBUG
+	static std::string version = "9.9.9d";
+#else
+	static std::string version = "9.9.9";
+#endif
+#else
+#ifdef _DEBUG
+	static std::string version = "2.2d";
+#else
+	static std::string version = "2.2";
+#endif
+#endif
 
 #ifdef Compile_H2
 #include "AlyssaH2.h"
