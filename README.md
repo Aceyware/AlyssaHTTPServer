@@ -1,5 +1,6 @@
 # Alyssa HTTP Server Project
-Alyssa is a lightweight, multiplatform HTTP server. It can just work without hours of configuration, on anywhere.
+Alyssa is a HTTP server project that aims to be as good as mainstream HTTP server implementation while maintaining a simple source tree. 
+It can just work without hours of configuration, on anywhere.
 ## How to use?
 You can use it just out of the box! Just get the latest release, 
 edit ports or other stuff if needed, and run the executable.
@@ -20,7 +21,7 @@ And more.
 - [ ] Configurable build system with makefile
 - [ ] Polling client sockets and handling requests in thread pool (HTTP/2 will make this pretty hard)
 - [ ] Windows NT service support
-- [ ] Content negotiation
+- [ ] Content negotiation, Conditional requests handling
 - [ ] HTTP/3 QUIC support
 - [ ] Hashed authentication files support (sha256 for more security, crc32 for more performance)
 - [ ] Automatic CGI execution (i.e. for .php files)
@@ -33,10 +34,9 @@ And more.
 - [x] Server generated and custom error pages
 - [ ] Modularization
 - [ ] Kernel mode acceleration
-- [ ] Conditional requests handling
 - [ ] Extend custom actions
 - [ ] Implement FastCGI support
-- [ ] Add code testing (i.e. unit testing)
+- [x] Add code testing (i.e. unit testing)
 - [ ] Digest authentication
 - [ ] Source code documentation (maybe)
 - [ ] Add code for ease of developing APIs on top of server code directly (maybe)

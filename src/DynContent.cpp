@@ -8,7 +8,7 @@
 
 #ifdef Compile_CGI
 
-const char* environmentMaster[] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()), "GATEWAY_INTERFACE=\"CGI/1.1\"", NULL, NULL };
+const char* environmentMaster[] = { strdup(string("SERVER_SOFTWARE=Alyssa/"+version).c_str()), "GATEWAY_INTERFACE=\"CGI/1.1\"", NULL, NULL};
 
 bool CGIEnvInit() {// This function initializes master environment array by adding PATH (and maybe some other in the future)
 	char* buf;  char* pathchar = getenv("PATH");
@@ -19,12 +19,6 @@ bool CGIEnvInit() {// This function initializes master environment array by addi
 	strcpy(&buf[6], pathchar);
 	buf[sizeof buf - 1] = '\"';
 	environmentMaster[2] = buf;
-	// Line-delimiter length, platform dependent.
-#ifdef _WIN32
-	environmentMaster[3] = (char*)2;
-#else
-	environmentMaster[3] = (char*)1;
-#endif
 	return 0;
 }
 
@@ -74,7 +68,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	int HeaderEndpoint=0;
 	for (; HeaderEndpoint < ret.size(); HeaderEndpoint++) {// Iterate until end of headers.
 		if (ret[HeaderEndpoint] < 32)
-			if (ret[HeaderEndpoint + (int)environmentMaster[3]] < 32)//environmentMaster[3] is size of line delimiter of OS that's server is working on.
+			if (ret[HeaderEndpoint + LineDelimiterLength] < 32)//environmentMaster[3] is size of line delimiter of OS that's server is working on.
 				break;
 	}
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
@@ -102,7 +96,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					HeaderEndpoint = 0; break;
 				}
 				ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-				std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
+				std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500; break;
 				hp.CustomHeaders.clear();
 #ifdef Compile_WolfSSL
 				if (h)
@@ -112,21 +106,34 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					AlyssaHTTP::ServerHeaders(&hp, cl);
 				return;
 			}
-			hp.CustomHeaders.emplace_back(Substring(&ret[pos], i - pos));
+			std::string headerline = Substring(&ret[pos], i - pos);
+			if (!strncmp(headerline.data(), "Content-Length", 14)) {
+				try {
+					hp.ContentLength = std::stoi(&headerline[16]);
+				}
+				catch (const std::invalid_argument&) {
+					ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
+					std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500; break;
+				}
+			}
+			else if (!strncmp(headerline.data(), "Content-Type", 12)) {
+				hp.MimeType.resize(headerline.size() - 14); memcpy(hp.MimeType.data(), &headerline[14], hp.MimeType.size());
+			}
+			else hp.CustomHeaders.emplace_back(headerline);
 			if (ret[i + 1] == '\n') i++;
 			pos = i + 1;
 		}
 	}
-	hp.StatusCode = 200; hp.ContentLength = ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3];
+	hp.StatusCode = 200; hp.ContentLength = ret.size() - HeaderEndpoint - 2 * LineDelimiterLength;
 #ifdef Compile_WolfSSL
 	if (h) {
 		AlyssaHTTP2::ServerHeaders(&hp, h);
-		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*(int)environmentMaster[3]], ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
+		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*LineDelimiterLength], ret.size() - HeaderEndpoint - 2 * LineDelimiterLength);
 	}
 	else {
 #endif
 		AlyssaHTTP::ServerHeaders(&hp, cl);
-		Send(&ret[HeaderEndpoint + 2 * (int)environmentMaster[3]], cl->Sr->sock, cl->Sr->ssl, ret.size() - HeaderEndpoint - 2 * (int)environmentMaster[3]);
+		Send(&ret[HeaderEndpoint + 2 * LineDelimiterLength], cl->Sr->sock, cl->Sr->ssl, ret.size() - HeaderEndpoint - 2 * LineDelimiterLength);
 		return;
 #ifdef Compile_WolfSSL
 	}
@@ -291,11 +298,10 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
                         return 0;
                     }
 					else {
-						//ConsoleMutex.lock();
+						ConsoleMutex.lock();
 						ConsoleMsgM(0, "Custom actions: ");
-						//printf("Unknown command: %.*s\n", ct - 1 - cn, &c[cn]);
-						std::cout<<"Unknown command shit\n";
-						//ConsoleMutex.unlock();
+						printf("Unknown command: %.*s on node %s\n", ct - 1 - cn, &c[cn], cl->RequestPath.c_str());
+						ConsoleMutex.unlock();
 						return -1;
 					}
 					cn=ct;

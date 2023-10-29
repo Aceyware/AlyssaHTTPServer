@@ -1,8 +1,24 @@
 /*
 	Alyssa HTTP Server Project
-	Idk what to type here lol
+	Copyright (C) 2024 PEPSIMANTR
 
-	Main.cpp: Main thread code that launches the server, starts and listens the sockets, and launches threads.
+	Alyssa is a HTTP server project that aims to be 
+	as good as mainstream HTTP server implementation 
+	while maintaining a simple source tree. More info
+	is available on README.md file.
+
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, 
+	or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful, 
+	but WITHOUT ANY WARRANTY; without even the implied warranty of 
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
+	See the GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program. If not, see "https://www.gnu.org/licenses/"
 */
 
 
@@ -14,7 +30,11 @@ using std::terminate;
 std::ofstream Log; std::mutex logMutex; std::mutex ConsoleMutex;
 std::deque<VirtualHost> VirtualHosts;
 
+#ifdef AlyssaTesting
+int ServerEntry(int argc, char* argv[]) {
+#else
 int main(int argc, char* argv[]) {//This is the main server function that fires up the server and listens for connections.
+#endif
 	//Set the locale and stdout to Unicode
 	fwide(stdout, 0); setlocale(LC_ALL, "");
     // Do platform specific operations
@@ -29,13 +49,24 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #endif
 	//Read the config file
 	if(!Config::initialRead()){
-		if(argc<2) ConsoleMsg(0, "Config: ", "cannot open Alyssa.cfg, using default values..");// Don't output that if there is command line arguments.
+		if (argc < 2) //ConsoleMsg(0, "Config: ", "cannot open Alyssa.cfg, using default values..");// Don't output that if there is command line arguments.
+			ConsoleMsg(0, STR_CONFIG, STR_CANNOT_OPEN_CONFIG);
 	}
 	//Parse the command line arguments
 	if (argc>1) {
 		char _ret = ParseCL(argc, argv);
 		if (_ret != 1) return _ret;
 	}
+#ifdef _DEBUG
+	if (debugFeaturesEnabled) {
+		ConsoleMsg(0, "Server: ", "You're using a debug build of server, and have debug features enabled. ");
+		ConsoleMsg(0, "Server: ", "Debug versions has features that can compromise ANY data on this system or even more.");
+		ConsoleMsg(0, "Server: ", "NEVER USE DEBUG BUILDS ON PRODUCTION ENVIRONMENTS!");
+		ConsoleMsg(0, "Server: ", "Unless you surely know what you are doing, use production releases in any condition.");
+		ConsoleMsg(0, "Server: ", "If someone sent this executable to you and you don't know what's going on. terminate and delete it immediately.");
+		execpath = argv[0];
+	}
+#endif
 	
 	try {
 		for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(htroot))) {
@@ -267,9 +298,11 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
 #endif
 
-	std::cout << "Alyssa HTTP Server " << version;
-	if (HasVHost) std::cout << " | " << VirtualHosts.size() << " virtual hosts set";
-	std::cout << std::endl << "Listening on HTTP: ";
+	//std::cout << "Alyssa HTTP Server " << version;
+	ConsoleMsgLiteral(STR_SERVERMAIN); std::cout << version;
+	if (HasVHost) { std::cout << " | " << VirtualHosts.size(); ConsoleMsgLiteral(STR_VHOSTNUM); }
+	//std::cout << std::endl << "Listening on HTTP: ";
+	std::cout << std::endl; ConsoleMsgLiteral(STR_LISTENINGON); std::cout << " HTTP: ";
 	for (size_t i = 0; i < port.size() - 1; i++) std::cout << port[i] << ", ";
 	std::cout << port[port.size() - 1];
 #ifdef Compile_WolfSSL

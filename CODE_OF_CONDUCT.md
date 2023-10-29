@@ -10,7 +10,8 @@ I'll keep it simple. Here is a place that people interacts with each other with 
 nor the ones that going to solve wars etc. 
 We are the ones with no direct affection on anything and we just do software, so don't move any politic thing to here.
 
-2. **Be an entity only:** Just be a human, and treat others as just humans too. Don't move the ethnicity, sexual orientation or any similar thing to there. 
+2. **Be an entity only, Be Professional:** Just be a human, and treat others as just humans too. Don't move the ethnicity, 
+sexual orientation or any similar thing or anything with sentimentals and drama involved to there. 
 Nobody cares about mine, yours or anyone else's ethnicity, sexual orientation or etc.. 
 Neither do any propaganda that's affirming any minority nor do discrimination against anyone. 
 You won't get any semphaty because of such things here.
@@ -29,4 +30,4 @@ I have the right of replying to violations in range from just warning up to perm
 
 Tag me (@PEPSIMANTR) in the crime scene or message me from one of available contact options.
 
-Version 1 Amendment B
+Version 1 Amendment C

@@ -1,5 +1,20 @@
 # Alyssa HTTP Server Changelog
 
+## 2.3.100 - 29.10.2023 C★
+- Initial unit testing code Implementation
+	- It does testing on server code directly.
+	- Currently it only has a few tests and limited to Windows.
+- Initial Localization Implementation
+	- Currently only limited to 2 languages and only a fraction of code uses the new localization mechanism.
+- Added powerful debug features
+	- Accessible through /Debug/\* node
+	- Disabled by default, can be enabled from config.
+	- Has dangerous features such as accessing to any file. Only for use on development on isolated environment.
+	- Has features of printing server info, manual crashing, accessing to expicit paths, manual responses and more.
+- Some improvements for CGI execution code
+- Some minor fixes and improvements.
+- Bugün en büyük bayramdır, kutlu olsun!
+
 ## 2.2 - 18.10.2023
 - Rewrote client header parsing
 	- Now the code is much simpler and slightly faster.

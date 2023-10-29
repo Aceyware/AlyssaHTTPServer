@@ -48,6 +48,12 @@
     <ClCompile Include="src/external/base64.cpp">
       <Filter>Source\External</Filter>
     </ClCompile>
+    <ClCompile Include="src\AlyssaDebug.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AlyssaTester.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/Alyssa.h">
@@ -74,7 +80,10 @@
     <ClInclude Include="src/external/subprocess.h">
       <Filter>Header\External</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h">
+    <ClInclude Include="src\AlyssaLocalization.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AlyssaTester.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>

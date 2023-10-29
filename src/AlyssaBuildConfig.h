@@ -23,3 +23,6 @@
 
 // Directory indexes support
 #define Compile_DirIndex
+
+// Do testing.
+//#define AlyssaTesting

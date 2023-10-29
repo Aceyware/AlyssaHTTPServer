@@ -7,6 +7,7 @@
 
 // Includes
 #include "AlyssaBuildConfig.h"
+#include "AlyssaLocalization.h"
 
 #ifdef Compile_CustomActions
 #include "external/base64.h"//https://github.com/ReneNyffenegger/cpp-base64
@@ -91,6 +92,18 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 	string host = ""; // Authority header. "host" on surrogator is only used on HTTP/2 connections as it is only sent once by client.
 #endif
 };
+struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
+	int16_t StatusCode;
+	size_t ContentLength = 0;
+	string MimeType;
+	bool HasRange = 0, hasAuth = 0;
+	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
+	std::deque<string> CustomHeaders;// Additional custom headers
+	uint32_t _Crc = 0;// File CRC that will used for ETag.
+#ifdef Compile_H2
+	bool EndStream = 1; // End stream in case of non-200 headers are sent.
+#endif
+};
 struct clientInfo {//This structure has the information from client request.
 	string RequestPath = "", version = "",
 		host = "", // "Host" header
@@ -111,6 +124,9 @@ struct clientInfo {//This structure has the information from client request.
 			rstart = 0, rend = 0, VHostNum = 0, flags = 0, ContentLength = 0;
 	}
 	std::filesystem::path _RequestPath;
+#ifdef AlyssaTesting
+	HeaderParameters LastHeader;
+#endif
 };
 struct HPackIndex {
 	int Key = 0;
@@ -123,18 +139,6 @@ struct IndexEntry {
 	string FileName;	size_t FileSize;
 	bool isDirectory;	string ModifyDate;
 };
-struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
-	int16_t StatusCode;
-	size_t ContentLength = 0;
-	string MimeType;
-	bool HasRange = 0, hasAuth = 0;
-	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
-	std::deque<string> CustomHeaders;// Additional custom headers
-	uint32_t _Crc = 0;// File CRC that will used for ETag.
-#ifdef Compile_H2
-	bool EndStream = 1; // End stream in case of non-200 headers are sent.
-#endif
-};
 struct VirtualHost {
 	string Hostname;
 	string Location;
@@ -146,7 +150,9 @@ class Config {
 	public:
 		static string getValue(std::string key, std::string value);
 		static bool initialRead();
+#ifndef AlyssaTesting
 	private:
+#endif
 		static bool Configcache();
 };
 class AlyssaHTTP {
@@ -155,7 +161,9 @@ class AlyssaHTTP {
 		static void ServerHeadersM(clientInfo* c, unsigned short statusCode);
 		static void parseHeader(clientInfo* cl, char* buf, int sz);
 		static void clientConnection(_Surrogate sr);
+#ifndef AlyssaTesting
 	private:
+#endif
 		static void Get(clientInfo* cl);
 #ifdef Compile_CustomActions
 		static void Post(clientInfo* cl);
@@ -165,7 +173,9 @@ class AlyssaHTTP {
 class CustomActions {
 	public:
 		static int CAMain(char* path, clientInfo* c, H2Stream* h=NULL);
+#ifndef AlyssaTesting
 	private:
+#endif
 		static int DoAuthentication(char* p, char* c);
 		static int ParseCA(char* c, int s, clientInfo* cl, H2Stream* h);
 		static int ParseFile(std::filesystem::path p, char* n, clientInfo* c, bool isSameDir, H2Stream* h);
@@ -175,7 +185,9 @@ class CustomActions {
 class DirectoryIndex {
 	public:
 		static string DirMain(std::filesystem::path p, std::string& RelPath);
+#ifndef AlyssaTesting
 	private:
+#endif
 		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
 };
 #endif
@@ -195,7 +207,9 @@ void LogString(const char* s);
 void LogString(string s);
 void SetPredefinedHeaders();
 void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
+void ConsoleMsg(int8_t MsgType, int UnitStr, int MsgStr);
 void ConsoleMsgM(int8_t MsgType, const char* UnitName);
+void ConsoleMsgLiteral(int MsgStr);
 uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning);
 std::string ErrorPage(unsigned short ErrorCode);
 char ParseCL(int argc, char** argv);
@@ -203,6 +217,11 @@ unsigned char hexconv(char* _Arr);
 #ifdef Compile_CGI
 	bool CGIEnvInit();
 	void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
+#endif
+#ifdef _DEBUG
+	void DebugNode(clientInfo* cl);
+	void DummyCGIGet();
+	void DummyCGIPost();
 #endif
 
 extern std::ofstream Log; extern std::mutex logMutex; extern std::mutex ConsoleMutex;
@@ -249,6 +268,11 @@ extern std::deque<std::string> ACAOList; extern bool corsEnabled;
 	extern string SSLportStr;
 	extern bool HSTS;
 #endif
+#ifdef _DEBUG
+	extern std::string execpath;
+	extern bool debugFeaturesEnabled;
+#endif
+	extern unsigned short Locale;
 
 // Definition of constant values
 static char separator = 1;
@@ -305,10 +329,15 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.2d";
+	static std::string version = "2.3.100d";
 #else
-	static std::string version = "2.2";
+	static std::string version = "2.3.100";
 #endif
+#endif
+#ifdef _WIN32
+	static char LineDelimiterLength = 2;
+#else
+	static char LineDelimiterLength = 1;
 #endif
 
 #ifdef Compile_H2

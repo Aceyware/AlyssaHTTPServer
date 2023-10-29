@@ -6,6 +6,10 @@
 std::string PredefinedHeaders;
 
 void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
+#ifdef AlyssaTesting
+	c->LastHeader.ContentLength = h->ContentLength; c->LastHeader.StatusCode = h->StatusCode;
+	c->LastHeader.MimeType = h->MimeType;
+#endif
 	std::string ret = "HTTP/1.1 "; ret.reserve(512);
 	switch (h->StatusCode) {
 		case 200:	ret += "200 OK\r\n"; break;
@@ -16,9 +20,9 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 			break;
 		case 400:	ret += "400 Bad Request\r\n"; break;
 		case 401:	ret += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
-		case 403:	ret += "403 Forbidden\r\n"; break;
+		case 403:	ret += "403 Forbidden\r\nWWW-Authenticate: Basic\r\n"; break;
 		case 404:	ret += "404 Not Found\r\n"; break;
-		case 416:	ret += "416 Range Not Satisfiable"; break;
+		case 416:	ret += "416 Range Not Satisfiable\r\n"; break;
 		case 418:	ret += "418 I'm a teapot\r\n"; break;
 		case 500:	ret += "500 Internal Server Error\r\n"; break;
 		case 501:	ret += "501 Not Implemented\r\n"; break;
@@ -48,7 +52,9 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 	}
 	ret += PredefinedHeaders;
 	ret += "\r\n"; Send(&ret, c->Sr->sock, c->Sr->ssl, 1);
+#ifndef AlyssaTesting
 	c->clear();
+#endif
 	return;
 }
 
@@ -168,7 +174,8 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->_RequestPath = htroot + cl->RequestPath;
 				//cl->RequestPath = cl->_RequestPath.u8string();
 			}
-			VHostOut:
+		VHostOut:
+#ifndef AlyssaTesting
 			if (!(cl->flags & (1 << 1))) {
 				switch (cl->RequestTypeInt) {
 				case 1: Get(cl); break;
@@ -187,7 +194,10 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, cl);
 			}
 			if (cl->close) shutdown(cl->Sr->sock, 2);
-			cl->clear(); goto ParseReturn;
+
+			cl->clear(); 
+#endif 
+			goto ParseReturn;
 		}
 	}
 	// Parse the lines
@@ -236,6 +246,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					cl->_RequestPath = htroot + cl->RequestPath;
 					//cl->RequestPath = cl->_RequestPath.u8string();
 				}
+#ifndef AlyssaTesting
 				if (!(cl->flags & (1 << 1))) {
 					switch (cl->RequestTypeInt) {
 					case 1: Get(cl); break;
@@ -254,7 +265,10 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, cl);
 				}
 				if (cl->close) shutdown(cl->Sr->sock, 2);
-				cl->clear(); goto ParseReturn;
+
+				cl->clear();
+#endif 
+				goto ParseReturn;
 			}
 		}
 		else if (!strncmp(&buf[pos], "Content-Length", 14)) {
@@ -273,7 +287,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				pos += 21; cl->auth.resize(i - pos); memcpy(&cl->auth[0], &buf[pos], i - pos); cl->auth = base64_decode(cl->auth);
 			}
 			if (!strncmp(&buf[pos], "Connection", 10)) {
-				if (!strcmp(&buf[pos + 12], "close")) cl->close = 1;
+				if (!strncmp(&buf[pos + 12], "close", 5)) cl->close = 1;
 				else cl->close = 0;
 			}
 			else if (!strncmp(&buf[pos], "Host", 4)) {// Headers will be parsed that way, you got the point. + offsets also includes the ": ".
@@ -329,6 +343,12 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 	if (!strncmp(&cl->RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, set path to respath and also skip custom actions
 		cl->_RequestPath = respath + Substring(&cl->RequestPath[0], 0, htrespath.size());
 	}
+#ifdef _DEBUG
+	else if (!strncmp(&cl->RequestPath[0], "/Debug/", 7) && debugFeaturesEnabled) {
+		DebugNode(cl); return;
+	}
+#endif // _DEBUG
+
 #ifdef Compile_CustomActions
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl)) {
@@ -406,17 +426,13 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 		if (cl->RequestTypeInt == 5) {
 			fclose(file); delete[] buf; return;
 		}
-		while (filesize) {
-			if (filesize >= 32768) {
-				fread(buf, 32768, 1, file); filesize -= 32768;
-				Send(buf, cl->Sr->sock, cl->Sr->ssl, 32768);
-			}
-			else {
-				fread(buf, filesize, 1, file);
-				Send(buf, cl->Sr->sock, cl->Sr->ssl, filesize);
-				break;
-			}
+#ifndef AlyssaTesting
+		while (filesize > 32768) {
+			fread(buf, 32768, 1, file); filesize -= 32768;
+			Send(buf, cl->Sr->sock, cl->Sr->ssl, 32768);
 		}
+		fread(buf, filesize, 1, file); Send(buf, cl->Sr->sock, cl->Sr->ssl, filesize);
+#endif
 		fclose(file); delete[] buf;
 	}
 	else {

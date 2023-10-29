@@ -178,9 +178,11 @@ void AlyssaNtSetConsole() {
 }
 #endif // _WIN32
 
-void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg) {// Function for color output on console
-																		 // Ex: "Error: Custom actions: Redirect requires an argument" MsgType: Error, UnitName: "Custom actions", Msg is the latter.
+void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg) { // Function for color output on console
+																		 // Ex: "Error: Custom actions: Redirect requires an argument" 
+																		 // MsgType: Error, UnitName: "Custom actions", Msg is the latter.
 																		 // Note that this function can be abused in the future for outputting various things. 
+#ifndef AlyssaTesting
 	 if (MsgType > 2) std::terminate(); std::lock_guard<std::mutex> lock(ConsoleMutex);
 	 if (ColorOut){
 #ifndef _WIN32 // Color output on unix platforms is easy since terminals usually support ANSI escape characters.
@@ -194,9 +196,30 @@ void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg) {// Funct
 	 else {
 		 std::cout << MsgTypeStr[MsgType] << UnitName << Msg << std::endl;
 	 }
+#endif // !AlyssaTesting
 	 return;
 }
+void ConsoleMsg(int8_t MsgType, int UnitStr, int MsgStr) {
+#ifndef AlyssaTesting
+	if (MsgType > 2) std::terminate(); 
+	std::lock_guard<std::mutex> lock(ConsoleMutex);
+	if (ColorOut) {
+#ifndef _WIN32
+		std::wcout << MsgColors[MsgType] << LocaleTable[Locale][MsgType + 1] << MsgColors[3] 
+			<< LocaleTable[Locale][UnitStr] << MsgColors[4] << LocaleTable[Locale][MsgStr] << std::endl;
+#else
+		SetConsoleTextAttribute(hConsole, MsgColors[MsgType]); std::wcout << LocaleTable[Locale][MsgType + 1];
+		SetConsoleTextAttribute(hConsole, MsgColors[3]); std::wcout << LocaleTable[Locale][UnitStr];
+		SetConsoleTextAttribute(hConsole, MsgColors[4]); std::wcout << LocaleTable[Locale][MsgStr] << std::endl;
+#endif
+	}
+	else {
+		std::wcout << LocaleTable[Locale][MsgType + 1] << LocaleTable[Locale][UnitStr] << LocaleTable[Locale][MsgStr] << std::endl;
+	}
+#endif
+}
 void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one above but this one only prints msgtype and unit name in color, and then resets color for manual output such as printf.
+#ifndef AlyssaTesting 
 	 if (MsgType > 2) std::terminate();
 	 if (ColorOut) {
 #ifndef _WIN32 
@@ -209,8 +232,12 @@ void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one abo
 	 else {
 		 std::cout << MsgTypeStr[MsgType] << UnitName;
 	 }
+#endif // !AlyssaTesting
 	 return;
  }
+void ConsoleMsgLiteral(int MsgStr) {
+	std::wcout << LocaleTable[Locale][MsgStr];
+}
 uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning=0) {
 	 uint32_t ret = 0;
 	 while (s) {
@@ -279,6 +306,9 @@ char ParseCL(int argc, char** argv) {// This func parses command line arguments.
 #endif
 			cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl;
 			cout << "Features: Core, "
+#ifdef _DEBUG
+				<< "Debug, "
+#endif
 #ifdef Compile_WolfSSL
 				<< "SSL, "
 #endif
@@ -343,6 +373,11 @@ char ParseCL(int argc, char** argv) {// This func parses command line arguments.
 			}
 			else { cout << "Usage: -sslport [port number]{,port num2,port num3...}" << std::endl; return -4; }
 		}
+#ifdef _DEBUG
+		else if (!strcmp(argv[i], "debug")) { debugFeaturesEnabled = 1; }
+		else if (!strcmp(argv[i], "dummycgi")) { DummyCGIGet(); return 0; }
+		else if (!strcmp(argv[i], "dummycgipost")) { DummyCGIPost(); return 0; }
+#endif
 #endif
 		else { cout << "Invalid argument: " << argv[i] << ". See -help for valid arguments." << std::endl; return -4; }
 	}

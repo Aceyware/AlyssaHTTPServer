@@ -169,6 +169,8 @@
     <ClCompile Include="src/DirectoryIndex.cpp" />
     <ClCompile Include="src/DynContent.cpp" />
     <ClCompile Include="src/Main.cpp" />
+    <ClCompile Include="src\AlyssaDebug.cpp" />
+    <ClCompile Include="src\AlyssaTester.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/Alyssa.h" />
@@ -179,6 +181,8 @@
     <ClInclude Include="src/external/Crc32.h" />
     <ClInclude Include="src/resource.h" />
     <ClInclude Include="src/external/subprocess.h" />
+    <ClInclude Include="src\AlyssaLocalization.h" />
+    <ClInclude Include="src\AlyssaTester.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc" />
