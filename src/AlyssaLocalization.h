@@ -113,53 +113,53 @@ static const wchar_t* LocaleTable[][36] = {
 	},
 	{
 		// 0
-		L"Türkçe",
+		L"TÃ¼rkÃ§e",
 		L"Hata: ",
-		L"Uyarı: ",
+		L"UyarÄ±: ",
 		L"Bilgi: ",
 		L"Sunucu:",
-		L"Özel eylem: ",
+		L"Ã–zel eylem: ",
 		L"Alyssa HTTP Sunucusu ",
-		L"Şu kapılar dinleniyor:",
+		L"Åu kapÄ±lar dinleniyor:",
 		L"sanal sunucu etkin",
-		L"Yapılandırma: ",
+		L"YapÄ±landÄ±rma: ",
 		// 10
-		L"Alyssa.cfg yapılandırma dosyası açılamadı, varsayılan ayarlar kullanılıyor...",
-		L"geçersiz veya erişilemez bir htroot dizini belirlendi. Dizin oluşturulmaya çalışılıyor...",
-		L"dizin oluşturma başarısız oldu, çıkılıyor.",
-		L"günlük dosyası açılamadı, günlük devre dışı.",
+		L"Alyssa.cfg yapÄ±landÄ±rma dosyasÄ± aÃ§Ä±lamadÄ±, varsayÄ±lan ayarlar kullanÄ±lÄ±yor...",
+		L"geÃ§ersiz veya eriÅŸilemez bir htroot dizini belirlendi. Dizin oluÅŸturulmaya Ã§alÄ±ÅŸÄ±lÄ±yor...",
+		L"dizin oluÅŸturma baÅŸarÄ±sÄ±z oldu, Ã§Ä±kÄ±lÄ±yor.",
+		L"gÃ¼nlÃ¼k dosyasÄ± aÃ§Ä±lamadÄ±, gÃ¼nlÃ¼k devre dÄ±ÅŸÄ±.",
 		L"WolfSSL",
-		L"SSL ile bir içsel hata oldu (wolfSSL_CTX_new error), SSL devre dışı.",
-		L"SSL gizli anahtar dosyasını yükleme başarısız, SSL devre dışı.",
-		L"SSL sertifika dosyasını yükleme başarısız, SSL devre dışı.",
-		L"Winsock başlatma başarısız oldu, çıkılıyor.",
-		L"Soket oluşturma başarısız oldu, çıkılıyor.",
+		L"SSL ile bir iÃ§sel hata oldu (wolfSSL_CTX_new error), SSL devre dÄ±ÅŸÄ±.",
+		L"SSL gizli anahtar dosyasÄ±nÄ± yÃ¼kleme baÅŸarÄ±sÄ±z, SSL devre dÄ±ÅŸÄ±.",
+		L"SSL sertifika dosyasÄ±nÄ± yÃ¼kleme baÅŸarÄ±sÄ±z, SSL devre dÄ±ÅŸÄ±.",
+		L"Winsock baÅŸlatma baÅŸarÄ±sÄ±z oldu, Ã§Ä±kÄ±lÄ±yor.",
+		L"Soket oluÅŸturma baÅŸarÄ±sÄ±z oldu, Ã§Ä±kÄ±lÄ±yor.",
 		// 20
-		L"Sanal konak dosyası açılamadı.",
-		L"kopyalamak için kaynak öğe bulunamadı, görmezden geliniyor.",
+		L"Sanal konak dosyasÄ± aÃ§Ä±lamadÄ±.",
+		L"kopyalamak iÃ§in kaynak Ã¶ÄŸe bulunamadÄ±, gÃ¶rmezden geliniyor.",
 #ifdef branch
-		L"Bu yapı tamamlanmamış deneysel" branch "dalından derlendi.\n"
-		L"Tamamlanmamış, kararsız veya bozuk kod içerebilir ve büyük ihtimal istemcilere güvenilir şekilde yanıt vermeyecektir. Bu yapı sadece geliştirme amaçlıdır.\n"
-		L"Bunlarının hiçbirinin ne anlama geldiğini bilmiyorsanız \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\" adresinden en son kararlı yapıyı alın."
+		L"Bu yapÄ± tamamlanmamÄ±ÅŸ deneysel" branch "dalÄ±ndan derlendi.\n"
+		L"TamamlanmamÄ±ÅŸ, kararsÄ±z veya bozuk kod iÃ§erebilir ve bÃ¼yÃ¼k ihtimal istemcilere gÃ¼venilir ÅŸekilde yanÄ±t vermeyecektir. Bu yapÄ± sadece geliÅŸtirme amaÃ§lÄ±dÄ±r.\n"
+		L"BunlarÄ±nÄ±n hiÃ§birinin ne anlama geldiÄŸini bilmiyorsanÄ±z \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\" adresinden en son kararlÄ± yapÄ±yÄ± alÄ±n."
 #endif // branch
-		L"%d portunda soket tanımlama başarısız oldu. \nPortun kullanımda olmadığıdan emin olun.\n",
-		L"%d portunda soket tanımlama başarısız oldu. (OS başka bir port atadı.) \n"
-		"Portun kullanımda olmadığıdan veya gerekli yetkilere sahip olduğunuzdan emin olun.\n",
+		L"%d portunda soket tanÄ±mlama baÅŸarÄ±sÄ±z oldu. \nPortun kullanÄ±mda olmadÄ±ÄŸÄ±dan emin olun.\n",
+		L"%d portunda soket tanÄ±mlama baÅŸarÄ±sÄ±z oldu. (OS baÅŸka bir port atadÄ±.) \n"
+		"Portun kullanÄ±mda olmadÄ±ÄŸÄ±dan veya gerekli yetkilere sahip olduÄŸunuzdan emin olun.\n",
 #ifdef Compile_CGI
-		L"CGI ortam değişkenlerini ayarlama bşarısız oldu.",
-		L"%s CGI dosyasını çalıştırma başarısız oldu.\n",
-		L"%s CGI dosyasının çıktısı okunamadı, çıktı vermedi veya çalıştırma başarısız oldu.\n",
-		L"%s CGI'ında başlık sonlandırma satırı eksik.\n",
+		L"CGI ortam deÄŸiÅŸkenlerini ayarlama bÅŸarÄ±sÄ±z oldu.",
+		L"%s CGI dosyasÄ±nÄ± Ã§alÄ±ÅŸtÄ±rma baÅŸarÄ±sÄ±z oldu.\n",
+		L"%s CGI dosyasÄ±nÄ±n Ã§Ä±ktÄ±sÄ± okunamadÄ±, Ã§Ä±ktÄ± vermedi veya Ã§alÄ±ÅŸtÄ±rma baÅŸarÄ±sÄ±z oldu.\n",
+		L"%s CGI'Ä±nda baÅŸlÄ±k sonlandÄ±rma satÄ±rÄ± eksik.\n",
 #endif
 #ifdef Compile_CustomActions
-		L"Kimlik bilgileri dosyası açılamadı: %s\n",
+		L"Kimlik bilgileri dosyasÄ± aÃ§Ä±lamadÄ±: %s\n",
 		// 30
-		L"%s eylemi için parametre gerekli. %s düğümünde.\n",
-		L"Bilinmeyen komut: %s. %s düğümünde.\n",
-		L"Sözdizimi hatası (%s). %s dosyasında %d. karakterde.\n",
-		L"olmayan bir kapsamın kapatılması",
-		L"geçersiz düğüm tanımlama anahtar kelimesi",
-		L"önceki kapsam kapatılmadan başka kapsam başlatıldı.",
+		L"%s eylemi iÃ§in parametre gerekli. %s dÃ¼ÄŸÃ¼mÃ¼nde.\n",
+		L"Bilinmeyen komut: %s. %s dÃ¼ÄŸÃ¼mÃ¼nde.\n",
+		L"SÃ¶zdizimi hatasÄ± (%s). %s dosyasÄ±nda %d. karakterde.\n",
+		L"olmayan bir kapsamÄ±n kapatÄ±lmasÄ±",
+		L"geÃ§ersiz dÃ¼ÄŸÃ¼m tanÄ±mlama anahtar kelimesi",
+		L"Ã¶nceki kapsam kapatÄ±lmadan baÅŸka kapsam baÅŸlatÄ±ldÄ±.",
 		L"'}' eksik."
 #endif
 	}

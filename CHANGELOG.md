@@ -4,6 +4,7 @@
 - More completed locale support.
 - Made changes to new header parsing code for making it more flexible and slightly simpler.
 - Some bugs fixed, especially the default locale not being English.
+- Now all source files are in UTF-8 encoding.
 
 ## 2.3.100 - 29.10.2023 C★
 - Initial unit testing code Implementation
