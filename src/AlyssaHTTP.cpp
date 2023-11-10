@@ -58,7 +58,43 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 	return;
 }
 
-void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
+void AlyssaHTTP::ServerHeadersM(clientInfo* c, unsigned short statusCode) {//Inline version of ServerHeaders function for ease.
+#ifdef AlyssaTesting
+	c->LastHeader.StatusCode = statusCode;
+#endif
+	std::string ret = "HTTP/1.1 "; ret.reserve(512);
+	switch (statusCode) {
+	case 200:	ret += "200 OK\r\n"; break;
+	//case 206:	ret += "206 Partial Content\r\n"
+	//	"Content-Range: bytes " + std::to_string(c->rstart) + "-" + std::to_string(c->rend) + "/" + std::to_string(h->ContentLength) + "\r\n"; break;
+	//case 302:	ret += "302 Found\r\n"
+	//	"Location: " + h->AddParamStr + "\r\n";
+	//	break;
+	case 400:	ret += "400 Bad Request\r\n"; break;
+	case 401:	ret += "401 Unauthorized\r\nWWW-Authenticate: Basic\r\n"; break;
+	case 403:	ret += "403 Forbidden\r\n"; break;
+	case 404:	ret += "404 Not Found\r\n"; break;
+	case 416:	ret += "416 Range Not Satisfiable\r\n"; break;
+	case 418:	ret += "418 I'm a teapot\r\n"; break;
+	case 500:	ret += "500 Internal Server Error\r\n"; break;
+	case 501:	ret += "501 Not Implemented\r\n"; break;
+	default:	ret += "501 Not Implemented\r\n"; break;
+	}
+	ret += "Date: " + currentTime() + "\r\n";
+	if (corsEnabled) {
+		if (c->Origin != "") {
+			for (unsigned char i = 0; i < ACAOList.size(); i++) {
+				if (ACAOList[i] == c->Origin) {
+					ret += "Access-Control-Allow-Origin: " + c->Origin + "\r\n";
+				}
+			}
+		}
+	}
+	ret += PredefinedHeaders;
+	ret += "\r\n"; Send(&ret, c->Sr->sock, c->Sr->ssl, 1);
+}
+
+int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 	unsigned short pos = 0;//Position of EOL
 
 	if (!(cl->flags & (1<<0))) {// First line is not parsed yet.
@@ -101,7 +137,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->RequestPath.resize(_pos);
 				// Sanity checks
 				if (!(cl->flags & (1 << 1))) {// You can't remove that if scope else you can't goto.
-					if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->flags |= 3; goto ExitParse; }
+					if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; }
 					char level = 0; char t = 1; while (cl->RequestPath[t] == '/') t++;
 					for (; t < _pos;) {
 						if (cl->RequestPath[t] == '/') {
@@ -115,7 +151,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 						}
 						else t++;
 					}
-					if (level < 0) { cl->flags |= 3; goto ExitParse; } //Client tried to access above htroot
+					if (level < 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; } //Client tried to access above htroot
 				}
 				else goto ExitParse;
 				// Query string
@@ -131,7 +167,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 						cl->close = 1;
 					}
 				}
-				else cl->flags |= 3;
+				else { cl->RequestTypeInt = -1; cl->flags |= 3; }
 				ExitParse:
 				pos++; if (buf[pos] < 31) pos++; // line delimiters are CRLF, iterate pos one more.
 				break;
@@ -149,19 +185,20 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			memcpy(&cl->payload[cl->payload.size() - cl->ContentLength], buf, sz); 
 		}
 		cl->ContentLength -= sz; pos = sz;
-		if (!cl->ContentLength) {
+		if (!cl->ContentLength) { // If nothing more left to receive, request is done.
+		EndRequest:
 			// Virtual host stuff
 			if (HasVHost) {
-				HeaderParameters h;
-				if (cl->host == "") { cl->flags |= 2; goto VHostOut; }
+				if (cl->host == "") { cl->flags |= 2; return -1; }
 				for (int i = 1; i < VirtualHosts.size(); i++) {
 					if (VirtualHosts[i].Hostname == cl->host) {
 						cl->VHostNum = i;
 						if (VirtualHosts[i].Type == 0) // Standard virtual host
 							cl->_RequestPath = VirtualHosts[i].Location;
 						if (VirtualHosts[i].Type == 1) { // Redirecting virtual host
+							HeaderParameters h;
 							h.StatusCode = 302; h.AddParamStr = VirtualHosts[i].Location;
-							ServerHeaders(&h, cl); goto ParseReturn;
+							ServerHeaders(&h, cl); return -3;
 						}
 					}
 				}
@@ -174,34 +211,11 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->_RequestPath = htroot + cl->RequestPath;
 				//cl->RequestPath = cl->_RequestPath.u8string();
 			}
-		VHostOut:
-#ifndef AlyssaTesting
-			if (!(cl->flags & (1 << 1))) {
-				switch (cl->RequestTypeInt) {
-				case 1: Get(cl); break;
-#ifdef Compile_CustomActions
-				case 2: Post(cl); break;
-				case 3: Post(cl); break;
-				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); ServerHeaders(&h, cl); break; }
-#else
-				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD"); ServerHeaders(&h, cl); break; }
-#endif
-				case 5: Get(cl); break;
-				default: { HeaderParameters	h; h.StatusCode = 501; ServerHeaders(&h, cl); break; }
-				}
-			}
-			else {
-				HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, cl);
-			}
-			if (cl->close) shutdown(cl->Sr->sock, 2);
-
-			cl->clear(); 
-#endif 
-			goto ParseReturn;
+			return cl->RequestTypeInt;
 		}
 	}
+
 	// Parse the lines
-	
 	for (unsigned short i = pos; i < sz; i++) {
 		if (buf[i] > 31) continue;
 		if (pos - i == 0) {// End of headers
@@ -215,60 +229,8 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				}
 				cl->ContentLength -= sz - pos; pos = sz;
 			}
-			if (!cl->ContentLength) {
-				// Virtual host stuff
-				if (HasVHost) {
-					HeaderParameters h;
-					if (cl->host == "") { cl->flags |= 2; goto VHostOut; }
-					for (int t = 1; t < VirtualHosts.size(); i++) {
-						if (VirtualHosts[t].Hostname == cl->host) {
-							cl->VHostNum = t;
-							if (VirtualHosts[t].Type == 0) // Standard virtual host
-								cl->_RequestPath = VirtualHosts[t].Location;
-							if (VirtualHosts[t].Type == 1) { // Redirecting virtual host
-								h.StatusCode = 302; h.AddParamStr = VirtualHosts[t].Location;
-								ServerHeaders(&h, cl); goto ParseReturn;
-							}
-						}
-					}
-					if (cl->_RequestPath == "") {// _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
-						if (VirtualHosts[0].Type == 0) // Standard virtual host
-							cl->_RequestPath = VirtualHosts[0].Location;
-						if (VirtualHosts[0].Type == 1) { // Redirecting virtual host
-							h.StatusCode = 302; h.AddParamStr = VirtualHosts[0].Location;
-							ServerHeaders(&h, cl); goto ParseReturn;
-						}
-					}
-					cl->_RequestPath += std::filesystem::u8path(cl->RequestPath);
-					//cl->RequestPath = cl->_RequestPath.u8string();
-				}
-				else {
-					cl->_RequestPath = htroot + cl->RequestPath;
-					//cl->RequestPath = cl->_RequestPath.u8string();
-				}
-#ifndef AlyssaTesting
-				if (!(cl->flags & (1 << 1))) {
-					switch (cl->RequestTypeInt) {
-					case 1: Get(cl); break;
-#ifdef Compile_CustomActions
-					case 2: Post(cl); break;
-					case 3: Post(cl); break;
-					case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); ServerHeaders(&h, cl); break; }
-#else
-					case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD"); ServerHeaders(&h, cl); break; }
-#endif
-					case 5: Get(cl); break;
-					default: { HeaderParameters	h; h.StatusCode = 501; ServerHeaders(&h, cl); break; }
-					}
-				}
-				else {
-					HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, cl);
-				}
-				if (cl->close) shutdown(cl->Sr->sock, 2);
-
-				cl->clear();
-#endif 
-				goto ParseReturn;
+			if (!cl->ContentLength) { // If nothing more left to receive, request is done.
+				goto EndRequest;	
 			}
 		}
 		else if (!strncmp(&buf[pos], "Content-Length", 14)) {
@@ -278,12 +240,12 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					cl->payload.resize(cl->ContentLength);
 			}
 			catch (const std::invalid_argument&) {
-				cl->flags |= 2;
+				cl->RequestTypeInt = -1; cl->flags |= 2;
 			}
 		}
 		else if (!(cl->flags & (1 << 1))) { // Don't parse headers if bad request EXCEPT Content-Length.
 			if (!strncmp(&buf[pos], "Authorization", 13)) {
-				if (strncmp(&buf[pos + 15], "Basic", 5)) { cl->flags |= 2; continue; } // Either auth is not basic or header is invalid as a whole. 
+				if (strncmp(&buf[pos + 15], "Basic", 5)) { cl->RequestTypeInt = -1; cl->flags |= 2; continue; } // Either auth is not basic or header is invalid as a whole. 
 				pos += 21; cl->auth.resize(i - pos); memcpy(&cl->auth[0], &buf[pos], i - pos); cl->auth = base64_decode(cl->auth);
 			}
 			if (!strncmp(&buf[pos], "Connection", 10)) {
@@ -301,14 +263,14 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				}
 			}
 			else if (!strncmp(&buf[pos], "Range", 5)) {
-				pos += 7; if (strncmp(&buf[pos], "bytes=", 6)) { cl->flags |= 2; continue; } // Either unit is not bytes or value is invalid as a whole.
+				pos += 7; if (strncmp(&buf[pos], "bytes=", 6)) { cl->RequestTypeInt = -1; cl->flags |= 2; continue; } // Either unit is not bytes or value is invalid as a whole.
 				pos += 6;
 				if (buf[pos] != '-') {
 					try {
 						cl->rstart = std::atoll(&buf[pos]);
 					}
 					catch (const std::invalid_argument&) {
-						cl->flags |= 2;
+						cl->RequestTypeInt = -1; cl->flags |= 2;
 					}
 					while (buf[pos] >= 48) pos++;
 				}
@@ -319,7 +281,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					cl->rend = std::atoll(&buf[pos]);
 				}
 				catch (const std::invalid_argument&) {
-					cl->flags |= 2;
+					cl->RequestTypeInt = -1; cl->flags |= 2;
 				}
 			}
 		}
@@ -331,7 +293,7 @@ void AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 		cl->LastLine.resize(sz - pos); memcpy(&cl->LastLine[0], &buf[pos], sz - pos);
 	}
 ParseReturn:
-	return;
+	return 0;
 }
 
 void AlyssaHTTP::Get(clientInfo* cl) {
@@ -493,10 +455,26 @@ void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function 
 			if (off) {
 				memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
 			}
-			AlyssaHTTP::parseHeader(&cl, buf, Received+off);
+			switch (AlyssaHTTP::parseHeader(&cl, buf, Received + off)) {
+				case -3: cl.clear(); break; // Parsing is done and response is sent already, just clear the clientInfo.
+				case -2: ServerHeadersM(&cl, 403); cl.clear(); break; // Bad request but send 403.
+				case -1: ServerHeadersM(&cl, 400); cl.clear(); break; // Bad request.
+				case 0: break; // Parsing is not done yet, do nothing.
+				case 1: Get(&cl); cl.clear(); break;
+#ifdef Compile_CustomActions
+				case 2: Post(&cl); cl.clear(); break;
+				case 3: Post(&cl); cl.clear(); break;
+				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); 
+					ServerHeaders(&h, &cl); cl.clear(); break; }
+#else
+				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD");
+					ServerHeaders(&h, &cl); cl.clear();  break; }
+#endif
+				case 5: Get(&cl); cl.clear(); break;
+			}
 			memset(buf, 0, Received + off);
 			off = cl.LastLine.size(); if (off > 4000) { // Impossibly large header line and will cause buffer overflow, stop parsing.
-				cl.LastLine.clear(); cl.flags |= 2;
+				cl.LastLine.clear(); cl.flags |= 2; cl.RequestTypeInt = -1;
 			}
 		}
 	}
@@ -506,7 +484,23 @@ void AlyssaHTTP::clientConnection(_Surrogate sr) {//This is the thread function 
 			if (off) {
 				memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
 			}
-			AlyssaHTTP::parseHeader(&cl, buf, Received+off);
+			switch (AlyssaHTTP::parseHeader(&cl, buf, Received + off)) {
+				case -3: cl.clear(); break; // Parsing is done and response is sent already, just clear the clientInfo.
+				case -2: ServerHeadersM(&cl, 403); cl.clear(); break; // Bad request but send 403.
+				case -1: ServerHeadersM(&cl, 400); cl.clear(); break; // Bad request.
+				case 0: break; // Parsing is not done yet, do nothing.
+				case 1: Get(&cl); cl.clear(); break;
+#ifdef Compile_CustomActions
+				case 2: Post(&cl); cl.clear(); break;
+				case 3: Post(&cl); cl.clear(); break;
+				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD");
+					ServerHeaders(&h, &cl); cl.clear(); break; }
+#else
+				case 4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD");
+					ServerHeaders(&h, &cl); cl.clear();  break; }
+#endif
+				case 5: Get(&cl); cl.clear(); break;
+			}
 			memset(buf, 0, Received + off);
 			off = cl.LastLine.size(); if (off > 4000) { // Impossibly large header line and will cause buffer overflow, stop parsing.
 				cl.LastLine.clear(); cl.flags |= 2;

@@ -1,7 +1,7 @@
 #pragma once
 // Configuration for building.
 #if __cplusplus < 201700L
-#error C++17 compatible compiler is required.
+	#error C++17 compatible compiler is required.
 #endif
 // Define that if this code is of another branch.
 //#define branch "polling"
@@ -12,7 +12,7 @@
 // HTTP/2 support
 #define Compile_H2
 #if defined Compile_H2 && !defined Compile_WolfSSL
-#error SSL is required for HTTP/2 support.
+	#error SSL is required for HTTP/2 support.
 #endif
 
 // CGI execution support

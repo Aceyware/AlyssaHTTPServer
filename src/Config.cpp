@@ -123,7 +123,7 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 			break;
 	}
 	EnableH2 = stoi(getValue("http2", "0"));
-	if (getValue("locale", "tr") == "tr") Locale = 1; else Locale = 0;
+	if (getValue("locale", "") == "tr") Locale = 1; else Locale = 0;
 #endif
 	return 1;
 }

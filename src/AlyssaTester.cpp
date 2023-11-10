@@ -24,9 +24,9 @@ int main() {
 	clientInfo c; _Surrogate s; c.Sr = &s; corsEnabled = 1;
 
 	std::cout << "Testing header parsing: ";
-	AlyssaHTTP::parseHeader(&c, (char*)PredefinedFiles[11], strlen(PredefinedFiles[11]));
+	int ret = AlyssaHTTP::parseHeader(&c, (char*)PredefinedFiles[11], strlen(PredefinedFiles[11]));
 	if (c.auth != "test:test" || c.close != 1 || c.Origin != "4lyssa.net" || c.rstart != 123 || c.rend != 4567
-		|| c.payload != "test" || c.host != "127.0.0.1") {
+		|| c.payload != "test" || c.host != "127.0.0.1" || ret != 1) {
 		std::cout << "FAILED\r\n"; return -1;
 	}
 	std::cout << "OK\r\n";

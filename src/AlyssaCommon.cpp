@@ -226,7 +226,8 @@ void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one abo
 		 std::cout << MsgColors[MsgType] << MsgTypeStr[MsgType] << MsgColors[3] << UnitName << MsgColors[4];
 #else
 		 SetConsoleTextAttribute(hConsole, MsgColors[MsgType]); std::cout << MsgTypeStr[MsgType];
-		 SetConsoleTextAttribute(hConsole, MsgColors[3]); std::cout << UnitName; SetConsoleTextAttribute(hConsole, MsgColors[4]);
+		 SetConsoleTextAttribute(hConsole, MsgColors[3]); std::cout << UnitName; 
+		 SetConsoleTextAttribute(hConsole, MsgColors[4]);
 #endif // !_WIN32
 	 }
 	 else {
@@ -235,6 +236,25 @@ void ConsoleMsgM(int8_t MsgType, const char* UnitName) {// Just like the one abo
 #endif // !AlyssaTesting
 	 return;
  }
+void ConsoleMsgM(int8_t MsgType, int UnitStr) {
+#ifndef AlyssaTesting 
+	if (MsgType > 2) std::terminate();
+	if (ColorOut) {
+#ifndef _WIN32 
+		std::wcout << MsgColors[MsgType] << LocaleTable[Locale][MsgType + 1] << MsgColors[3]
+			<< LocaleTable[Locale][UnitStr] << MsgColors[4];
+#else
+		SetConsoleTextAttribute(hConsole, MsgColors[MsgType]); std::wcout << LocaleTable[Locale][MsgType + 1];
+		SetConsoleTextAttribute(hConsole, MsgColors[3]); std::wcout << LocaleTable[Locale][UnitStr];
+		SetConsoleTextAttribute(hConsole, MsgColors[4]);
+#endif // !_WIN32
+	}
+	else {
+		std::wcout << LocaleTable[Locale][MsgType + 1] << LocaleTable[Locale][UnitStr];
+	}
+#endif // !AlyssaTesting
+	return;
+}
 void ConsoleMsgLiteral(int MsgStr) {
 	std::wcout << LocaleTable[Locale][MsgStr];
 }

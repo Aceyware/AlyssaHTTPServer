@@ -69,7 +69,7 @@ void DebugNode(clientInfo* cl) {
 		h.StatusCode = 200; h.ContentLength = payload.size(); h.MimeType = "text/html";
 		AlyssaHTTP::ServerHeaders(&h, cl); Send(payload.data(), cl->Sr->sock, cl->Sr->ssl, h.ContentLength);
 	}
-	else if (!strncmp(&cl->RequestPath[7], "ExplicitPath", 12)) {
+	else if (!strncmp(&cl->RequestPath[7], "ArbitraryPath", 13)) {
 		FILE* f = NULL;
 		if (cl->RequestPath[19] == 'Q') {
 			cl->RequestPath = cl->qStr;

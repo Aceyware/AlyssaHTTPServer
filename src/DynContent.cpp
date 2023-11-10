@@ -31,8 +31,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	const char* cmd[] = { exec,NULL }; char buf[512] = { 0 };
 	int8_t result = subprocess_create_ex(cmd, 0, environment, &cgi);
 	if (result != 0) {
-		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-		std::cout << "Failed to execute CGI: " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+		wprintf(LocaleTable[Locale][STR_CGI_FAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -54,8 +54,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	}
 	subprocess_destroy(&cgi); delete[] environment[3]; delete[] environment[4];
 	if (ret.size() == 0) {// Error if no output or it can't be read.
-		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-		std::cout << "Error reading output of or executing, or no output on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+		wprintf(LocaleTable[Locale][STR_CGI_OUTFAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -72,8 +72,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				break;
 	}
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
-		ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-		std::cout << "Missing header terminator on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500;
+		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+		wprintf(LocaleTable[Locale][STR_CGI_HEADER], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
 #ifdef Compile_WolfSSL
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -95,8 +95,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				if (!pos) {// First line is not a header. Treat as there's no header at all.
 					HeaderEndpoint = 0; break;
 				}
-				ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-				std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500; break;
+				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+				wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); hp.StatusCode = 500; break;
 				hp.CustomHeaders.clear();
 #ifdef Compile_WolfSSL
 				if (h)
@@ -112,8 +112,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					hp.ContentLength = std::stoi(&headerline[16]);
 				}
 				catch (const std::invalid_argument&) {
-					ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-					std::cout << "Malformed header on CGI " << exec << std::endl; ConsoleMutex.unlock(); hp.StatusCode = 500; break;
+					ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+					wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); hp.StatusCode = 500; break;
 				}
 			}
 			else if (!strncmp(headerline.data(), "Content-Type", 12)) {
@@ -182,8 +182,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		FILE* f=NULL;
 		f=fopen(p,"rb");
 		if(!f){
-			ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-			std::cout<<"Cannot open credentials file "<<p; ConsoleMutex.unlock(); return -1;
+			ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+			wprintf(LocaleTable[Locale][STR_CRED_FAIL], p); ConsoleMutex.unlock(); return -1;
 		}
 		int sz=std::filesystem::file_size(std::filesystem::path(p));
 		char* buf=new char[sz+1];
@@ -219,8 +219,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-							std::cout<<"Argument required for 'Authenticate' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "Authenticate", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
 						}
 						c[ct] = '\0';
 						if (cl->auth == "") {
@@ -255,8 +255,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-							std::cout<<"Argument required for 'Redirect' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "Redirect", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
 						}
 						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
 #ifdef Compile_WolfSSL
@@ -272,8 +272,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while(c[ct]>32)
 							ct++;
 						if(ct-cn<2){
-							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-							std::cout<<"Argument required for 'SoftRedirect' action on node "<<cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "SoftRedirect", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 1;
 					}
@@ -282,8 +282,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						while (c[ct] > 32)
 							ct++;
 						if (ct - cn < 2) {
-							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-							std::cout << "Argument required for 'ExecCGI' action on node " << cl->RequestPath << std::endl; ConsoleMutex.unlock(); return -1;
+							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "ExecCGI", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
                     }
@@ -297,10 +297,10 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
                             AlyssaHTTP::ServerHeaders(&hp, cl);
                         return 0;
                     }
-					else {
+					else { // Unknown command.
 						ConsoleMutex.lock();
-						ConsoleMsgM(0, "Custom actions: ");
-						printf("Unknown command: %.*s on node %s\n", ct - 1 - cn, &c[cn], cl->RequestPath.c_str());
+						ConsoleMsgM(0, STR_CUSTOMACTIONS);
+						wprintf(LocaleTable[Locale][STR_CA_UNKN], ct - 1 - cn, &c[cn], cl->RequestPath.c_str());
 						ConsoleMutex.unlock();
 						return -1;
 					}
@@ -332,10 +332,10 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		f.read(buf, len); int cn=0, ct=0;  f.close();
 		for (; cn < len && buf[cn] < 32; cn++) {} ct = cn; // Iterate to beginning in case of there's empty lines at beginning of file.
 		while(cn<len){
-			if(buf[cn]=='}'){
-				ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-				std::cout<<"Syntax error (closure of a non-existent scope) "
-							"at char "<<cn<<" on file "<<p<<std::endl; ConsoleMutex.unlock(); return -1;
+			if(buf[cn]=='}'){ //Syntax error (closure of a non-existent scope)
+				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+				wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_1]); 
+				ConsoleMutex.unlock(); return -1;
 			}
 			else if(buf[cn]=='{'){
 				bool isAffecting=0;
@@ -355,26 +355,26 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							if (!strncmp(&buf[ct + 5], n, strlen(n)-1))
 								isAffecting = 1;
 						}
-						else {
-							ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-							std::cout << "Syntax error (invalid node identifier keyword) "
-								"at char " << cn << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
+						else { // Syntax error (invalid node identifier keyword)
+							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+							wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_2]); 
+							ConsoleMutex.unlock(); return -1;
 						}
 					}
 				}
 				cn++; ct = cn;
 				while(cn<len+1) {
 					if(buf[cn]=='}') {buf[cn]=0; break;}
-					else if (buf[cn] == '{') {
-						ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-						std::cout << "Syntax error (beginning of another scope before previous one closed) "
-							"at char " << cn << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
+					else if (buf[cn] == '{') {// Syntax error (beginning of another scope before previous one closed)
+						ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+						wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_3]);
+						ConsoleMutex.unlock(); return -1;
 					}
 					cn++; }
-				if (cn == len) {
-					ConsoleMutex.lock(); ConsoleMsgM(0, "Custom actions: ");
-					std::cout << "Syntax error (missing '}' "
-						"for scope beginning at  " << ct << " on file " << p << std::endl; ConsoleMutex.unlock(); return -1;
+				if (cn == len) {// Syntax error (missing '}'
+					ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
+					wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_4]); 
+					ConsoleMutex.unlock(); return -1;
 				}
 				for (; cn < len && buf[cn] < 32; cn++) {}
 				if (!isAffecting) {

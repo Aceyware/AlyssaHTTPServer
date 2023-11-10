@@ -159,7 +159,7 @@ class AlyssaHTTP {
 	public:
 		static void ServerHeaders(HeaderParameters* h, clientInfo* c);
 		static void ServerHeadersM(clientInfo* c, unsigned short statusCode);
-		static void parseHeader(clientInfo* cl, char* buf, int sz);
+		static int8_t parseHeader(clientInfo* cl, char* buf, int sz);
 		static void clientConnection(_Surrogate sr);
 #ifndef AlyssaTesting
 	private:
@@ -209,6 +209,7 @@ void SetPredefinedHeaders();
 void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
 void ConsoleMsg(int8_t MsgType, int UnitStr, int MsgStr);
 void ConsoleMsgM(int8_t MsgType, const char* UnitName);
+void ConsoleMsgM(int8_t MsgType, int UnitStr);
 void ConsoleMsgLiteral(int MsgStr);
 uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning);
 std::string ErrorPage(unsigned short ErrorCode);
@@ -329,9 +330,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.3.100d";
+	static std::string version = "2.3.2d";
 #else
-	static std::string version = "2.3.100";
+	static std::string version = "2.3.2";
 #endif
 #endif
 #ifdef _WIN32

@@ -21,7 +21,8 @@ And more.
 - [ ] Configurable build system with makefile
 - [ ] Polling client sockets and handling requests in thread pool (HTTP/2 will make this pretty hard)
 - [ ] Windows NT service support
-- [ ] Content negotiation, Conditional requests handling
+- [ ] Content negotiation (Accept-* headers) 
+- [ ] Conditional requests handling (If-* headers)
 - [ ] HTTP/3 QUIC support
 - [ ] Hashed authentication files support (sha256 for more security, crc32 for more performance)
 - [ ] Automatic CGI execution (i.e. for .php files)
@@ -39,7 +40,8 @@ And more.
 - [x] Add code testing (i.e. unit testing)
 - [ ] Digest authentication
 - [ ] Source code documentation (maybe)
-- [ ] Add code for ease of developing APIs on top of server code directly (maybe)
-- [ ] Modules/extensions support (maybe)
+- [ ] Modules/extensions support
+- [ ] Chunked transfer
+- [ ] Compression encodings
 - [ ] Get a girlfriend
 

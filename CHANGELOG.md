@@ -1,5 +1,10 @@
 # Alyssa HTTP Server Changelog
 
+## 2.3.2 - 10.11.2023
+- More completed locale support.
+- Made changes to new header parsing code for making it more flexible and slightly simpler.
+- Some bugs fixed, especially the default locale not being English.
+
 ## 2.3.100 - 29.10.2023 C★
 - Initial unit testing code Implementation
 	- It does testing on server code directly.

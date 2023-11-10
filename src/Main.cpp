@@ -34,6 +34,7 @@ std::deque<VirtualHost> VirtualHosts;
 int ServerEntry(int argc, char* argv[]) {
 #else
 int main(int argc, char* argv[]) {//This is the main server function that fires up the server and listens for connections.
+	
 #endif
 	//Set the locale and stdout to Unicode
 	fwide(stdout, 0); setlocale(LC_ALL, "");
@@ -68,44 +69,46 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #endif
 	
+	// Try if htroot is accessible, else try to create it, quit if failed.
 	try {
 		for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(htroot))) {
 			break;
 		}
 	}
 	catch (std::filesystem::filesystem_error&) {
-		ConsoleMsg(0, "Config: ", "invalid htroot path specified on config or path is inaccessible. Trying to create the folder..");
+		ConsoleMsg(0, STR_CONFIG, STR_HTROOT_NOT_FOUND);
 		try {
 			std::filesystem::create_directory(std::filesystem::u8path(htroot));
 		}
 		catch (const std::filesystem::filesystem_error) {
-			ConsoleMsg(0, "Config: ", "failed to create the folder. Quitting"); exit(-3);
+			ConsoleMsg(0, STR_CONFIG, STR_HTROOT_CREATE_FAIL); return -3;
 		}
 	}
 
-	
+	// Enable logging
 	if (logging) {
 		Log.open("Alyssa.log", std::ios::app);
-		if (!Log.is_open()) {
-			ConsoleMsg(0, "Server: ", "cannot open log file, logging is disabled."); logging = 0;
+		if (!Log.is_open()) {// Opening log file failed.
+			ConsoleMsg(0, STR_SERVER, STR_LOG_FAIL); logging = 0;
 		}
 		else {
 			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() << " - Version: " << version << " -----" << std::endl;
 		}
 	}
 
+	// Init SSL
 #ifdef Compile_WolfSSL
-	wolfSSL_Init();
 	WOLFSSL_CTX* ctx = NULL;
 	if (enableSSL) {
+		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
-			ConsoleMsg(0, "WolfSSL: ", "internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_INTFAIL); enableSSL = 0; goto SSLEnd;
 		}
 		if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL private key file, SSL is disabled."); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_KEYFAIL); enableSSL = 0; goto SSLEnd;
 		}
 		if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, "WolfSSL: ", "failed to load SSL certificate file, SSL is disabled."); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_CERTFAIL); enableSSL = 0; goto SSLEnd;
 		}
 	}
 	SSLEnd:
@@ -114,9 +117,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #ifdef _WIN32
 	// Initialze winsock
 	WSADATA wsData; WORD ver = MAKEWORD(2, 2);
-	if (WSAStartup(ver, &wsData))
-	{
-		ConsoleMsg(0, "Server: ", "Can't Initialize winsock! Quitting\n");
+	if (WSAStartup(ver, &wsData)) {
+		ConsoleMsg(0, STR_SERVER, STR_WS_FAIL);
 		return -1;
 	}
 #endif
@@ -125,11 +127,11 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	std::vector<int8_t> _SockType;
 
 	sockaddr_in hint;
+	// Create sockets: plain, IPv4
 	for (size_t i = 0; i < port.size(); i++) {
-		// Create sockets
 		SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
 		if (listening == INVALID_SOCKET) {
-			ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
+			ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
 			return -1;
 		}
 		hint.sin_family = AF_INET;
@@ -138,28 +140,30 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		socklen_t len = sizeof(hint);
 		bind(listening, (sockaddr*)&hint, sizeof(hint));
 		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-			ConsoleMsgM(0, "Server: ");
-			std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program."; 
-			exit(-2);
+			ConsoleMsgM(0, STR_SERVER);
+			wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+			return -2;
 		}
 		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 		else if (port[i] != ntohs(hint.sin_port)) { 
-			ConsoleMsgM(0, "Server: ");
-			std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl 
-				<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2; }
+			ConsoleMsgM(0, STR_SERVER);
+			wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+			return -2;
+		}
 		listen(listening, SOMAXCONN);
 		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
 		_SocketArray.emplace_back(pollfd{listening, POLLRDNORM, 0});
 		_SockType.emplace_back(0);
 	}
 
+	// Create sockets: SSL, IPv4
 #ifdef Compile_WolfSSL
 	if (enableSSL) {
 		for (size_t i = 0; i < SSLport.size(); i++) {
 			SOCKET listening;
 			listening = socket(AF_INET, SOCK_STREAM, 0);
 			if (listening == INVALID_SOCKET) {
-				ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
+				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
 				return -1;
 			}
 			hint.sin_family = AF_INET;
@@ -168,14 +172,14 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			socklen_t Slen = sizeof(hint);
 			bind(listening, (sockaddr*)&hint, sizeof(hint));
 			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
-				ConsoleMsgM(0, "Server: ");
-				std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program.";
-				exit(-2);
+				ConsoleMsgM(0, STR_SERVER);
+				wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+				return -2;
 			}
 			else if (SSLport[i] != ntohs(hint.sin_port)) {
-				ConsoleMsgM(0, "Server: ");
-				std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl
-					<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
+				ConsoleMsgM(0, STR_SERVER);
+				wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+				return -2;
 			}
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
@@ -184,13 +188,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #endif // Compile_WolfSSL
 
-	// Create and listen IPv6 sockets if enabled
+	// Create sockets: plain, IPv6
 	if (EnableIPv6) {
 		for (size_t i = 0; i < port.size(); i++) {
 			// Create sockets
 			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
 			if (listening == INVALID_SOCKET) {
-				ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
+				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
 				return -1;
 			}
 			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
@@ -203,28 +207,27 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			socklen_t len = sizeof(hint);
 			bind(listening, (sockaddr*)&hint, sizeof(hint));
 			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-				ConsoleMsgM(0, "Server: ");
-				std::cout << "Error binding socket on port " << port[i] << std::endl << "Make sure port is not in use by another program.";
-				exit(-2);
+				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+				return -2;
 			}
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 			else if (port[i] != ntohs(hint.sin6_port)) {
-				ConsoleMsgM(0, "Server: ");
-				std::cout << "Error binding socket on port " << port[i] << " (OS assigned socket on another port)" << std::endl
-					<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
+				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+				return -2;
 			}
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
 			_SockType.emplace_back(2);
 		}
 
+		// Create sockets: SSL, IPv6
 #ifdef Compile_WolfSSL
 		if (enableSSL) {
 			for (size_t i = 0; i < SSLport.size(); i++) {
 				// Create sockets
 				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
 				if (listening == INVALID_SOCKET) {
-					ConsoleMsg(0, "Server: ", "Socket creation failed! Quitting\n");
+					ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
 					return -1;
 				}
 				setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
@@ -237,15 +240,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				socklen_t len = sizeof(hint);
 				bind(listening, (sockaddr*)&hint, sizeof(hint));
 				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-					ConsoleMsgM(0, "Server: ");
-					std::cout << "Error binding socket on port " << SSLport[i] << std::endl << "Make sure port is not in use by another program.";
-					exit(-2);
+					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+					return -2;
 				}
 				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 				else if (SSLport[i] != ntohs(hint.sin6_port)) {
-					ConsoleMsgM(0, "Server: ");
-					std::cout << "Error binding socket on port " << SSLport[i] << " (OS assigned socket on another port)" << std::endl
-						<< "Make sure port is not in use by another program, or you have permissions for listening that port." << std::endl; return -2;
+					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+					return -2;
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
 				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
@@ -259,8 +260,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	SetPredefinedHeaders(); // Define the predefined headers that will used until lifetime of executable and will never change.
 #ifdef Compile_CGI
 	if (CAEnabled) {
-		if (CGIEnvInit()) {// Define CGI environment variables
-			ConsoleMsg(0, "Custom actions: ", "failed to set up CGI environment variables.\n");
+		if (CGIEnvInit()) {// Set CGI environment variables
+			ConsoleMsg(0, STR_CUSTOMACTIONS, STR_CGI_ENVFAIL);
 			return -3;
 		}
 	}
@@ -298,10 +299,10 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
 #endif
 
-	//std::cout << "Alyssa HTTP Server " << version;
+	// Output server version, ports etc.
 	ConsoleMsgLiteral(STR_SERVERMAIN); std::cout << version;
 	if (HasVHost) { std::cout << " | " << VirtualHosts.size(); ConsoleMsgLiteral(STR_VHOSTNUM); }
-	//std::cout << std::endl << "Listening on HTTP: ";
+	
 	std::cout << std::endl; ConsoleMsgLiteral(STR_LISTENINGON); std::cout << " HTTP: ";
 	for (size_t i = 0; i < port.size() - 1; i++) std::cout << port[i] << ", ";
 	std::cout << port[port.size() - 1];
@@ -315,6 +316,14 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	std::cout << std::endl;
 
 	while (true) {
+	/*
+		You point to the trail where the blossoms have fallen
+		But all I can see is the poll()en, fucking me up
+		Everything moves too fast but I've
+		Been doing the same thing a thousand times over
+		But I'm brought to my knees by the clover
+		And it feels like, it's just the poll()en
+	*/
 		int ActiveSocket = poll(&_SocketArray[0],_SocketArray.size(), -1);
 
 		for (int i = 0; i < _SocketArray.size(); i++) {
