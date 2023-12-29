@@ -7,7 +7,7 @@ edit ports or other stuff if needed, and run the executable.
 ## Documentation
 Documentation about configuration, compiling and much more is available [here.](docs/Home.md)
 ## Features
-- HTTP/2 
+- HTTP/2 (EXPERIMENTAL)
 - SSL/TLS
 - Redirection(soft and hard), authentication
 - CGI applications
@@ -22,7 +22,7 @@ And more.
 - [ ] Polling client sockets and handling requests in thread pool (HTTP/2 will make this pretty hard)
 - [ ] Windows NT service support
 - [ ] Content negotiation (Accept-* headers) 
-- [ ] Conditional requests handling (If-* headers)
+- [x] Conditional requests handling (If-* headers)
 - [ ] HTTP/3 QUIC support
 - [ ] Hashed authentication files support (sha256 for more security, crc32 for more performance)
 - [ ] Automatic CGI execution (i.e. for .php files)
@@ -33,7 +33,6 @@ And more.
 - [ ] Switch to dual stack IPv6 sockets if possible (maybe)
 - [x] Guides for compilation, usage, configuration etc.
 - [x] Server generated and custom error pages
-- [ ] Modularization
 - [ ] Kernel mode acceleration
 - [ ] Extend custom actions
 - [ ] Implement FastCGI support
@@ -42,6 +41,7 @@ And more.
 - [ ] Source code documentation (maybe)
 - [ ] Modules/extensions support
 - [ ] Chunked transfer
-- [ ] Compression encodings
+- [x] Compression encodings (deflate).
+- [ ] Make sure the server is really ready for production use.
 - [ ] Get a girlfriend
 

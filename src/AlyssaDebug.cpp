@@ -1,7 +1,7 @@
 #ifdef _DEBUG
 #include "Alyssa.h"
 
-std::string execpath; extern bool debugFeaturesEnabled=0;
+std::string execpath; extern bool debugFeaturesEnabled=1;
 
 #ifdef Compile_CGI
 void SelfExecCGI(const char* exec, clientInfo* cl, bool Post) {// BUGBUG: temporary.
@@ -121,6 +121,29 @@ void DebugNode(clientInfo* cl) {
 			h.StatusCode = 400; AlyssaHTTP::ServerHeaders(&h, cl); return;
 		}
 	}
+#ifdef Compile_zlib
+	else if (!strncmp(&cl->RequestPath[7], "GzEncodeTest/", 6)) {// it's actually deflate, not gzip.
+		const char file[] = "<html><head><title>Encode Testing</title></head><body><h1>This page is sent with gzip encoding.</h1><br>If you can see this page, then gzip encoding is working.</body></html>";
+		char* buf = new char[200]; uLongf len = 200; int8_t offset = 0; char temp[8] = { 0 };
+		z_stream strm;
+		strm.zalloc = 0; strm.zfree = 0;
+		strm.next_in = (Bytef*)file;
+		strm.avail_in = 100;
+		strm.next_out = (Bytef*)&buf[8];
+		strm.avail_out = 192;
+		deflateInit(&strm, Z_BEST_COMPRESSION);
+		deflate(&strm, Z_FULL_FLUSH); offset = sprintf(temp, "%x\r\n", strm.total_out); 
+		strm.next_out[0] = '\r', strm.next_out[1] = '\n'; memcpy(&buf[8 - offset], temp, offset);
+		h.StatusCode = 200; h.hasEncoding = 1; AlyssaHTTP::ServerHeaders(&h, cl);
+		Send((char*)&buf[8-offset], cl->Sr->sock, cl->Sr->ssl, strm.total_out + offset+2);
+		strm.next_in = (Bytef*)&file[100]; strm.avail_in = 74; strm.next_out = (Bytef*)&buf[8]; strm.total_out = 0;
+		deflate(&strm, Z_FULL_FLUSH); offset = sprintf(temp, "%x\r\n", strm.total_out); strm.next_out[0] = '\r', strm.next_out[1] = '\n',
+			strm.next_out[2] = '0', strm.next_out[3] = '\r', strm.next_out[4] = '\n', strm.next_out[5] = '\r', strm.next_out[6] = '\n';
+		memcpy(&buf[8 - offset], temp, offset);
+		Send((char*)&buf[8 - offset], cl->Sr->sock, cl->Sr->ssl, strm.total_out + offset + 7);
+		delete[] buf; deflateEnd(&strm);
+	}
+#endif
 }
 
 void DummyCGIGet() {

@@ -4,18 +4,9 @@
 
 #ifdef Compile_DirIndex
 
-template <typename TP>
-std::time_t to_time_t(TP tp)
-{
-	using namespace std::chrono;
-	auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now()
-		+ system_clock::now());
-	return system_clock::to_time_t(sctp);
-}
-
-std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
+std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path& p) {
 	std::deque<IndexEntry> ret; IndexEntry NewEntry; int8_t DirCount=0;
-	for (auto x : std::filesystem::directory_iterator(p)) {
+	for (auto& x : std::filesystem::directory_iterator(p)) {
 		if (x.path().extension() == "alyssa" || x.path().filename()==".alyssa")
 			continue;
 		NewEntry.FileName = x.path().filename().u8string();
@@ -38,19 +29,44 @@ std::deque<IndexEntry> DirectoryIndex::GetDirectory(std::filesystem::path p) {
 string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 	std::deque<IndexEntry> Array = GetDirectory(p);
 	string ret; uint8_t DirCnt = 0; ret.reserve(4096);
-	ret = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;tab-size:135;}pre{display:inline;font-family:sans-serif;}img{height:12px;width:15px;}</style>"
-		"<title>Index of " + RelPath + "</title></head><body><h1>Index of " + RelPath + "</h1><hr><div>";
-	if (RelPath != "/")
-		ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a>	-	-</pre><br>";
-	for (uint8_t i = 0; i < Array.size(); i++) {
+	// I tried my best to make code as readable as possible with indents. At least better than previous one.
+	ret = 
+		"<!DOCTYPE html>"
+		"<html>"
+			"<head>"
+				"<meta charset=\"utf-8\"><link rel=\"stylesheet\" href=\"" + htrespath + "/di.css\">"
+				"<title>Index of " + RelPath + "</title>"
+		"</head>"
+		"<body><div>"
+			"<h1>Index of " + RelPath + "</h1><hr><br>"
+			"<table>";
+	if (RelPath != "/") {// Add parent directory entry if we're not at root.
+		ret += "<tr>"
+				"<th style=\"text-align:left;\"><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a></th>"
+				"<th style=\"text-align:left;\">-</th>"
+				"<th style=\"text-align:right;\">-</th>"
+			"</tr>";
+	}
+	for (uint8_t i = 0; i < Array.size(); i++) {// Add entries.
+		ret += "<tr>";
+		// Columns are ordered as: "entry name | last modify date | size"
+		// Directories have no size so it's '-' instead.
 		if (Array[i].isDirectory) {
-			ret += "<pre><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a>	" + Array[i].ModifyDate + "	-</pre><br>"; DirCnt++;
+			ret +=  "<th style=\"text-align:left;\"><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a></th>"
+					"<th style=\"text-align:left;\">" + Array[i].ModifyDate + "</th>"
+					"<th style=\"text-align:right;\">-</th>"
+				"</tr>"; 
+			DirCnt++;
 		}
 		else {
-			ret += "<pre><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a>	" + Array[i].ModifyDate + "	[" + std::to_string(Array[i].FileSize) + "]</pre><br>";
+			ret +=  "<th style=\"text-align:left;\"><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
+					"<th style=\"text-align:left;\">" + Array[i].ModifyDate + "</th>"
+					"<th style=\"text-align:right;\">[" + std::to_string(Array[i].FileSize) + "]</th>"
+				"</tr>";
 		}
 	}
-	ret += "</div><hr>";
+	ret += "</table><br><hr>";
+	// Page footer with number of items and server version.
 	if (DirCnt) {
 		ret += std::to_string(DirCnt)+" director";
 		if (DirCnt > 1)
@@ -65,7 +81,10 @@ string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 		if (Array.size() - DirCnt > 1)
 			ret += "s";
 	}
-	ret += "<br>Alyssa HTTP Server " + version + "</body></html>";
+	ret += 
+			"<br>Alyssa HTTP Server " + version + "</div>"
+		"</body>"
+		"</html>";
 	return ret;
 }
 

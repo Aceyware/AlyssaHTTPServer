@@ -72,22 +72,22 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Users\Tracey\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\Users\Tracey\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Users\Tracey\wolfssl\Release\Win32;</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Tracey\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Tracey\wolfssl\Release\x64;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl\Release\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -170,6 +170,7 @@
     <ClCompile Include="src/DynContent.cpp" />
     <ClCompile Include="src/Main.cpp" />
     <ClCompile Include="src\AlyssaDebug.cpp" />
+    <ClCompile Include="src\AlyssaDefinitions.cpp" />
     <ClCompile Include="src\AlyssaTester.cpp" />
   </ItemGroup>
   <ItemGroup>

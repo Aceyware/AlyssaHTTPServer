@@ -34,4 +34,4 @@ Changing is not necessary unless your dynamic content stack conflicts with it.
 - **HSTS 0** Enables/disables HTTP Strict Transport Security.
 ### CORS/CSP
 - **CORSAllowOrigin [no value]** Sets the value of `Access-Control-Allow-Origin` header.
-- **CSPHeader [no value]** Sets the value of `Content-Security-Policy` header.
+- **CSPHeaders [no value]** Sets the value of `Content-Security-Policy` header.

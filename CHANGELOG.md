@@ -1,5 +1,28 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4 - 30.12.2023 - Year's Last Release
+- **Fixed one CRITICAL security vulnerability** and some more security holes.
+- Changes regarding to HTTP/2
+	- Marked HTTP/2 support as experimental because it is buggy. No matter how much I improve it it's stil far from perfect.
+	- Implemented features that was implemented on 1.x but missing on 2
+	- Improved stability and security.
+	- Broken parts fixed.
+- Fixed the issue that wrecked SSL connections' usability.
+- Updated directory indexes
+	- CSS styles are not hardcoded anymore, now it uses the "di.css" file inside resources path.
+	- Now content is centered. (with default provided .css file)
+	- Replaced shady CSS tricks with actual HTML table, which was the way god intended.
+	- Added dark/light mode color scheme (with defaut provided .css file)
+	- Now is compatible with much more browsers.
+- Added deflate encoding support with zlib.
+- Conditional requests partially implemented.
+- Fixed broken English Localization
+- Better range requests support, now reading first/last n byte is supported and now media can be streamed ON HTTP/1.1 ONLY FOR SOME GODDAMN REASON.
+- Some other additions that I forgot
+- General improvements.
+- Now git repo is located on https://github.com/AlyssaSoftware
+- Happy new year.
+
 ## 2.3.2 - 10.11.2023
 - More completed locale support.
 - Made changes to new header parsing code for making it more flexible and slightly simpler.

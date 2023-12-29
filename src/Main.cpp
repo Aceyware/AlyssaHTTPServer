@@ -330,7 +330,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			if (_SocketArray[i].revents == POLLRDNORM) {
 #ifdef Compile_WolfSSL
 				if (_SockType[i] & 1) {// SSL Port
-					_Surrogate sr;
+					_Surrogate* sr = new _Surrogate;
 					char host[NI_MAXHOST] = { 0 }; // Client's IP address
 					if (_SockType[i] & 2) {// IPv6 socket
 						sockaddr_in6 client;
@@ -339,7 +339,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						sr->sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 					}
 					else {// IPv4 socket
@@ -349,32 +349,33 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif						
-						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						sr->sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 					}
-					sr.clhostname = host;
+					sr->clhostname = host;
 					WOLFSSL* ssl;
 					if ((ssl = wolfSSL_new(ctx)) == NULL) {
 						std::terminate();
 					}
-					wolfSSL_set_fd(ssl, sr.sock);
+					wolfSSL_set_fd(ssl, sr->sock);
 					if (EnableH2) {
 						wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
 					}
 					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
 						wolfSSL_free(ssl);
-						closesocket(sr.sock);
+						closesocket(sr->sock);
 					}
 
 					else {
-						sr.ssl = ssl;
+						sr->ssl = ssl;
 #ifdef Compile_H2
 						if (EnableH2)
-							wolfSSL_ALPN_GetProtocol(ssl, &sr.ALPN,
-								&sr.ALPNSize);
+							wolfSSL_ALPN_GetProtocol(ssl, &sr->ALPN,
+								&sr->ALPNSize);
 						else
-							sr.ALPN = h1;
-						if (!strcmp(sr.ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
+							sr->ALPN = h1;
+						if (sr->ALPN == NULL) sr->ALPN = h1;
+						if (!strcmp(sr->ALPN, "h2")) { std::thread t = std::thread(AlyssaHTTP2::ClientConnection, sr); t.detach(); }
 						else { std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach(); }
 #else
 						std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
@@ -384,7 +385,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				}
 				else {
 #endif
-					_Surrogate sr;
+					_Surrogate* sr = new _Surrogate;
 					char host[NI_MAXHOST] = { 0 }; // Client's IP address
 					if (_SockType[i] & 2) {// IPv6 socket
 						sockaddr_in6 client;
@@ -393,7 +394,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						sr->sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						inet_ntop(AF_INET6, &client.sin6_addr, host, NI_MAXHOST);
 				}
 					else {// IPv4 socket
@@ -403,10 +404,10 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 #else
 						int clientSize = sizeof(client);
 #endif
-						sr.sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
+						sr->sock = accept(_SocketArray[i].fd, (sockaddr*)&client, &clientSize);
 						inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
 					}
-					sr.clhostname = host;
+					sr->clhostname = host;
 					std::thread t = std::thread(AlyssaHTTP::clientConnection, sr); t.detach();
 					break;
 #ifdef Compile_WolfSSL

@@ -47,15 +47,12 @@
 	#pragma comment (lib, "ws2_32.lib")
 	#include <io.h>
 #endif
-using std::string;
 
 #ifdef Compile_WolfSSL
 	#ifndef _WIN32
 		#include <wolfssl/options.h>
 	#else
 		// Add your WolfSSL library and include files directory from Visual Studio project settings.
-		#define WOLFSSL_USER_SETTINGS
-		#define CYASSL_USER_SETTINGS
 		#pragma comment (lib, "wolfssl.lib")
 		// You also need to copy WolfSSL's user_settings.h header to src directory.
 		#include "user_settings.h"
@@ -65,6 +62,11 @@ using std::string;
 
 #ifndef Compile_WolfSSL
 	typedef struct WOLFSSL {};
+#endif
+
+#ifdef Compile_zlib
+	#include <zlib.h>
+	#pragma comment(lib, "zlib.lib")
 #endif
 
 // Definitions for non-Windows platforms
@@ -82,26 +84,40 @@ using std::string;
 	#define strdup _strdup
 #endif
 
+using std::string;
+
+//#ifdef Compile_H2// This has to be here currently.
+//struct DynElement {
+//	uint8_t Type = 0; char Data[16] = { NULL };
+//};
+//#endif
+
 // Definition/declaration of functions and classes
 struct _Surrogate {//Surrogator struct that holds essentials for connection which is filled when there is a new connection.
 	SOCKET sock = INVALID_SOCKET;
 	string clhostname = ""; // IP of client
 	WOLFSSL* ssl = NULL;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 	char* ALPN = NULL; unsigned short ALPNSize = 0; 
 	string host = ""; // Authority header. "host" on surrogator is only used on HTTP/2 connections as it is only sent once by client.
+	std::mutex lk;
+	//std::deque<DynElement> DynTable;
 #endif
 };
 struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.
 	int16_t StatusCode;
 	size_t ContentLength = 0;
-	string MimeType;
+	string MimeType,
+		AddParamStr,// Additional parameter string. Has a use on cases like 302.
+		LastModified;// Last modify date of file.
 	bool HasRange = 0, hasAuth = 0;
-	string AddParamStr;// Additional parameter string. Has a use on cases like 302.
 	std::deque<string> CustomHeaders;// Additional custom headers
 	uint32_t _Crc = 0;// File CRC that will used for ETag.
 #ifdef Compile_H2
 	bool EndStream = 1; // End stream in case of non-200 headers are sent.
+#endif
+#ifdef Compile_zlib
+	bool hasEncoding = 0;
 #endif
 };
 struct clientInfo {//This structure has the information from client request.
@@ -111,17 +127,21 @@ struct clientInfo {//This structure has the information from client request.
 		payload = "",//HTTP POST/PUT Payload
 		qStr = "",//URL Query string.
 		LastLine = "", // Last incomplete header line.
-		Origin = "";
-	bool close = 0; // Connection: close parameter
+		Origin = "",
+		DateCondition = ""; // Used for "If-Range" Date checking.
+	bool close = 0, // Connection: close parameter
+		hasEncoding = 0;
 	char flags = 0;
 	size_t rstart = 0, rend = 0; // Range request integers.
 	_Surrogate* Sr=NULL;
 	int8_t RequestTypeInt = 0; short VHostNum = 0; 
+	unsigned int CrcCondition = 0; // Used for "If-Not-Match" and "If-Range" ETag Checking.
 	unsigned short ContentLength = 0; // Length of HTTP POST/PUT payload to be received from client.
 	void clear() {
 		RequestPath = "", _RequestPath = "", version = "", host = "",
-			cookies = "", auth = "", payload = "", qStr = "", LastLine = "", Origin = "";
-			rstart = 0, rend = 0, VHostNum = 0, flags = 0, ContentLength = 0;
+			cookies = "", auth = "", payload = "", qStr = "", LastLine = "",
+			Origin = "", DateCondition = "";
+		rstart = 0, rend = 0, VHostNum = 0, flags = 0, ContentLength = 0, CrcCondition = 0, hasEncoding = 0;
 	}
 	std::filesystem::path _RequestPath;
 #ifdef AlyssaTesting
@@ -158,9 +178,9 @@ class Config {
 class AlyssaHTTP {
 	public:
 		static void ServerHeaders(HeaderParameters* h, clientInfo* c);
-		static void ServerHeadersM(clientInfo* c, unsigned short statusCode);
+		static void ServerHeadersM(clientInfo* c, unsigned short statusCode, const string& param = "");
 		static int8_t parseHeader(clientInfo* cl, char* buf, int sz);
-		static void clientConnection(_Surrogate sr);
+		static void clientConnection(_Surrogate* sr);
 #ifndef AlyssaTesting
 	private:
 #endif
@@ -188,7 +208,7 @@ class DirectoryIndex {
 #ifndef AlyssaTesting
 	private:
 #endif
-		static std::deque<IndexEntry> GetDirectory(std::filesystem::path p);
+		static std::deque<IndexEntry> GetDirectory(std::filesystem::path& p);
 };
 #endif
 
@@ -211,10 +231,12 @@ void ConsoleMsg(int8_t MsgType, int UnitStr, int MsgStr);
 void ConsoleMsgM(int8_t MsgType, const char* UnitName);
 void ConsoleMsgM(int8_t MsgType, int UnitStr);
 void ConsoleMsgLiteral(int MsgStr);
-uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning);
+uint32_t FileCRC(FILE* f, size_t s, char* buf, uint16_t bufsz);
 std::string ErrorPage(unsigned short ErrorCode);
 char ParseCL(int argc, char** argv);
 unsigned char hexconv(char* _Arr);
+template <typename TP> std::time_t to_time_t(TP tp);
+std::string LastModify(std::filesystem::path& p);
 #ifdef Compile_CGI
 	bool CGIEnvInit();
 	void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h);
@@ -273,7 +295,10 @@ extern std::deque<std::string> ACAOList; extern bool corsEnabled;
 	extern std::string execpath;
 	extern bool debugFeaturesEnabled;
 #endif
-	extern unsigned short Locale;
+#ifdef Compile_zlib
+	extern bool deflateEnabled;
+#endif
+	extern unsigned char Locale;
 
 // Definition of constant values
 static char separator = 1;
@@ -282,7 +307,7 @@ static char h1[] = "a"; //Constant char array used as a placeholder when APLN is
 static int off = 0;
 static int on = 1;
 static string GPLDisclaimer=
-	"Copyright (C) 2024 PEPSIMANTR\n"
+	"Copyright (C) 2024 PEPSIMANTR, Alyssa Software\n"
 	"This program is free software: you can redistribute it and/or modify "
 	"it under the terms of the GNU General Public License as published by "
 	"the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\n"
@@ -305,7 +330,7 @@ static string HelpString=
 		"-sslport [int] : Overrides the SSL port on config, comma-separated list for multiple ports\n"
 #endif
 		"\n"
-		"Full server documentation is available on: \n \"https://github.com/PEPSIMANTR/AlyssaHTTPServer/blob/master/docs/Home.md\"\n"
+		"Full server documentation is available on: \n \"https://github.com/AlyssaSoftware/AlyssaHTTPServer/blob/master/docs/Home.md\"\n"
 	;
 static const char* extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "bin", "bmp", "bz", "bz2", "cda", "csh", "css", "csv", "doc", "docx", "eot", "epub", "gz", "gif", "htm", "html", "ico", "ics", "jar", "jpeg", "jpg", "js", "json", "jsonld", "mid", "midi", "mjs", "mp3", "mp4", "mpeg", "mpkg", "odp", "ods", "odt", "oga", "ogv", "ogx", "opus", "otf", "png", "pdf", "php", "ppt", "pptx", "rar", "rtf", "sh", "svg", "tar", "tif", "tiff", "ts", "ttf", "txt", "vsd", "wav", "weba", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xml", "xul", "zip", "3gp", "3g2", "7z" };
 
@@ -330,9 +355,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.3.2d";
+	static std::string version = "2.4d";
 #else
-	static std::string version = "2.3.2";
+	static std::string version = "2.4";
 #endif
 #endif
 #ifdef _WIN32

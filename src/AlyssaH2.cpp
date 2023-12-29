@@ -1,6 +1,9 @@
-// AlyssaH2.cpp - a part of Alyssa HTTP Server
-// These code are responsible from HTTP/2 protocol implementation.
-// GPLv3 licensed.
+//
+// THIS CODE IS NOT STABLE 
+// POLICE - DO NOT CROSS - POLICE - DO NOT CROSS
+// THIS CODE IS NOT STABLE 
+// POLICE - DO NOT CROSS - POLICE - DO NOT CROSS
+//
 
 #ifndef AlyssaHeader
 #include "Alyssa.h"
@@ -9,86 +12,57 @@
 #ifdef Compile_H2
 
 #include "AlyssaHuffman.h"
-#include "AlyssaH2.h"
 
 std::string PredefinedHeadersH2; short int PredefinedHeadersH2Size = 0;
 
-void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive_mutex& SockMtx) {
+void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s) {
 	// RFC 7541 will be a guide for you to understand what those all does.
 	if (!s->StrIdent) return;
-	char buf[4096] = { 0 }; uint16_t pos = 9; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+	char buf[4096] = { 0 }; uint16_t pos = 9;
 	buf[3] = H2THEADERS;
 	buf[4] = H2FENDHEADERS;
 	buf[5] = s->StrIdent >> 24; buf[6] = s->StrIdent >> 16; buf[7] = s->StrIdent >> 8; buf[8] = s->StrIdent >> 0;
 	switch (p->StatusCode) {//Add "status" header.
-	case 200:
-		buf[pos] = 128 | 8; pos++; break;
-	case 204:
-		buf[pos] = 128 | 9;
-		buf[pos + 1] = 64 | 22;//Literal indexed 22: allow
-#ifdef Compile_CustomActions
-		buf[pos + 2] = 25;
-		memcpy(&buf[pos + 2], "GET,HEAD,POST,PUT,OPTIONS", 25); pos += 28;
-#else
-		buf[pos + 2] = 25;
-		memcpy(&buf[pos + 2], "GET,HEAD,OPTIONS", 16); pos += 19;
-#endif
-		break;
-	case 206:
-		buf[pos] = 128 | 10; buf[pos + 1] = 64 | 30; pos += 2;
-		sprintf(&buf[pos+1], "%lld-", s->cl.rstart);
-		if (s->cl.rstart) {
-			while (s->cl.rstart) {// Increase the corresponding byte for length.
-				buf[pos]++; s->cl.rstart /= 10;
-			}
-		}
-		else {
-			buf[pos]++;
-		}
-		buf[pos]++;
-		if (s->cl.rend) {
-			sprintf(&buf[pos + buf[pos] + 1 ], "%lld/", s->cl.rend);
-			while (s->cl.rend) {
-				buf[pos]++; s->cl.rend /= 10;
-			}
-		}
-		else {
-			buf[pos + buf[pos] + 1] = '*'; buf[pos]++;
-		}
-		buf[pos]++;
-		sprintf(&buf[pos + buf[pos] + 1], "%lld", p->ContentLength);
-		while (p->ContentLength) {// Increase the corresponding byte for length.
-			buf[pos]++; p->ContentLength /= 10;
-		} pos += buf[pos] + 1;
-		break;
-	case 304:
-		buf[pos] = 128 | 11; pos++; break;
-	case 400:
-		buf[pos] = 128 | 12; pos++; break;
-	case 404:
-		buf[pos] = 128 | 13; pos++; break;
-	case 500:
-		buf[pos] = 128 | 14; pos++; break;
-	default:
-		buf[pos] = 64 | 8; pos++;
-		buf[pos] = 3; //Value length
-		sprintf(&buf[pos + 1], "%ld", p->StatusCode); pos += 4;
-		switch (p->StatusCode) {
-		case 302://302 Found, redirection.
-			buf[pos] = 64 | 46;// Literal indexed 46: location
-			buf[pos + 1] = p->AddParamStr.size(); pos += 2;// Additional parameter string here is used for location value.
-			strcpy(&buf[pos], p->AddParamStr.c_str()); pos += buf[pos - 1];
+		case 200: buf[pos] = 128 | 8; pos++; break;
+		case 204:
+			buf[pos] = 128 | 9;
+			buf[pos + 1] = 64 | 22;//Literal indexed 22: allow
+	#ifdef Compile_CustomActions
+			buf[pos + 2] = 25;
+			memcpy(&buf[pos + 2], "GET,HEAD,POST,PUT,OPTIONS", 25); pos += 28;
+	#else
+			buf[pos + 2] = 25;
+			memcpy(&buf[pos + 2], "GET,HEAD,OPTIONS", 16); pos += 19;
+	#endif
 			break;
+		case 206:
+			buf[pos] = 128 | 10; buf[pos + 1] = 64 | 30; pos += 2;
+			buf[pos] = sprintf(&buf[pos + 1], "%lld-%lld/%lld", s->cl.rstart, s->cl.rend, p->ContentLength);
+			pos += buf[pos] + 1; break;
+		case 304: buf[pos] = 128 | 11; pos++; break;
+		case 400: buf[pos] = 128 | 12; pos++; break;
+		case 404: buf[pos] = 128 | 13; pos++; break;
+		case 500: buf[pos] = 128 | 14; pos++; break;
 		default:
+			buf[pos] = 64 | 8; pos++;
+			buf[pos] = 3; //Value length
+			sprintf(&buf[pos + 1], "%ld", p->StatusCode); pos += 4;
+			switch (p->StatusCode) {
+				case 302://302 Found, redirection.
+					buf[pos] = 64 | 46;// Literal indexed 46: location
+					buf[pos + 1] = p->AddParamStr.size(); pos += 2;// Additional parameter string here is used for location value.
+					strcpy(&buf[pos], p->AddParamStr.data()); pos += buf[pos - 1];
+					break;
+				default:
+					break;
+			}
 			break;
-		}
-		break;
 	}
 	if (p->StatusCode > 300 && p->EndStream) {
 		buf[4] |= H2FENDSTREAM; s->StrOpen = 0;
 	}
 	// Content-length
-	if (p->StatusCode != 206) {
+	if (p->StatusCode == 206) p->ContentLength = s->cl.rend - s->cl.rstart + 1;
 		buf[pos] = 64 | 28; pos++;//Left a byte for value length
 		sprintf(&buf[pos + 1], "%lld", p->ContentLength);
 		if (!p->ContentLength)// If length is 0, below code won't work, we handle is specially here.
@@ -99,7 +73,7 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 			}
 		}
 		pos += buf[pos] + 1;
-	};
+		
 	// Accept-ranges
 	if (p->HasRange) {
 		buf[pos] = 64 | 18; pos++;//Literal indexed 18: accept-ranges
@@ -146,16 +120,96 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive
 		buf[pos] = temp.size()-1;
 		strcpy(&buf[pos + 1], temp.c_str()); pos += buf[pos] + 1;
 	}
+	// Last-Modified
+	if (p->LastModified != "") {
+		buf[pos] = 64 | 44; //Literal indexed 44: last-modified
+		buf[pos + 1] = 29; pos += 2; //Size: 29. Same as "Date", it always has this size.
+		memcpy(&buf[pos], p->LastModified.data(), 29); pos += 29;
+	}
+	// CORS
+	if (corsEnabled) {
+		if (s->cl.Origin != "") {
+			for (unsigned char i = 0; i < ACAOList.size(); i++) {
+				if (ACAOList[i] == s->cl.Origin) {
+					buf[pos] = 64 | 20; //Literal indexed 20: access-control-allow-origin
+					buf[pos + 1] = ACAOList[i].size(); // Size
+					memcpy(&buf[pos + 2], ACAOList[i].data(), buf[pos + 1]);
+					pos += buf[pos + 1] + 2; break;
+				}
+			}
+		}
+	}
+	// Encoding
+#ifdef Compile_zlib
+	if (p->hasEncoding) {
+		buf[pos] = 64 | 26; //Literal indexed 26: content-encoding
+		buf[pos + 1] = 7;   //sizeof "deflate"
+		memcpy(&buf[pos + 2], "deflate", 7); pos += 9;
+		buf[pos] = 64 | 26; //Literal indexed 59: vary
+		buf[pos + 1] = 16;   //sizeof "content-encoding"
+		memcpy(&buf[pos + 2], "content-encoding", 16); pos += 18;
+		// There's obviously NO transfer-encoding on HTTP/2!!!
+	}
+#endif
 	// Add the predefined headers
-	memcpy(&buf[pos], PredefinedHeadersH2.c_str(), PredefinedHeadersH2Size); pos += PredefinedHeadersH2Size;
+	memcpy(&buf[pos], PredefinedHeadersH2.data(), PredefinedHeadersH2Size); pos += PredefinedHeadersH2Size;
 	// Set the size of the frame
 	buf[1] = pos - 9 << 8; buf[2] = pos - 9 << 0;
 	// Send the frame to the client.
-	SockMtx.lock();
-	wolfSSL_send(s->cl.Sr->ssl, buf, pos, 0);
-	SockMtx.unlock();
+	s->cl.Sr->lk.lock();
+	wolfSSL_send(s->cl.Sr->ssl, buf, pos, MSG_PARTIAL);
+	s->cl.Sr->lk.unlock();
 	return;
 }
+
+void AlyssaHTTP2::ServerHeadersM(H2Stream* s, uint16_t statusCode, bool endStream, 
+								const std::string& param) {
+	if (!s->StrIdent) return;
+	char buf[4096] = { 0 }; uint16_t pos = 9;
+	buf[3] = H2THEADERS;
+	buf[4] = H2FENDHEADERS;
+	buf[5] = s->StrIdent >> 24; buf[6] = s->StrIdent >> 16; buf[7] = s->StrIdent >> 8; buf[8] = s->StrIdent >> 0;
+	switch (statusCode) {//Add "status" header.
+		case 200: buf[pos] = 128 | 8; pos++; break;
+		case 204:
+			buf[pos] = 128 | 9;
+			buf[pos + 1] = 64 | 22;//Literal indexed 22: allow
+	#ifdef Compile_CustomActions
+			buf[pos + 2] = 25;
+			memcpy(&buf[pos + 2], "GET,HEAD,POST,PUT,OPTIONS", 25); pos += 28;
+	#else
+			buf[pos + 2] = 25;
+			memcpy(&buf[pos + 2], "GET,HEAD,OPTIONS", 16); pos += 19;
+	#endif
+			break;
+		case 304: buf[pos] = 128 | 11; pos++; break;
+		case 400: buf[pos] = 128 | 12; pos++; break;
+		case 404: buf[pos] = 128 | 13; pos++; break;
+		case 500: buf[pos] = 128 | 14; pos++; break;
+		default:
+			buf[pos] = 64 | 8; pos++;
+			buf[pos] = 3; //Value length
+			sprintf(&buf[pos + 1], "%ld", statusCode); pos += 4;
+			switch (statusCode) {
+				case 302://302 Found, redirection.
+					buf[pos] = 64 | 46;// Literal indexed 46: location
+					buf[pos + 1] = param.size(); pos += 2;// Additional parameter string here is used for location value.
+					strcpy(&buf[pos], param.data()); pos += buf[pos - 1];
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+	if (statusCode > 300 && endStream) {
+		buf[4] |= H2FENDSTREAM; s->StrOpen = 0;
+	}
+	// Date
+	buf[pos] = 64 | 33;//Lit. indexed 33: date
+	buf[pos + 1] = 29; pos += 2;//Size: 29. Date header always has this size.
+	memcpy(&buf[pos], &currentTime()[0], 29); pos += 29;
+}
+
 
 string AlyssaHTTP2::DecodeHuffman(char* huffstr, int16_t sz) {// How the fuck is this even working?
 	std::bitset<32> Bits; std::bitset<8> Octet; unsigned char pos = 0, pos2 = 7; unsigned int x = 0, i = 0; string out; out.reserve(255);
@@ -227,7 +281,7 @@ string AlyssaHTTP2::DecodeHuffman(char* huffstr, int16_t sz) {// How the fuck is
 	return out;
 }
 
-void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mutex& SockMtx){//You're entering to the boss level. Good Luck! RFC 7541 may be your guide.
+void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz){//You're entering to the boss level. Good Luck! RFC 7541 may be your guide.
 #define isHuffman 128
 #define isIndexed 128
 #define isLitIndexed 64
@@ -236,31 +290,56 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 	unsigned char _Byte = 0; std::lock_guard lock(s->StrMtx);
 	for (int i = 0; i < sz;) {
 		_Byte = buf[i];
-		if (_Byte & isIndexed) {
-			_Byte ^= isIndexed;
-			switch (_Byte) {//Refer to Appendix A of RFC 7541
-			case 2://:method: GET
-				s->cl.RequestTypeInt = 1; break;
-			case 3://:method: POST
-				s->cl.RequestTypeInt = 2; break;
-			case 4://:path: /
-				s->cl.RequestPath = "/"; break;
-			case 5://:path: /index.html
-				s->cl.RequestPath = "/index.html"; break;
-			default:
-				break;
+		if (_Byte & isIndexed) { // Static literal indexed.
+			_Byte ^= isIndexed; i++;
+			if (_Byte > 61) {// Custom indexes that client added, currently not used.
+				/*if (_Byte - 61 >= s->cl.Sr->DynTable.size()) continue;
+				DynElement* el = &s->cl.Sr->DynTable[_Byte - 61];
+				switch (el->Type) {
+				case 2:
+					s->cl.RequestTypeInt = (int8_t)el->Data; break;
+				case 16:
+					s->cl.hasEncoding = 1; break;
+				case 50:
+					memcpy(&s->cl.rstart, el->Data, 8);  memcpy(&s->cl.rstart, el->Data + 8, 8); break;
+				default:
+					break;
+				}*/
 			}
-			i++;
+			else {
+				switch (_Byte) {//Refer to Appendix A of RFC 7541
+					case 2:  s->cl.RequestTypeInt = 1; break; //:method: GET
+					case 3:  s->cl.RequestTypeInt = 2; break; //:method: POST
+					case 4:  s->cl.RequestPath = "/"; break;  //:path: '/'
+					case 5:  s->cl.RequestPath = "/index.html"; break; //:path: /index.html
+	#ifdef Compile_zlib
+					case 16: if (deflateEnabled)s->cl.hasEncoding = 1; break; // accept-encoding: deflate, gzip
+	#endif
+					default:
+						break;
+				}
+			}	
 		}
-		else if (_Byte ^ isTableSzUpd) {
+		else { // Literal indexed.
 			bool Add2DynTabl = 0;
 			if (_Byte & isLitIndexed) {
 				Add2DynTabl = 1; _Byte ^= isLitIndexed;
 			}
-			else if (_Byte & isNeverIndexed)
-				_Byte ^= isNeverIndexed;
+			else  {
+				if (_Byte & isTableSzUpd) {// Table size update, currently not used as well.
+					i++; continue;
+				}
+				if (_Byte & isNeverIndexed) _Byte ^= isNeverIndexed;
+			}
+			
 			if (_Byte) {
 				uint8_t _Index = _Byte;
+				if (_Index == 63) {// Values > 63 is in dynamic table section and next byte is also part of index.
+					_Index += buf[i + 1]; i++;
+				}
+				else if (!Add2DynTabl && _Index == 15) {
+					_Index += buf[i + 1]; i++;
+				}
 				_Byte = buf[i + 1]; i += 2;
 				uint8_t _Size; string Value;
 				if (_Byte & isHuffman) {
@@ -273,37 +352,90 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 					memcpy(&Value[0], &buf[i], _Size);
 				}
 				i += _Size;
-				switch (_Index) {//Refer to Appendix A of RFC 7541
-				case 1://:authority
-					s->cl.Sr->host = Value; break;
-				case 2://:method
-					if(Value=="GET")
-						s->cl.RequestTypeInt = 1;
-					else if(Value=="POST")
-						s->cl.RequestTypeInt = 2; 
-					else if(Value=="PUT")
-						s->cl.RequestTypeInt = 3; 
-					else if(Value=="OPTIONS")
-						s->cl.RequestTypeInt = 4; 
-					else if(Value=="HEAD")
-						s->cl.RequestTypeInt = 5; 
-					break;
-				case 4://:path
-					s->cl.RequestPath = "." + Value; break;
-				case 23://authorization
-					s->cl.auth = Substring(&Value[0], 0, 6); 
-					s->cl.auth = base64_decode(s->cl.auth);
-					break;
-				case 50://range
-				{
-					int pos = Value.find("-");
-					if (pos < 0) {}
-					s->cl.rstart = std::stoi(Substring(&Value[6], pos-6)); 
-					s->cl.rend = std::stoi(Substring(&Value[pos+1], 0));
+				if(_Index < 64) {
+					switch (_Index) {//Refer to Appendix A of RFC 7541
+						case 1://:authority
+							s->cl.Sr->host = Value; 
+							//if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front(DynElement{ 1 });
+							break;
+						case 2://:method
+							if (Value == "GET")
+								s->cl.RequestTypeInt = 1;
+							else if (Value == "POST")
+								s->cl.RequestTypeInt = 2;
+							else if (Value == "PUT")
+								s->cl.RequestTypeInt = 3;
+							else if (Value == "OPTIONS")
+								s->cl.RequestTypeInt = 4;
+							else if (Value == "HEAD")
+								s->cl.RequestTypeInt = 5;
+							break;
+							//if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front(DynElement{ 50, s->cl.RequestTypeInt });
+						case 4://:path
+							if (__AlyssaH2ParsePath(s, Value)) return; break;
+#ifdef Compile_zlib
+						case 16://accept-encoding
+							if (deflateEnabled)s->cl.hasEncoding = 1; 
+							//if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front(DynElement{ 16 });
+							break;
+#endif
+						case 23://authorization
+							s->cl.auth = Substring(&Value[0], 0, 6);
+							s->cl.auth = base64_decode(s->cl.auth);
+							break;
+						case 50://range
+						{
+							int pos = 6;
+							if (strncmp(&Value[0], "bytes=", 6)) { s->cl.RequestTypeInt = -1; s->cl.flags |= 2; continue; }
+							if (Value[pos] != '-') {
+								try {
+									s->cl.rstart = std::atoll(&Value[pos]);
+								}
+								catch (const std::invalid_argument&) {
+									s->cl.RequestTypeInt = -1; s->cl.flags |= 2;
+								}
+								while (Value[pos] >= 48) pos++;
+							}
+							else { // No beginning value, read last n bytes.
+								s->cl.rstart = -1;
+							}
+							pos++;
+							if (Value[pos] > 32) {
+								try {
+									s->cl.rend = std::atoll(&Value[pos]);
+								}
+								catch (const std::invalid_argument&) {
+									s->cl.RequestTypeInt = -1; s->cl.flags |= 2;
+								}
+							}
+							else { // No end value, read till the end.
+								s->cl.rend = -1;
+							}
+						}
+						/*if (Add2DynTabl) {
+							s->cl.Sr->DynTable.emplace_front(DynElement{ 50 });
+							DynElement* el = &s->cl.Sr->DynTable[s->cl.Sr->DynTable.size() - 1];
+							memcpy(el->Data , &s->cl.rstart, 8); memcpy(el->Data + 8, &s->cl.rend, 8);
+						}*/
+							break;
+						default: 
+							//if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front();
+							break;
+					}
 				}
-				break;
-				default:
-					break;
+				else {// Custom indexes that client added
+					//if (_Index - 61 >= s->cl.Sr->DynTable.size()) continue;
+					//DynElement* el = &s->cl.Sr->DynTable[_Index - 61];
+					//switch (el->Type) {
+					//	case 2:
+					//		s->cl.RequestTypeInt = (int8_t)el->Data; break;
+					//	case 16:
+					//		s->cl.hasEncoding = 1; break;
+					//	case 50:
+					//		memcpy(&s->cl.rstart, el->Data, 8);  memcpy(&s->cl.rstart, el->Data + 8, 8); break;
+					//	default:
+					//		break;
+					//}
 				}
 			}
 			else {
@@ -330,8 +462,9 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 					memcpy(&Value[0], &buf[i], _Size); 
 				}
 				i += _Size;
-				if(Name==":authority")
-					s->cl.host = Value;
+				if (Name == ":authority") {
+					s->cl.host = Value;/* if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front(DynElement{ 1 });*/
+				}
 				else if (Name == ":method") {
 					if (Value == "GET")
 						s->cl.RequestTypeInt = 1;
@@ -345,39 +478,15 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz, std::recursive_mut
 						s->cl.RequestTypeInt = 5;
 				}
 				else if (Name == ":path") {
-					s->cl.RequestPath = Value; 
-					string temp; uint8_t pos=-1;
-					for (size_t i = 0; i < s->cl.RequestPath.size(); i++) {
-						if (s->cl.RequestPath[i] == '%') {
-							try { temp += (char)std::stoi(Substring(&s->cl.RequestPath[0], 2, i + 1), NULL, 16); i += 2; }
-							catch (const std::invalid_argument&) {//Workaround for Chromium breaking web by NOT encoding '%' character itself. This workaround is also error prone but nothing better can be done for that.
-								temp += '%';
-							}
-						}
-						else if (s->cl.RequestPath[i] == '.') {
-							temp += '.'; i++;
-							if (s->cl.RequestPath[i] == '/') { temp += '/'; }//Current directory, no need to do anything
-							else if (s->cl.RequestPath[i] == '.') {//May be parent directory...
-								temp += '.'; i++;
-								if (s->cl.RequestPath[i] == '/') {//It is the parent directory.
-									pos--;
-									if (pos < 0) { HeaderParameters p; p.StatusCode = 400; ServerHeaders(&p, s, SockMtx); return; }
-								}
-								temp += s->cl.RequestPath[i];
-							}
-							else temp += s->cl.RequestPath[i];
-						}
-						else if (s->cl.RequestPath[i] == '/') { pos++; temp += '/'; }
-						else temp += s->cl.RequestPath[i];
-					} s->cl.RequestPath = '.' + temp;
+					if (__AlyssaH2ParsePath(s, Value)) return;
 				}
+				//if (Add2DynTabl) s->cl.Sr->DynTable.emplace_front();
 			}
 		}
 	}
 }
 
-void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz, std::recursive_mutex& SockMtx) {
-	std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz) {
 	char FrameHeader[9] = { 0 };
 	FrameHeader[5] = s->StrIdent >> 24; FrameHeader[6] = s->StrIdent >> 16; FrameHeader[7] = s->StrIdent >> 8; FrameHeader[8] = s->StrIdent >> 0;
 	FrameHeader[0] = (16384 >> 16) & 0xFF;
@@ -385,10 +494,10 @@ void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz, std::recursive
 	FrameHeader[2] = (16384 >> 0) & 0xFF;
 	while (s->StrAtom) {
 		if (sz > 16384) {
-			SockMtx.lock();
+			s->cl.Sr->lk.lock();
 			wolfSSL_send(s->cl.Sr->ssl, FrameHeader, 9, 0);
 			wolfSSL_send(s->cl.Sr->ssl, d, 16384, 0);
-			SockMtx.unlock();
+			s->cl.Sr->lk.unlock();
 			d = static_cast<const char*>(d) + 16384; sz -= 16384;
 		}
 		else {
@@ -396,18 +505,18 @@ void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz, std::recursive
 			FrameHeader[1] = (sz >> 8) & 0xFF;
 			FrameHeader[2] = (sz >> 0) & 0xFF;
 			FrameHeader[4] = H2FENDSTREAM;
-			SockMtx.lock();
+			s->cl.Sr->lk.lock();
 			wolfSSL_send(s->cl.Sr->ssl, FrameHeader, 9, 0);
 			wolfSSL_send(s->cl.Sr->ssl, d, sz, 0); 
-			SockMtx.unlock(); 
+			s->cl.Sr->lk.unlock(); 
 			return;
 		}
 	}
 	return;
 }
 
-void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty similar to its HTTP/1.1 counterpart.
-	HeaderParameters h; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
+void AlyssaHTTP2::Get(H2Stream* s) {// Pretty similar to its HTTP/1.1 counterpart.
+	HeaderParameters h;
 	if (logging) {
 		Logging(&s->cl);
 	}
@@ -418,27 +527,21 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 #ifdef Compile_CustomActions
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl,s)) {
-			case 0:
-				return;
-			case -1:
-				h.StatusCode = 500; ServerHeaders(&h, s, SockMtx); return;
-			case -3:
-				//shutdown(s->cl.Sr->sock, 2); closesocket(s->cl.Sr->sock); 
-			return;
-			default:
-				break;
+			case 0:  return;
+			case -1: h.StatusCode = 500; ServerHeaders(&h, s); return;
+			case -3: return;
+			default: break;
 		}
 	}
 #endif
 
-	FILE* file = NULL; size_t filesize = 0; 
 	if (std::filesystem::is_directory(s->cl._RequestPath)) {
 		if (std::filesystem::exists(s->cl._RequestPath.u8string() + "/index.html")) { s->cl.RequestPath += "/index.html"; s->cl._RequestPath+="/index.html"; }
 		else if (foldermode) {
 			string asd = DirectoryIndex::DirMain(s->cl._RequestPath,s->cl.RequestPath); 
-			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s, SockMtx);
+			h.StatusCode = 200; h.ContentLength = asd.size(); h.MimeType = "text/html"; ServerHeaders(&h, s);
 			if (s->cl.RequestTypeInt != 5)
-				SendData(s, &asd[0], asd.size(), SockMtx);
+				SendData(s, &asd[0], asd.size());
 			return;
 		}
 		else {
@@ -446,84 +549,153 @@ void AlyssaHTTP2::Get(H2Stream* s, std::recursive_mutex& SockMtx) {// Pretty sim
 			if (errorpages) {
 				std::string ep = ErrorPage(404); h.ContentLength = ep.size();
 				if (ep != "") {
-					h.EndStream = 0; ServerHeaders(&h, s, SockMtx);
-					SendData(s, ep.c_str(), ep.size(), SockMtx);
+					h.EndStream = 0; ServerHeaders(&h, s);
+					SendData(s, ep.c_str(), ep.size());
 				}
 				else
-					ServerHeaders(&h, s, SockMtx);
+					ServerHeaders(&h, s);
 			}
 			else
-				ServerHeaders(&h, s, SockMtx); 
+				ServerHeaders(&h, s); 
 			return;
 		}
 	}
 
+	FILE* file = NULL; size_t filesize = 0;
 #ifndef _WIN32
 	file = fopen(&s->cl._RequestPath.u8string()[0], "rb");
 #else //WinAPI accepts ANSI for standard fopen, unlike some *nix systems which accepts UTF-8 instead. Because of that we need to convert path to wide string first and then use wide version of fopen (_wfopen)
 	std::wstring RequestPathW;
 	RequestPathW.resize(s->cl._RequestPath.u8string().size());
-	MultiByteToWideChar(CP_UTF8, 0, &s->cl._RequestPath.u8string()[0], RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
+	MultiByteToWideChar(CP_UTF8, 0, s->cl._RequestPath.u8string().c_str(), RequestPathW.size(), &RequestPathW[0], RequestPathW.size());
 	file = _wfopen(&RequestPathW[0], L"rb");
+	string allah = s->cl._RequestPath.u8string();
+	allah = s->cl._RequestPath.string();
 #endif
 
 	if (file) {
-		filesize = std::filesystem::file_size(s->cl._RequestPath); h.ContentLength = filesize; h.MimeType = fileMime(s->cl.RequestPath);
-		if (s->cl.rstart || s->cl.rend) {
+		filesize = std::filesystem::file_size(s->cl._RequestPath); h.MimeType = fileMime(s->cl.RequestPath);
+		h.ContentLength = filesize; h.LastModified = LastModify(s->cl._RequestPath); h.HasRange = 1;
+
+		char* buf = new char[16393]; h._Crc = FileCRC(file, filesize, buf, 16393);
+
+		if (s->cl.rstart || s->cl.rend) { // Range request
+			// Check if file client requests is same as one we have.
+			if (s->cl.CrcCondition) {
+				if (s->cl.CrcCondition != h._Crc) {// Check by ETag failed.
+					h.StatusCode = 402; ServerHeaders(&h, s); return;
+				}
+			}
+			else if (s->cl.DateCondition!="") {
+				if (s->cl.DateCondition != h.LastModified) {// Check by date failed.
+					h.StatusCode = 402; ServerHeaders(&h, s); return;
+				}
+			}
+			// Check done.
 			h.StatusCode = 206;
-			fseek(file, s->cl.rstart, 0); if (s->cl.rend) filesize = s->cl.rend + 1 - s->cl.rstart;
+			if (s->cl.rend == -1) s->cl.rend = filesize - 1;
+			if (s->cl.rstart == -1) {
+				fseek(file, filesize - s->cl.rend, 0); s->cl.rstart = filesize - s->cl.rend;
+				size_t tempsize = filesize; filesize = s->cl.rend; s->cl.rend = tempsize - 1;
+			}
+			else {
+				fseek(file, s->cl.rstart, 0); filesize = s->cl.rend + 1 - s->cl.rstart;
+			}
 		}
 		else {
-			h.StatusCode = 200; h.HasRange = 1;
+NoRange:
+			if (h._Crc == s->cl.CrcCondition) {// No content.
+				h.StatusCode = 304; h.ContentLength = 0;
+				s->cl.RequestTypeInt = 5;// Setting this for making the if above true, as it does what we need (closing file and returning without sending any payload.)
+			}
+			else {
+				h.StatusCode = 200; rewind(file);
+			}
 		}
-		char* buf = new char[16393]; 
-		h._Crc = FileCRC(file, filesize, buf, s->cl.rstart);
-		memset(buf, 0, 9);
-		ServerHeaders(&h, s, SockMtx);
+#ifdef Compile_zlib
+		if (filesize < 2048) s->cl.hasEncoding = 0; // Deflating really small things will actually inflate it beyond original size, don't compress if file is smaller than 2048b
+		h.hasEncoding = s->cl.hasEncoding;
+#endif //Compile_zlib
+		memset(buf, 0, 9); ServerHeaders(&h, s);
 		if (s->cl.RequestTypeInt == 5) {// Equal of if(isHEAD)
 			fclose(file); delete[] buf; return;
 		}
-		buf[5] = s->StrIdent << 24; buf[6] = s->StrIdent << 16; buf[7] = s->StrIdent << 8; buf[8] = s->StrIdent << 0;
-		buf[0] = (16384 >> 16) & 0xFF; buf[1] = (16384 >> 8) & 0xFF; buf[2] = (16384 >> 0) & 0xFF;
-		while (s->StrAtom) {
-			if (filesize >= 16384) {
-				fread(buf + 9, 16384, 1, file); filesize -= 16384;
-				SockMtx.lock();
-				wolfSSL_send(s->cl.Sr->ssl, buf, 16393, 0);
-				SockMtx.unlock();
+#ifdef Compile_zlib
+		if (h.hasEncoding) {// Do Deflate compression if enabled and client requests for.
+			char* defbuf = new char[16393]; char temp[8] = { 0 };
+			buf[5] = s->StrIdent << 24; buf[6] = s->StrIdent << 16; buf[7] = s->StrIdent << 8; buf[8] = s->StrIdent << 0;
+			// ^^^ Allocate buffer for compression / set up compression vvv
+			z_stream strm; strm.zalloc = 0; strm.zfree = 0;
+			strm.next_out = (Bytef*)&defbuf[9]; strm.avail_out = 16384;
+			strm.next_in = (Bytef*)buf; strm.avail_in = 16384;
+			deflateInit(&strm, Z_BEST_COMPRESSION);
+			while (s->StrAtom) { // Read and compress file
+				if (filesize>16384) {
+					fread(buf, 16384, 1, file); filesize -= 16384;
+					deflate(&strm, Z_FULL_FLUSH);
+					buf[0] = (strm.total_out >> 16) & 0xFF; buf[1] = (strm.total_out >> 8) & 0xFF; buf[2] = (strm.total_out >> 0) & 0xFF;
+					wolfSSL_send(s->cl.Sr->ssl, defbuf, strm.total_out+9, 0);
+					strm.total_out = 0; strm.next_in = (Bytef*)buf; strm.avail_in = 16384; strm.next_out = (Bytef*)&defbuf[9]; strm.avail_out = 16384;
+				}
+				else {
+					fread(buf, filesize, 1, file); strm.avail_in = filesize;
+					deflate(&strm, Z_FULL_FLUSH); buf[4] = H2FENDSTREAM;
+					buf[0] = (strm.total_out >> 16) & 0xFF; buf[1] = (strm.total_out >> 8) & 0xFF; buf[2] = (strm.total_out >> 0) & 0xFF;
+					wolfSSL_send(s->cl.Sr->ssl, defbuf, strm.total_out + 9, 0);
+				}
 			}
-			else {
-				buf[0] = (filesize >> 16) & 0xFF; buf[1] = (filesize >> 8) & 0xFF; buf[2] = (filesize >> 0) & 0xFF; buf[4] = H2FENDSTREAM;
-				fread(buf + 9, filesize, 1, file);
-				SockMtx.lock();
-				wolfSSL_send(s->cl.Sr->ssl, buf, filesize + 9, 0);
-				SockMtx.unlock();
-				break;
-			}
+			delete[] defbuf; deflateEnd(&strm);
 		}
-		fclose(file); delete[] buf; return;
+		else {
+#endif
+			buf[5] = s->StrIdent >> 24; buf[6] = s->StrIdent >> 16; buf[7] = s->StrIdent >> 8; buf[8] = s->StrIdent >> 0;
+			buf[0] = (16375 >> 16) & 0xFF; buf[1] = (16375 >> 8) & 0xFF; buf[2] = (16375 >> 0) & 0xFF;
+			while (s->StrAtom) {
+				if (filesize >= 16375) {
+					fread(&buf[9], 16375, 1, file); filesize -= 16375;
+					s->cl.Sr->lk.lock();
+					Sleep(100);
+					wolfSSL_send(s->cl.Sr->ssl, buf, 16384, 0);
+					s->cl.Sr->lk.unlock();
+				}
+				else {
+					buf[0] = (filesize >> 16) & 0xFF; buf[1] = (filesize >> 8) & 0xFF; buf[2] = (filesize >> 0) & 0xFF; buf[4] = H2FENDSTREAM;
+					fread(&buf[9], filesize, 1, file);
+					s->cl.Sr->lk.lock();
+					Sleep(100);
+					wolfSSL_send(s->cl.Sr->ssl, buf, filesize + 9, 0);
+					s->cl.Sr->lk.unlock();
+					break;
+				}
+			}
+			if (s->StrAtom != 1) {//debug
+				filesize++;
+			}
+#ifdef Compile_zlib
+		}
+#endif //Compile_zlib
+		fclose(file); delete[] buf; std::cout << "Debug: Request done:" << s->StrIdent << std::endl; return;
 	}
-	else {
+	else {//File open failed.
 		h.StatusCode = 404;
 		if (errorpages) {
 			std::string ep = ErrorPage(404); h.ContentLength = ep.size();
 			if (ep != "") {
-				h.EndStream = 0; ServerHeaders(&h, s, SockMtx);
-				SendData(s, ep.c_str(), ep.size(), SockMtx);
+				h.EndStream = 0; ServerHeaders(&h, s);
+				SendData(s, ep.c_str(), ep.size());
 			}
 			else
-				ServerHeaders(&h, s, SockMtx);
+				ServerHeaders(&h, s);
 		}
 		else
-			ServerHeaders(&h, s, SockMtx);
+			ServerHeaders(&h, s);
 		return;
 	}
 }
 
 #ifdef Compile_CustomActions
-void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
-	HeaderParameters h; std::lock_guard<std::recursive_mutex> lock(s->StrMtx);
-	std::lock_guard<std::recursive_mutex> lock2(SockMtx);
+void AlyssaHTTP2::Post(H2Stream* s) {
+	HeaderParameters h;
 	if (logging) {
 		Logging(&s->cl);
 	}
@@ -532,7 +704,7 @@ void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 		case 0:
 			return;
 		case -1:
-			h.StatusCode = 500; ServerHeaders(&h, s, SockMtx); return;
+			h.StatusCode = 500; ServerHeaders(&h, s); return;
 		case -3: 
 			return;
 		default:
@@ -541,177 +713,196 @@ void AlyssaHTTP2::Post(H2Stream* s, std::recursive_mutex& SockMtx) {
 	}
 	h.StatusCode = 404; if (errorpages) {
 		std::string ep = ErrorPage(404); h.ContentLength = ep.size();
-		ServerHeaders(&h, s, SockMtx);
-		if (ep != "") SendData(s, ep.c_str(), ep.size(), SockMtx);
+		ServerHeaders(&h, s);
+		if (ep != "") SendData(s, ep.c_str(), ep.size());
 	}
 	else
-		ServerHeaders(&h, s, SockMtx); 
+		ServerHeaders(&h, s); 
 	return;
 }
 #endif
 
-void AlyssaHTTP2::ClientConnection(_Surrogate sr) {
-	std::deque<H2Stream*> StrArray; std::deque<StreamTable> StrTable; std::mutex StrMtx;//Stream array, table and mutex of that arrays.
-	std::recursive_mutex SockMtx;// We have to add one more argument to all functions now because i cant add this fucking shit to any struct
-	StrArray.emplace_back(new H2Stream); StrTable.emplace_back();
+// 24.12.2023: note to my future self or anyone else
+// About the memory address fuckeries on H2.
+// The versions before 2.4 have suffered a lot from it, and it always crashed.
+// I thought it was fixed on 2.x but I was wrong, it was still there. Now I'm gonna fix it once again on 2.4
+// I did a lot for fixing it on 2.4, changed a lot of things even on main() but I thing none of them fixed anything on it
+// But one simple thing, I believe that simple fucking bug was the reason behind all of that.
+// That thing is, look at the lambda below that does the request handling and then deletes the stream.
+// It was somehow getting called more than once, so basically same request was getting handled twice, or more. 
+// And they all were trying to delete the same stream. which is the reason behind memory fuckery, and handling same request twice, which
+// is the reason why clients were eventually freaking out. I fixed this shit and now H2 works much better, at least for now.
+// Took me hours to figure this shit out but eventually it works well now. If same shit happens again, this probably is the nasty reason behind it.
+// -PEPSIMANTR, 24.12.2023
+void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
+	std::deque<StreamTable*> StrTable; std::mutex StrmsMtx;//Stream array, table and mutex of that arrays.
 	char* buf = new char[16600]; memset(buf, 0, 16600);
 	//char buf[16600] = { 0 }; // This one is for ease of debugging with Visual Studio. You can see the whole content of array when like that but not when it's a pointer.
 	int Received = 0;
-	if ((Received=wolfSSL_recv(sr.ssl, buf, 16600, 0))) {
+	if ((Received=wolfSSL_recv(sr->ssl, buf, 16600, 0))) {
 		if (!strcmp(buf, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) {
-			//wolfSSL_send(sr.ssl, "\0\0\0\4\0\0\0\0\0", 9, 0);
+			//wolfSSL_send(sr->ssl, "\0\0\0\4\0\0\0\0\0", 9, 0);
 			if (Received <= 24)
-				Received = wolfSSL_recv(sr.ssl, buf + 24, 16600, 0);
+				Received = wolfSSL_recv(sr->ssl, buf + 24, 16600, 0);
 			if (buf[27] != 4) {
-				GoAway(sr.ssl, 1, 0, "SETTINGS expected after preface.");
-				closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl); return;
+				GoAway(sr->ssl, 1, 0, "SETTINGS expected after preface.");
+				closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); return;
 			}
 			else
-				wolfSSL_send(sr.ssl, "\0\0\0\4\0\0\0\0\0", 9, 0);
+				wolfSSL_send(sr->ssl, "\0\0\0\4\0\0\0\0\0", 9, 0);
 		}
 		else {
-			closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl); return;
+			closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); return;
 		}
 	}
 	else {
-		closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl); return;
+		closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); return;
 	}
 
-	int16_t pos = 0; unsigned int Index;// Variable for position on received data while parsing and index of stream on stream array.
-	unsigned int FrameSize, FrameStrId = 0; uint8_t FrameType, FrameFlags; int Temp = 0; // Frame size, frame stream identifier, frame type, frame flags and a temporary variable that may be used for various purposes.
-	while ((Received=wolfSSL_recv(sr.ssl,buf,16600,0))>0) {
+	int16_t pos = 0; StreamTable* Element = NULL;// Variable for position on received data while parsing and index of stream on stream array.
+	unsigned int FrameSize, FrameStrId = 0; uint8_t FrameType, FrameFlags; int Temp = 0;// Frame size, frame stream identifier, frame type, frame flags and a temporary variable that may be used for various purposes.
+	while ((Received=wolfSSL_recv(sr->ssl,buf,16600,0))>0) {
 		for (pos = 0; pos < Received; pos++) {
 			FrameSize = Convert24to32((unsigned char*)&buf[pos]); pos += 3;
 			FrameType = buf[pos]; pos++;
 			FrameFlags = buf[pos]; pos++;
 			FrameStrId = (unsigned char)buf[pos] << 24 | (unsigned char)buf[pos + 1] << 16 | (unsigned char)buf[pos + 2] << 8 | (unsigned char)buf[pos + 3] << 0; pos += 4;
-			Index = FindIndex(&StrArray, &StrTable, FrameStrId, StrMtx);
-			StrArray[Index]->cl.Sr = &sr;
-			StrArray[Index]->StrIdent = FrameStrId;
+
 			// Some frames have additional header data too. We'll parse them with actual header data and actions together.
 			switch (FrameType) {
 				case H2TDATA:
+					Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
 					if (FrameFlags & H2FPADDED) {
 						Temp = buf[pos]; pos++;// Temp is used for padding size here.
 					}
-					if (FrameFlags & H2FENDSTREAM)
-						StrArray[Index]->StrOpen = 0;
-					StrArray[Index]->Data = new char[FrameSize - Temp];
-					memcpy(StrArray[Index]->Data, &buf[pos], FrameSize - Temp);
-					pos += FrameSize;
+					if (FrameFlags & H2FENDSTREAM) {
+						Element->Ptr->StrOpen = 0;
+					}
+					/*Element->Ptr->Data = new char[FrameSize - Temp];
+					memcpy(Element->Ptr->Data, &buf[pos], FrameSize - Temp);
+					pos += FrameSize;*/
 					break;
-				case H2THEADERS: {	
-						Temp = 9;// Temp is used for frame header size here.
+				case H2THEADERS: {
+					Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
+					//Temp = 9;// Temp is used for frame header size here.// Why the fuck is that even exist??
+					Temp = 0;
 					if (FrameFlags & H2FENDSTREAM)
-						StrArray[Index]->StrOpen = 0;
+						Element->Ptr->StrOpen = 0;
 					if (FrameFlags & H2FPRIORITY) {
 						pos += 5; Temp += 5;
 					}
-					AlyssaHTTP2::ParseHeaders(StrArray[Index], &buf[pos], FrameSize - Temp, SockMtx);
+					AlyssaHTTP2::ParseHeaders(Element->Ptr, &buf[pos], FrameSize - Temp);
 					pos += FrameSize;
 					break;
 				}
 				case H2TRSTSTREAM:
-					StrArray[Index]->StrAtom = 0; pos += FrameSize; break;
+					Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
+					if (Element->Ptr != NULL) {
+						Element->Ptr->StrOpen = 0; Element->Ptr->StrAtom = 0;
+					}
+					pos += FrameSize; continue;
 				case H2TSETTINGS:
-					if (FrameFlags ^ H2FACK) {
-						char options[] = "\0\0\0\4\1\0\0\0\0";
-						SockMtx.lock();
-						wolfSSL_send(sr.ssl, options, 9, 0);
-						SockMtx.unlock();
-					}
-					else if (FrameSize > 0) {//Client sent a ACKed SETTINGS frame with payload, this is a connection error according to HTTP/2 semantics. Send a goaway.
-						GoAway(sr.ssl, 1, 0, "Acknowledged SETTINGS frame with payload data.");
-						closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl); 
-						DeleteStreamAll(&StrArray);
-						return;
-					}
-					pos += FrameSize;
-					break;
+					//if (FrameFlags ^ H2FACK) {
+					//	char options[] = "\0\0\0\4\1\0\0\0\0";
+					//	sr->lk.lock();
+					//	wolfSSL_send(sr->ssl, options, 9, 0);
+					//	sr->lk.unlock();
+					//}
+					//else if (FrameSize > 0) {//Client sent a ACKed SETTINGS frame with payload, this is a connection error according to HTTP/2 semantics. Send a goaway.
+					//	GoAway(sr->ssl, 1, 0, "Acknowledged SETTINGS frame with payload data.");
+					//	goto ClientEnd;
+					//	return;
+					//}
+					// Apache sends ACK frame even after client sends ACK, I have no idea what is the reason behing this, but here we go.
+				{
+				char options[] = "\0\0\0\4\1\0\0\0\0";
+				sr->lk.lock();
+				wolfSSL_send(sr->ssl, options, 9, 0);
+				sr->lk.unlock();
+				pos += FrameSize;
+				continue;
+				}
 				case H2TPING: {
 					char PingPayload[17] = { 0 };
 					PingPayload[2] = 8;//Frame size
 					PingPayload[3] = H2TPING;//Frame type
 					PingPayload[4] = H2FACK;//Frame flags, ACK set to true
-					SockMtx.lock();
-					wolfSSL_send(sr.ssl, PingPayload, 17, 0); 
-					SockMtx.unlock();
+					sr->lk.lock();
+					wolfSSL_send(sr->ssl, PingPayload, 17, 0); 
+					sr->lk.unlock();
 					pos += FrameSize;
-					break;
+					continue;
 				}
 				case H2TGOAWAY:
-					closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl);
-					DeleteStreamAll(&StrArray); return;
+					goto ClientEnd;
 				case H2TCONTINATION:
+					Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
 					if (FrameFlags & H2FENDSTREAM)
-						StrArray[Index]->StrOpen = 0;
-					AlyssaHTTP2::ParseHeaders(StrArray[Index], &buf[pos], FrameSize - 9, SockMtx);
+						Element->Ptr->StrOpen = 0;
+					AlyssaHTTP2::ParseHeaders(Element->Ptr, &buf[pos], FrameSize - 9);
 					pos += FrameSize;
 					break;
 				default:
-					pos += FrameSize; break;
+					pos += FrameSize; FrameStrId = 0; continue;
 			}
-			if (!StrArray[Index]->StrOpen) {
-				if (HasVHost) {
-					if(StrArray[Index]->cl.Sr->host=="") {
-						HeaderParameters h; h.StatusCode = 400; ServerHeaders(&h, StrArray[Index], SockMtx);
-						DeleteStream(&StrArray, &StrTable, FrameStrId, StrMtx); break;
+			if (!Element) Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
+			if (FrameStrId!=0 && !Element->Ptr->StrOpen) {
+				if (HasVHost) { // Virtual host stuff
+					if(Element->Ptr->cl.Sr->host=="") {
+						ServerHeadersM(Element->Ptr, 400, 1, "");
+						DeleteStream(&StrTable, FrameStrId, StrmsMtx); break;
 					}
 					bool Break = 0;// Break from main loop
 					for (int i = 1; i < VirtualHosts.size(); i++) {
-						if(VirtualHosts[i].Hostname==StrArray[Index]->cl.Sr->host){
-							StrArray[Index]->cl.VHostNum = i;
+						if(VirtualHosts[i].Hostname== Element->Ptr->cl.Sr->host){
+							Element->Ptr->cl.VHostNum = i;
 							if (VirtualHosts[i].Type == 0) { // Standard VHost
-								StrArray[Index]->cl._RequestPath=VirtualHosts[i].Location; break;
+								Element->Ptr->cl._RequestPath=VirtualHosts[i].Location; break;
 							}
 							else if (VirtualHosts[i].Type == 1) { // Redirecting VHost
-								HeaderParameters h; h.StatusCode = 302; h.AddParamStr = VirtualHosts[i].Location;
-								ServerHeaders(&h, StrArray[Index], SockMtx); DeleteStream(&StrArray, &StrTable, FrameStrId, StrMtx); Break = 1; break;
+								ServerHeadersM(Element->Ptr, 302, 1, VirtualHosts[i].Location);
+								DeleteStream(&StrTable, FrameStrId, StrmsMtx); Break = 1; break;
 							}
 						}
 					}
 					if (Break) break;
-					if (StrArray[Index]->cl._RequestPath == "") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
-							StrArray[Index]->cl._RequestPath = VirtualHosts[0].Location;
-					StrArray[Index]->cl._RequestPath += StrArray[Index]->cl.RequestPath;
-					//StrArray[Index]->cl.RequestPath = StrArray[Index]->cl._RequestPath.u8string();
+					if (Element->Ptr->cl._RequestPath == "") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
+						Element->Ptr->cl._RequestPath = VirtualHosts[0].Location;
+					Element->Ptr->cl._RequestPath += std::filesystem::u8path(Element->Ptr->cl.RequestPath);
 				}
 				else {
-					StrArray[Index]->cl._RequestPath = htroot + StrArray[Index]->cl.RequestPath;
-					//StrArray[Index]->cl.RequestPath = StrArray[Index]->cl._RequestPath.u8string();
+					Element->Ptr->cl._RequestPath = std::filesystem::u8path(htroot + Element->Ptr->cl.RequestPath);
 				}
-				std::thread([&, Index, FrameStrId](){	
-					switch (StrArray[Index]->cl.RequestTypeInt) {
+				std::thread([&, Element, FrameStrId](){	
+					switch (Element->Ptr->cl.RequestTypeInt) {
+						case -1:
+							ServerHeadersM(Element->Ptr, 400, 1, ""); break;
 						case 1:
-							Get(StrArray[Index], SockMtx); break;
-#ifdef Compile_CustomActions
+							Get(Element->Ptr); break;
+	#ifdef Compile_CustomActions
 						case 2:
-							Post(StrArray[Index], SockMtx); break;
+							Post(Element->Ptr); break;
 						case 3:
-							Post(StrArray[Index], SockMtx); break;
-#endif
+							Post(Element->Ptr); break;
+	#endif
 						case 4:
-							{
-								HeaderParameters h; h.StatusCode = 204;
-								ServerHeaders(&h, StrArray[Index], SockMtx);
-							}
-							break;
+							ServerHeadersM(Element->Ptr, 204, 1, ""); break;
 						case 5:
-							Get(StrArray[Index], SockMtx); break;
+							Get(Element->Ptr); break;
 						default:
-							{
-								HeaderParameters h; h.StatusCode = 501;
-								ServerHeaders(&h, StrArray[Index], SockMtx);
-							}
-							break;
+							ServerHeadersM(Element->Ptr, 501, 1, ""); break;
 					}
-					DeleteStream(&StrArray, &StrTable, FrameStrId, StrMtx);
-				}).detach();
+					//DeleteStream(Element);
+					DeleteStream(&StrTable, FrameStrId, StrmsMtx);
+				}).detach(); 
+					//DeleteStreamEntry(&StrTable, FrameStrId, StrmsMtx);
+				
 			}
 		}
 	}
-	closesocket(sr.sock); delete[] buf; wolfSSL_free(sr.ssl); 
-	DeleteStreamAll(&StrArray);
+ClientEnd:
+	closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); 
+	StreamCleanup(&StrTable); delete sr;
 	return;
 }
 

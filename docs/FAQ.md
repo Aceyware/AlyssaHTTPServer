@@ -6,12 +6,13 @@ and the questions that have the strong potential for being asked.
 
 ### Who the hell is Alyssa, why is this project named as that?
 It was originally the codename I used for that project, during the early development up to initial release. 
-But when release date came in, I still couldn't find a release name so I just released as is.
+But when release date came in, I still couldn't find a release name so I just released as is. The name comes from Alyssa Maunders of ["Down Time"](https://www.downtimeforever.com)
 
 ### What is the aim of this project?
 This project aims to develop a *simple* HTTP server implementation. 
 Simple in terms of both code simplificity and usage simplicity, in a way that anyone can use or contribute on it, 
-but also staying performant, feature-rich and up-to-date while retaining the simplicity
+but also staying performant, feature-rich and up-to-date and can compete against mainstream implementations 
+while retaining the simplicity
 
 ### How is it developed?
 First ever prototypes was developed with my few experience with HTTP and networking back then. 
@@ -21,7 +22,7 @@ examining the behavior of mainstream HTTP server implementations such as Apache.
 The whole project is solely developed by me.
 
 ### What are the system requirements? What platforms/operating systems/hardware can it run on?
-Any platform with C++17 compilant C++ library and some POSIX compilance (i.e. that supports poll() and similar) 
+Any platform with C++17 compilant C++ standard library and some POSIX compilance (i.e. that supports poll() and similar) 
 should run. Regardless of the hardware[^1]. It can run fine on [low hardware](res/AlyssaOnAndroidARMv6.png) without problems
 
 [^1]: As long as hardware provides that former two requirements. HTTP/2 Huffman decode implementation is untested on Big-endian systems.

@@ -1,7 +1,9 @@
 #pragma once
 enum Languages {
 	LANG_EN,
+#ifdef Compile_locales
 	LANG_TR
+#endif
 };
 
 enum Strings {
@@ -57,7 +59,7 @@ enum Strings {
 #endif
 };
 
-static const wchar_t* LocaleTable[][36] = {
+static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 	{
 		// 0
 		L"English",
@@ -75,7 +77,7 @@ static const wchar_t* LocaleTable[][36] = {
 		L"invalid htroot path specified on config or path is inaccessible. Trying to create the directory...",
 		L"failed to create the folder. Quitting",
 		L"cannot open log file, logging is disabled.",
-		L"WolfSSL,"
+		L"WolfSSL",
 		L"internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled.",
 		L"failed to load SSL private key file, SSL is disabled.",
 		L"failed to load SSL certificate file, SSL is disabled.",
@@ -110,8 +112,9 @@ static const wchar_t* LocaleTable[][36] = {
 		L"beginning of another scope before previous one closed",
 		L"missing '}'"
 #endif
-	},
-	{
+	}
+#ifdef Compile_locales
+	,{
 		// 0
 		L"Türkçe",
 		L"Hata: ",
@@ -163,4 +166,5 @@ static const wchar_t* LocaleTable[][36] = {
 		L"'}' eksik."
 #endif
 	}
+#endif
 };

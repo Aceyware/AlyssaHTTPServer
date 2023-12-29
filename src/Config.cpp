@@ -1,17 +1,11 @@
 #ifndef AlyssaHeader
 #include "Alyssa.h"
 #endif
-using namespace std;
-//Redefinition of options
-std::vector<string> configcache, configcache_value; char delimiter; bool isCRLF = 0; string portStr = "80"; std::vector<unsigned int> port = { 80 }; string htroot = "./htroot"; bool foldermode = 0;
-/*string whitelist = "";*/ bool forbiddenas404 = 0; string respath = "./res"; char errorpages = 0; string htrespath = "/res"; string _htrespath = ""; bool logOnScreen = 0; bool EnableH2 = 0;
-string defaultCorsAllowOrigin = ""; bool corsEnabled = 0; string CSPHeaders = ""; bool CSPEnabled = 0; bool logging = 0; bool EnableIPv6 = 0; bool CAEnabled = 0; bool CARecursive = 0; 
-bool ColorOut = 1; bool HasVHost = 0; string VHostFilePath = ""; std::deque<std::string> ACAOList; unsigned short Locale = 0;
-#ifdef Compile_WolfSSL
-std::vector<unsigned int> SSLport; string SSLportStr="443"; string SSLkeypath="./key.key"; string SSLcertpath="./crt.pem"; bool enableSSL = 0; bool HSTS = 0;
-#endif
+
+std::vector<string> configcache, configcache_value; char delimiter; bool isCRLF = 0; 
+
 bool Config::Configcache() {//This function reads the config file and caches all the keys and values on the file to 2 separate string arrays. Much easier and faster than reading the same file again and again.
-	ifstream conf; conf.open("Alyssa.cfg"); conf.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
+	std::ifstream conf; conf.open("Alyssa.cfg"); conf.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 	if (!conf) { 
 		return 0; 
 	}
@@ -72,7 +66,7 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	errorpages = stoi(getValue("errorpages", "0"));
 	//whitelist = getValue("whitelist", "");
 	logOnScreen = stoi(getValue("printconnections", "0"));
-	defaultCorsAllowOrigin = getValue("corsalloworigin", "");
+	std::string defaultCorsAllowOrigin = getValue("corsalloworigin", "");
 	if (defaultCorsAllowOrigin != "") {
 		corsEnabled = 1; defaultCorsAllowOrigin += " ";
 		short off = 0, pos = 0;
@@ -87,6 +81,7 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	ColorOut = stoi(getValue("coloroutput", "1"));
 	VHostFilePath = getValue("virtualhosts", "");
 	if (VHostFilePath != "") HasVHost = 1;
+
 #ifdef Compile_WolfSSL
 	enableSSL = stoi(getValue("enablessl", "0"));
 	if (enableSSL) {
@@ -123,7 +118,21 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 			break;
 	}
 	EnableH2 = stoi(getValue("http2", "0"));
+#ifdef Compile_H2
+	ConsoleMsg(1, "Server: ", "HTTP/2 support is still experimental and highly discouraged to use.");
+#endif // Compile_H2
+
+#endif //Compile_WolfSSL
+
+#ifdef Compile_locales
 	if (getValue("locale", "") == "tr") Locale = 1; else Locale = 0;
-#endif
+#else
+	Locale = 0;
+#endif //Compile_locales
+
+#ifdef Compile_zlib
+	deflateEnabled = stoi(getValue("deflate", "0"));
+#endif // Compile_zlib
+
 	return 1;
 }

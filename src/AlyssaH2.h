@@ -1,6 +1,5 @@
 #ifdef Compile_H2
 #pragma once
-// Temporary file for H2 development
 #ifndef AlyssaH2Header
 #define AlyssaH2Header
 #include "Alyssa.h"
@@ -12,12 +11,13 @@ struct H2Stream{
 	bool StrOpen = 1;// This one is for determing if stream is "open" or "half-closed".
 	int StrIdent=0;
 	char* Data=NULL;//This has to be deleted manually
-	std::recursive_mutex StrMtx;// This one is for protecting the structures from getting deleted from another thread.
+	std::mutex StrMtx;// This one is for protecting the structures from getting deleted from another thread.
 };
 
 struct StreamTable {
-	int Stream, Index;
+	int Stream; H2Stream* Ptr = NULL;
 };
+
 
 // Frame Types
 #define H2TDATA 0
@@ -42,18 +42,11 @@ struct StreamTable {
 // Class definition
 class AlyssaHTTP2 {
 public:
-	static void ClientConnection(_Surrogate sr);
-	static void ServerHeaders(HeaderParameters* p, H2Stream* s, std::recursive_mutex& SockMtx);
-	static void ServerHeaders(HeaderParameters* p, H2Stream* s) {
-		std::recursive_mutex asd;
-		ServerHeaders(p, s, asd);
-	};
-	static void ParseHeaders(H2Stream* s, char* buf, int sz, std::recursive_mutex& SockMtx);
-	static void SendData(H2Stream* s, const void* d, size_t sz, std::recursive_mutex& SockMtx);
-	static void SendData(H2Stream* s, const void* d, size_t sz) {
-		std::recursive_mutex asd;
-		SendData(s, d, sz, asd);
-	};
+	static void ClientConnection(_Surrogate* sr);
+	static void ServerHeaders(HeaderParameters* p, H2Stream* s);
+	static void ServerHeadersM(H2Stream* s, uint16_t statusCode, bool endStream, const std::string& param);
+	static void ParseHeaders(H2Stream* s, char* buf, int sz);
+	static void SendData(H2Stream* s, const void* d, size_t sz);
 private:
 	static void GoAway(WOLFSSL* s, unsigned int errorCode, unsigned int lastStr, const char* DbgErrorReason) {
 		char* buf;
@@ -71,61 +64,96 @@ private:
 		delete[] buf;
 	}
 	static string DecodeHuffman(char* huffstr, int16_t sz);
-	static unsigned int FindIndex(std::deque<H2Stream*>* StrArray, std::deque<StreamTable>* StrTable, unsigned int StreamId, std::mutex& MasterMtx) {// Note: this shit is not thread safe i guess idk
-		if (!StreamId) { return 0; }
+	static StreamTable* FindIndex(std::deque<StreamTable*>* StrTable, unsigned int StreamId, std::mutex& MasterMtx, _Surrogate* _sr) {
+		if (!StreamId) { return NULL; }
 		std::lock_guard<std::mutex> lock(MasterMtx);
-		for (int i = 1; i < StrTable->size(); i++) {// Search on the table for corresponding stream
-			if (StrTable->at(i).Stream == StreamId) {
-				return StrTable->at(i).Index;
-			}
+		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
+			if (StrTable->at(i) != NULL) {
+				if (StrTable->at(i)->Stream == StreamId) {
+					return StrTable->at(i);
+				}
+			}	
 		}
 		// Not found, we'll create one for this new stream.
-		// Search for an unused space first and reuse it.
-		for (int i = 1; i < StrTable->size(); i++) {// Search on the table for corresponding stream
-			if (StrArray->at(i) == NULL) {
-				StrArray->at(i) = new H2Stream;
-				StrTable->at(i) = StreamTable{ (int)StreamId,i };
-				return i;
-			}
-		}
-		// If not found, create it.
-		StrArray->emplace_back(new H2Stream); 
-		StrTable->emplace_back(StreamTable{ (int)StreamId, (int)StrArray->size() - 1 }); 
-		return StrArray->size() - 1;
+		StreamTable* ret = new StreamTable;
+		ret->Ptr = new H2Stream; ret->Stream = StreamId;
+		StrTable->emplace_back(ret); ret->Ptr->cl.Sr = _sr; ret->Ptr->StrIdent = StreamId; return ret;
 	}
-	static void DeleteStream(std::deque<H2Stream*>* StrArray, std::deque<StreamTable>* StrTable, unsigned int StreamId, std::mutex &MasterMtx) {// Deletes stream structure of a single stream from memory.
+	static void DeleteStream(std::deque<StreamTable*>* StrTable, unsigned int StreamId, std::mutex &MasterMtx) {// Deletes stream structure of a single stream from memory.
 		if (!StreamId) { return; }
 		std::lock_guard<std::mutex> lock(MasterMtx);
-		for (int i = 1; i < StrTable->size(); i++) {// Search on the table for corresponding stream
-			if (StrTable->at(i).Stream == StreamId) {
-				int pos = StrTable->at(i).Index;
-				StrTable->erase(StrTable->begin() + i);
-				StrArray->at(pos)->StrMtx.lock();
-				//StrTable->at(i).Stream = -1;
-				if (StrArray->at(pos)->Data)
-					delete[] StrArray->at(pos)->Data;
-				StrArray->at(pos)->StrMtx.unlock();
-				delete StrArray->at(pos); 
-				StrArray->at(pos) = NULL;// We don't erase from StrArray, we just left it NULL. If we delete, it'll invalidate all of the positions on StrTable.
-				//StrArray->erase(StrArray->begin() + i);
-				return;
+		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
+			if (StrTable->at(i) != NULL) {
+				if (StrTable->at(i)->Stream == StreamId) {
+					delete StrTable->at(i)->Ptr; delete StrTable->at(i); StrTable->at(i) = NULL; return;
+				}
 			}
 		}
 	}
-	static void DeleteStreamAll(std::deque<H2Stream*>* StrArray) {//Deletes ALL stream structures of a connection from memory.
-		for (int i = 0; i < StrArray->size(); i++) {
-			if (StrArray->at(i)) {
-				StrArray->at(i)->StrMtx.lock();
-				if (StrArray->at(i)->Data)
-					delete[] StrArray->at(i)->Data;
-				StrArray->at(i)->StrMtx.unlock();
-				delete StrArray->at(i);
+	static void DeleteStream(StreamTable* Ptr) {
+		delete Ptr->Ptr; delete Ptr;
+	}
+	static void DeleteStreamEntry(std::deque<StreamTable*>* StrTable, unsigned int StreamId, std::mutex& MasterMtx) {
+		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
+			if (StrTable->at(i) != NULL) {
+				if (StrTable->at(i)->Stream == StreamId) {
+					StrTable->erase(StrTable->begin() + i); return;
+				}
 			}
 		}
 	}
-	static void Get(H2Stream* s, std::recursive_mutex& SockMtx);
+	static void StreamCleanup(std::deque<StreamTable*>* StrTable) {//Deletes ALL stream structures of a connection from memory.
+		for (int i = 0; i < StrTable->size(); i++) {
+			if (StrTable->at(i) != NULL) {
+				delete StrTable->at(i)->Ptr; delete StrTable->at(i);
+			}
+		}
+	}
+	static void Get(H2Stream* s);
+	static bool __AlyssaH2ParsePath(H2Stream* s, std::string& Value) {
+		uint8_t pos = -1;
+		// Decode percents
+		pos = Value.size();
+		for (char t = 0; t < pos; t++) {
+			if (Value[t] == '%') {
+				try {
+					Value[t] = hexconv(&Value[t+1]);
+				}
+				catch (const std::invalid_argument&) {
+					ServerHeadersM(s, 400, 1, ""); return 1;
+				}
+				memmove(&Value[t + 1], &Value[t + 3], pos - t); pos -= 2;
+			}
+		}
+		Value.resize(pos);
+		// Query string
+		pos = Value.find('&');
+		if (pos != 255) {
+			unsigned char _sz = Value.size();
+			s->cl.qStr.resize(_sz - pos); memcpy(s->cl.qStr.data(), &Value[pos + 1], _sz - pos - 1);
+			Value.resize(pos);
+		}
+		// Sanity checks
+		s->cl.RequestPath = Value;
+		if ((int)Value.find(".alyssa") > -1) { ServerHeadersM(s, 400, 1, ""); return 1; }
+		char level = 0; char t = 1; while (Value[t] == '/') t++;
+		for (; t < pos;) {
+			if (Value[t] == '/') {
+				level++; t++;
+				while (Value[t] == '/') t++;
+			}
+			else if (Value[t] == '.') {
+				t++; if (Value[t] == '.') level--;  // Parent directory, decrease.
+				//else if (cl->RequestPath[t] == '/') t++; // Current directory. don't increase.
+				t++; while (Value[t] == '/') t++;
+			}
+			else t++;
+			if (level < 0) { ServerHeadersM(s, 400, 1, ""); return 1; } //Client tried to access above htroot
+			return 0;
+		}
+	}
 #ifdef Compile_CustomActions
-	static void Post(H2Stream* s, std::recursive_mutex& SockMtx);
+	static void Post(H2Stream* s);
 #endif
 };
 #endif

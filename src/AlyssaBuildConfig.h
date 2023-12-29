@@ -26,3 +26,9 @@
 
 // Do testing.
 //#define AlyssaTesting
+
+// Compile with multilanguage support. Disabling this will only add English language.
+#define Compile_locales
+
+// Compile with zlib for gz encoding support.
+//#define Compile_zlib

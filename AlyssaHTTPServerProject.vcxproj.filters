@@ -54,6 +54,9 @@
     <ClCompile Include="src\AlyssaTester.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="src\AlyssaDefinitions.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/Alyssa.h">
@@ -66,9 +69,6 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="src/AlyssaHuffman.h">
-      <Filter>Header</Filter>
-    </ClInclude>
-    <ClInclude Include="src/resource.h">
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="src/external/Crc32.h">
@@ -85,6 +85,9 @@
     </ClInclude>
     <ClInclude Include="src\AlyssaTester.h">
       <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src/resource.h">
+      <Filter>Header\External</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

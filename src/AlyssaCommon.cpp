@@ -154,16 +154,13 @@ void SetPredefinedHeaders() {
 #ifdef Compile_WolfSSL
 	if (EnableH2) {
 		if (HSTS) {
-			ret += 64 | 56; ret += sizeof "max-age=31536000"; ret += "max-age=31536000";
+			ret += 64 | 56; ret += sizeof "max-age=31536000" - 1; ret += "max-age=31536000";
 		}
-		//if (corsEnabled) {
-		//	ret += 64 | 20; ret += (char)defaultCorsAllowOrigin.size(); ret += defaultCorsAllowOrigin;
-		//}
 		if (CSPEnabled) {
 			ret += '\0'; ret += sizeof "content-security-policy" - 1; ret += "content-security-policy";
 			ret += CSPHeaders.size(); ret += CSPHeaders;
 		}
-		ret += 64 | 54; ret += sizeof"Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
+		ret += 64 | 54; ret += sizeof "Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
 		PredefinedHeadersH2 = ret; PredefinedHeadersH2Size = ret.size();
 	}
 #endif // Compile_WolfSSL
@@ -258,19 +255,19 @@ void ConsoleMsgM(int8_t MsgType, int UnitStr) {
 void ConsoleMsgLiteral(int MsgStr) {
 	std::wcout << LocaleTable[Locale][MsgStr];
 }
-uint32_t FileCRC(FILE* f, size_t s, char* buf, size_t _Beginning=0) {
+uint32_t FileCRC(FILE* f, size_t s, char* buf, uint16_t bufsz) {
 	 uint32_t ret = 0;
 	 while (s) {
-		 if (s >= 32768) {
-			 fread(buf, 32768, 1, f);
-			 ret = crc32_fast(buf, 32768, ret); s -= 32768;
+		 if (s >= bufsz) {
+			 fread(buf, bufsz, 1, f);
+			 ret = crc32_fast(buf, bufsz, ret); s -= bufsz;
 		 }
 		 else {
 			 fread(buf, s, 1, f);
 			 ret = crc32_fast(buf, s, ret); break;
 		 }
 	 }
-	 fseek(f, _Beginning, 0); return ret;
+	 return ret;
 }
 
 std::string ErrorPage(unsigned short ErrorCode) {
@@ -344,6 +341,9 @@ char ParseCL(int argc, char** argv) {// This func parses command line arguments.
 #ifdef Compile_DirIndex
 				<< "Directory Index, "
 #endif
+#ifdef Compile_zlib
+				<< "zlib "
+#endif
 				<< std::endl;
 			cout << std::endl << GPLDisclaimer;
 			return 0;
@@ -410,12 +410,12 @@ unsigned char hexconv(char* _Arr) {// Lame hexadecimal string to decimal byte co
 		if (_Arr[0] & 32) {// Lowercase letter
 			_Arr[0] ^= (64 | 32);
 			if (_Arr[0] & 128 || _Arr[0] > 9) throw std::invalid_argument("not a valid hex.");
-			ret = _Arr[0] * 16;
+			ret = (_Arr[0] + 9) * 16;
 		}
 		else {// Uppercase letter
 			_Arr[0] ^= 64;
 			if (_Arr[0] & 128 || _Arr[0] > 9) throw std::invalid_argument("not a valid hex.");
-			ret = _Arr[0] * 16;
+			ret = (_Arr[0] + 9) * 16;
 		}
 	}
 	else {// Number
@@ -427,12 +427,12 @@ unsigned char hexconv(char* _Arr) {// Lame hexadecimal string to decimal byte co
 		if (_Arr[1] & 32) {// Lowercase letter
 			_Arr[1] ^= (64 | 32);
 			if (_Arr[1] & 128 || _Arr[1] > 9) throw std::invalid_argument("not a valid hex.");
-			ret += _Arr[1];
+			ret += _Arr[1] + 9;
 		}
 		else {// Uppercase letter
 			_Arr[1] ^= 64;
 			if (_Arr[1] & 128 || _Arr[1] > 9) throw std::invalid_argument("not a valid hex.");
-			ret += _Arr[1];
+			ret += _Arr[1] + 9;
 		}
 	}
 	else {// Number
@@ -441,4 +441,18 @@ unsigned char hexconv(char* _Arr) {// Lame hexadecimal string to decimal byte co
 		ret += _Arr[1];
 	}
 	return ret;
+}
+
+template <typename TP> std::time_t to_time_t(TP tp) {
+	using namespace std::chrono;
+	auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now()
+		+ system_clock::now());
+	return system_clock::to_time_t(sctp);
+}
+
+std::string LastModify(std::filesystem::path& p) {
+	std::time_t tt = to_time_t(std::filesystem::last_write_time(p));
+	std::tm* gmt = std::gmtime(&tt);
+	std::stringstream timebuf; timebuf << std::put_time(gmt, "%a, %d %b %Y %H:%M:%S GMT");
+	return timebuf.str();
 }
