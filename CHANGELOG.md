@@ -1,5 +1,11 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4.1 - 12.01.2024
+- Fixed the issue of malformed first header line may crash server.
+- Fixed the issue of message about HTTP/2 being experimental being printed always.
+- Removed hardcoded table CSS from directory index pages. Now it's fully customizable through di.css file.
+- Some fixes for localization.
+
 ## 2.4 - 30.12.2023 - Year's Last Release
 - **Fixed one CRITICAL security vulnerability** and some more security holes.
 - Changes regarding to HTTP/2

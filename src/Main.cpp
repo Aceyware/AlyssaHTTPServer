@@ -1,6 +1,6 @@
 /*
 	Alyssa HTTP Server Project
-	Copyright (C) 2024 PEPSIMANTR
+	Copyright (C) 2024 Alyssa Software
 
 	Alyssa is a HTTP server project that aims to be 
 	as good as mainstream HTTP server implementation 
@@ -294,11 +294,9 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #ifdef branch
 	// Warning message for indicating these builds are work-in-progress builds and not recommended.
-	ConsoleMsg(1, "Server: ", "This build is from work-in-progress experimental " branch " branch.\n"
-		"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
-		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"\n");
+	ConsoleMsg(1, STR_SERVER, STR_BRANCH);
 #endif
-
+	
 	// Output server version, ports etc.
 	ConsoleMsgLiteral(STR_SERVERMAIN); std::cout << version;
 	if (HasVHost) { std::cout << " | " << VirtualHosts.size(); ConsoleMsgLiteral(STR_VHOSTNUM); }

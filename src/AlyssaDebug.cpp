@@ -1,7 +1,7 @@
 #ifdef _DEBUG
 #include "Alyssa.h"
 
-std::string execpath; extern bool debugFeaturesEnabled=1;
+std::string execpath; extern bool debugFeaturesEnabled=0;
 
 #ifdef Compile_CGI
 void SelfExecCGI(const char* exec, clientInfo* cl, bool Post) {// BUGBUG: temporary.

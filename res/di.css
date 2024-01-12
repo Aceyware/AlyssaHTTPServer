@@ -1,4 +1,5 @@
 html{color-scheme: light dark;}
-body{font-family:sans-serif;}img{height:12px;width:15px;}
-table{width:100%;}
+body{font-family:system-ui, sans-serif;}img{height:12px;width:15px;}
+.t{width:100%; text-align:left;}
 div{width:50%;margin:auto; padding:20px;}
+pre{font-family: "Lucida Console", Courier, monospace;}

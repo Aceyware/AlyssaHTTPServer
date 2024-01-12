@@ -212,6 +212,13 @@ class DirectoryIndex {
 };
 #endif
 
+template <typename TP> std::time_t to_time_t(TP tp) { // This must stay here otherwise it'll error at linkage.
+	using namespace std::chrono;
+	auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now()
+		+ system_clock::now());
+	return system_clock::to_time_t(sctp);
+}
+
 void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText = 1);
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
 string fileMime(string& filename);
@@ -235,7 +242,6 @@ uint32_t FileCRC(FILE* f, size_t s, char* buf, uint16_t bufsz);
 std::string ErrorPage(unsigned short ErrorCode);
 char ParseCL(int argc, char** argv);
 unsigned char hexconv(char* _Arr);
-template <typename TP> std::time_t to_time_t(TP tp);
 std::string LastModify(std::filesystem::path& p);
 #ifdef Compile_CGI
 	bool CGIEnvInit();
@@ -355,9 +361,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.4d";
+	static std::string version = "2.4.1d";
 #else
-	static std::string version = "2.4";
+	static std::string version = "2.4.1";
 #endif
 #endif
 #ifdef _WIN32

@@ -138,6 +138,7 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->RequestPath.resize(pos - _pos - 9); memcpy(&cl->RequestPath[0], &buf[_pos], pos - _pos - 9); cl->RequestPath[pos - _pos - 9] = 0;
 				// Decode percents
 				_pos = cl->RequestPath.size(); // Reusing _pos for not calling size() again and again.
+				if (_pos == 0) { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
 				for (char t = 0; t < _pos; t++) {
 					if (cl->RequestPath[t] == '%') {
 						try {

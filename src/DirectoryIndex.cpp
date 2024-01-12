@@ -39,12 +39,12 @@ string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 		"</head>"
 		"<body><div>"
 			"<h1>Index of " + RelPath + "</h1><hr><br>"
-			"<table>";
+			"<table class=\"t\">";
 	if (RelPath != "/") {// Add parent directory entry if we're not at root.
 		ret += "<tr>"
-				"<th style=\"text-align:left;\"><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a></th>"
-				"<th style=\"text-align:left;\">-</th>"
-				"<th style=\"text-align:right;\">-</th>"
+				"<th><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a></th>"
+				"<th>-</th>"
+				"<th>-</th>"
 			"</tr>";
 	}
 	for (uint8_t i = 0; i < Array.size(); i++) {// Add entries.
@@ -52,16 +52,16 @@ string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 		// Columns are ordered as: "entry name | last modify date | size"
 		// Directories have no size so it's '-' instead.
 		if (Array[i].isDirectory) {
-			ret +=  "<th style=\"text-align:left;\"><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a></th>"
-					"<th style=\"text-align:left;\">" + Array[i].ModifyDate + "</th>"
-					"<th style=\"text-align:right;\">-</th>"
+			ret +=  "<th><img src=\"" + htrespath + "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a></th>"
+					"<th>" + Array[i].ModifyDate + "</th>"
+					"<th>-</th>"
 				"</tr>"; 
 			DirCnt++;
 		}
 		else {
-			ret +=  "<th style=\"text-align:left;\"><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
-					"<th style=\"text-align:left;\">" + Array[i].ModifyDate + "</th>"
-					"<th style=\"text-align:right;\">[" + std::to_string(Array[i].FileSize) + "]</th>"
+			ret +=  "<th><img src=\"" + htrespath + "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
+					"<th>" + Array[i].ModifyDate + "</th>"
+					"<th>[" + std::to_string(Array[i].FileSize) + "]</th>"
 				"</tr>";
 		}
 	}
@@ -82,7 +82,7 @@ string DirectoryIndex::DirMain(std::filesystem::path p, std::string& RelPath) {
 			ret += "s";
 	}
 	ret += 
-			"<br>Alyssa HTTP Server " + version + "</div>"
+			"<br><pre>Alyssa HTTP Server " + version + "</pre></div>"
 		"</body>"
 		"</html>";
 	return ret;

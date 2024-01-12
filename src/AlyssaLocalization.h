@@ -77,7 +77,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"invalid htroot path specified on config or path is inaccessible. Trying to create the directory...",
 		L"failed to create the folder. Quitting",
 		L"cannot open log file, logging is disabled.",
-		L"WolfSSL",
+		L"WolfSSL: ",
 		L"internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled.",
 		L"failed to load SSL private key file, SSL is disabled.",
 		L"failed to load SSL certificate file, SSL is disabled.",
@@ -89,7 +89,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 #ifdef branch
 		L"This build is from work-in-progress experimental " branch " branch.\n"
 		"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
-		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\"",
+		"If you don't know what any of that all means, get the latest stable release from here:\n \"https://www.github.com/AlyssaSoftware/AlyssaHTTPServer/releases/latest\"",
 #endif
 		L"Error binding socket on port %d. \nMake sure port is not in use by another program.",
 		L"Error binding socket on port %d (OS assigned socket on another port)\n"
@@ -131,7 +131,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"geçersiz veya erişilemez bir htroot dizini belirlendi. Dizin oluşturulmaya çalışılıyor...",
 		L"dizin oluşturma başarısız oldu, çıkılıyor.",
 		L"günlük dosyası açılamadı, günlük devre dışı.",
-		L"WolfSSL",
+		L"WolfSSL: ",
 		L"SSL ile bir içsel hata oldu (wolfSSL_CTX_new error), SSL devre dışı.",
 		L"SSL gizli anahtar dosyasını yükleme başarısız, SSL devre dışı.",
 		L"SSL sertifika dosyasını yükleme başarısız, SSL devre dışı.",
@@ -143,7 +143,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 #ifdef branch
 		L"Bu yapı tamamlanmamış deneysel" branch "dalından derlendi.\n"
 		L"Tamamlanmamış, kararsız veya bozuk kod içerebilir ve büyük ihtimal istemcilere güvenilir şekilde yanıt vermeyecektir. Bu yapı sadece geliştirme amaçlıdır.\n"
-		L"Bunlarının hiçbirinin ne anlama geldiğini bilmiyorsanız \"https://www.github.com/PEPSIMANTR/AlyssaHTTPServer/releases/latest\" adresinden en son kararlı yapıyı alın."
+		L"Bunlarının hiçbirinin ne anlama geldiğini bilmiyorsanız \"https://www.github.com/AlyssaSoftware/AlyssaHTTPServer/releases/latest\" adresinden en son kararlı yapıyı alın."
 #endif // branch
 		L"%d portunda soket tanımlama başarısız oldu. \nPortun kullanımda olmadığıdan emin olun.\n",
 		L"%d portunda soket tanımlama başarısız oldu. (OS başka bir port atadı.) \n"
