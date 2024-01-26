@@ -33,7 +33,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (result != 0) {
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_FAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
@@ -56,7 +56,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (ret.size() == 0) {// Error if no output or it can't be read.
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_OUTFAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
@@ -74,7 +74,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_HEADER], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
 		else
@@ -98,7 +98,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 				wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); hp.StatusCode = 500; break;
 				hp.CustomHeaders.clear();
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 				if (h)
 					AlyssaHTTP2::ServerHeaders(&hp, h);
 				else
@@ -125,7 +125,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		}
 	}
 	hp.StatusCode = 200; hp.ContentLength = ret.size() - HeaderEndpoint - 2 * LineDelimiterLength;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 	if (h) {
 		AlyssaHTTP2::ServerHeaders(&hp, h);
 		AlyssaHTTP2::SendData(h, &ret[HeaderEndpoint+2*LineDelimiterLength], ret.size() - HeaderEndpoint - 2 * LineDelimiterLength);
@@ -135,7 +135,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		AlyssaHTTP::ServerHeaders(&hp, cl);
 		Send(&ret[HeaderEndpoint + 2 * LineDelimiterLength], cl->Sr->sock, cl->Sr->ssl, ret.size() - HeaderEndpoint - 2 * LineDelimiterLength);
 		return;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 	}
 #endif
 }
@@ -143,7 +143,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 
 #ifdef Compile_CustomActions
 	int CustomActions::CAMain(char* path, clientInfo* c, H2Stream* h){
-		bool isDirectory=std::filesystem::is_directory(VirtualHosts[c->VHostNum].Location + path);
+		bool isDirectory = std::filesystem::is_directory((HasVHost) ? VirtualHosts[c->VHostNum].Location + path : htroot + path);
 		int sz=strlen(path); std::deque<std::filesystem::path> fArray;
 		char* _Path=new char[sz+8];//Duplicate of path for usage on this function.
 		memcpy(_Path, path, sz);
@@ -155,8 +155,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		for (int var = sz - 1; var >= 0; var--) {// Search for all folders until root of htroot recursively.
 			if (_Path[var] == '/') {
 				memcpy(&_Path[var + 1], ".alyssa", 8);
-				if (std::filesystem::exists(VirtualHosts[c->VHostNum].Location+_Path))
-					fArray.emplace_back(VirtualHosts[c->VHostNum].Location + _Path);
+				if (std::filesystem::exists((HasVHost) ? VirtualHosts[c->VHostNum].Location+_Path : htroot+_Path))
+					fArray.emplace_back((HasVHost) ? VirtualHosts[c->VHostNum].Location + _Path : htroot + _Path);
 				if (!CARecursive) break; // If recursive is not set, break so only current directory will be added.
 			}
 		}
@@ -225,7 +225,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						c[ct] = '\0';
 						if (cl->auth == "") {
 							hp.StatusCode = 401;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 							if (h)
 								AlyssaHTTP2::ServerHeaders(&hp, h);
 							else
@@ -239,7 +239,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							return -1;
 						case 0:
 							hp.StatusCode = 403;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 							if (h)
 								AlyssaHTTP2::ServerHeaders(&hp, h);
 							else
@@ -259,7 +259,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							wprintf(LocaleTable[Locale][STR_CA_ARG], "Redirect", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
 						}
 						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 						if (h)
 							AlyssaHTTP2::ServerHeaders(&hp, h);
 						else
@@ -289,7 +289,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
                     }
                     else if (!strcmp(&c[cn], "forbid")){
                         hp.StatusCode = 403;
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
                         if (h)
                             AlyssaHTTP2::ServerHeaders(&hp, h);
                         else

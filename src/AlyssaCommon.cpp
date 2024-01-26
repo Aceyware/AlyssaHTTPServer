@@ -151,7 +151,7 @@ void SetPredefinedHeaders() {
 		ret += "Content-Security-Policy: " + CSPHeaders + "\r\n";
 	}
 	ret += "Server: Alyssa/" + version + "\r\n"; PredefinedHeaders = ret; ret.clear();
-#ifdef Compile_WolfSSL
+#ifdef Compile_H2
 	if (EnableH2) {
 		if (HSTS) {
 			ret += 64 | 56; ret += sizeof "max-age=31536000" - 1; ret += "max-age=31536000";
@@ -163,7 +163,7 @@ void SetPredefinedHeaders() {
 		ret += 64 | 54; ret += sizeof "Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
 		PredefinedHeadersH2 = ret; PredefinedHeadersH2Size = ret.size();
 	}
-#endif // Compile_WolfSSL
+#endif // Compile_H2
 	 return;
 }
 #ifdef _WIN32

@@ -1,5 +1,10 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4.2 - 26.01.2024
+- Fixed an important issue on custom actions which causes a crash when virtual hosts are disabled.
+- Fixed compilation issues caused by wrong #ifdef's
+- Fixed compilation on \*nix caused by a missing definition
+
 ## 2.4.1 - 12.01.2024
 - Fixed the issue of malformed first header line may crash server.
 - Fixed the issue of message about HTTP/2 being experimental being printed always.

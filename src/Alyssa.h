@@ -77,6 +77,7 @@
 	#define closesocket close
 	#define Sleep sleep
 	static void sigpipe_handler(int unused){}
+	#define MSG_PARTIAL MSG_MORE
 #endif
 // Definitions for Windows
 #ifdef _WIN32
@@ -361,9 +362,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.4.1d";
+	static std::string version = "2.4.2d";
 #else
-	static std::string version = "2.4.1";
+	static std::string version = "2.4.2";
 #endif
 #endif
 #ifdef _WIN32

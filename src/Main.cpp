@@ -356,9 +356,11 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 						std::terminate();
 					}
 					wolfSSL_set_fd(ssl, sr->sock);
+#ifdef Compile_H2
 					if (EnableH2) {
 						wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
 					}
+#endif
 					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
 						wolfSSL_free(ssl);
 						closesocket(sr->sock);
