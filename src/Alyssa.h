@@ -87,11 +87,11 @@
 
 using std::string;
 
-//#ifdef Compile_H2// This has to be here currently.
-//struct DynElement {
-//	uint8_t Type = 0; char Data[16] = { NULL };
-//};
-//#endif
+#ifdef Compile_H2// This has to be here currently.
+struct DynElement {
+	uint8_t Type = 0; char Data[16] = { NULL };
+};
+#endif
 
 // Definition/declaration of functions and classes
 struct _Surrogate {//Surrogator struct that holds essentials for connection which is filled when there is a new connection.
@@ -102,7 +102,7 @@ struct _Surrogate {//Surrogator struct that holds essentials for connection whic
 	char* ALPN = NULL; unsigned short ALPNSize = 0; 
 	string host = ""; // Authority header. "host" on surrogator is only used on HTTP/2 connections as it is only sent once by client.
 	std::mutex lk;
-	//std::deque<DynElement> DynTable;
+	std::deque<DynElement> DynTable;
 #endif
 };
 struct HeaderParameters {// Solution to parameter fuckery on serverHeaders(*) functions.

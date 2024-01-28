@@ -153,7 +153,7 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->RequestPath.resize(_pos);
 				// Sanity checks
 				oldpos = _pos;
-				_pos = cl->RequestPath.find('&');// Query string
+				_pos = cl->RequestPath.find('?');// Query string
 				if (_pos != 255) {
 					unsigned char _sz = cl->RequestPath.size();
 					cl->qStr.resize(_sz - _pos); memcpy(cl->qStr.data(), &cl->RequestPath[_pos + 1], _sz - _pos - 1);

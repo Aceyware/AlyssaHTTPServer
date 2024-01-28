@@ -119,7 +119,6 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	}
 #ifdef Compile_H2
 	EnableH2 = stoi(getValue("http2", "0"));
-	if(EnableH2) ConsoleMsg(1, "Server: ", "HTTP/2 support is still experimental and highly discouraged to use on production.");
 #endif // Compile_H2
 
 #endif //Compile_WolfSSL

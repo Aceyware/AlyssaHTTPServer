@@ -154,13 +154,13 @@ void SetPredefinedHeaders() {
 #ifdef Compile_H2
 	if (EnableH2) {
 		if (HSTS) {
-			ret += 64 | 56; ret += sizeof "max-age=31536000" - 1; ret += "max-age=31536000";
+			ret += 15; ret += 41; ret += sizeof "max-age=31536000" - 1; ret += "max-age=31536000";
 		}
 		if (CSPEnabled) {
 			ret += '\0'; ret += sizeof "content-security-policy" - 1; ret += "content-security-policy";
 			ret += CSPHeaders.size(); ret += CSPHeaders;
 		}
-		ret += 64 | 54; ret += sizeof "Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
+		ret += 15; ret += 39; ret += sizeof "Alyssa/" + version.size() - 1; ret += "Alyssa/" + version;
 		PredefinedHeadersH2 = ret; PredefinedHeadersH2Size = ret.size();
 	}
 #endif // Compile_H2

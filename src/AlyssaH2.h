@@ -85,13 +85,10 @@ private:
 		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
 			if (StrTable->at(i) != NULL) {
 				if (StrTable->at(i)->Stream == StreamId) {
-					delete StrTable->at(i)->Ptr; delete StrTable->at(i); StrTable->at(i) = NULL; return;
+					delete StrTable->at(i)->Ptr; StrTable->at(i)->Ptr = NULL; return;
 				}
 			}
 		}
-	}
-	static void DeleteStream(StreamTable* Ptr) {
-		delete Ptr->Ptr; delete Ptr;
 	}
 	static void DeleteStreamEntry(std::deque<StreamTable*>* StrTable, unsigned int StreamId, std::mutex& MasterMtx) {
 		for (int i = 0; i < StrTable->size(); i++) {// Search on the table for corresponding stream
@@ -102,11 +99,15 @@ private:
 			}
 		}
 	}
-	static void StreamCleanup(std::deque<StreamTable*>* StrTable) {//Deletes ALL stream structures of a connection from memory.
+	static void StreamCleanup(std::deque<StreamTable*>* StrTable, std::mutex& MasterMtx) {//Deletes ALL stream structures of a connection from memory.
 		for (int i = 0; i < StrTable->size(); i++) {
-			if (StrTable->at(i) != NULL) {
-				delete StrTable->at(i)->Ptr; delete StrTable->at(i);
+			MasterMtx.lock();
+			if (StrTable->at(i)->Ptr != NULL) {
+				StrTable->at(i)->Ptr->StrOpen = 0; StrTable->at(i)->Ptr->StrAtom = 0;
+				StrTable->at(i)->Ptr->StrMtx.lock(); StrTable->at(i)->Ptr->StrMtx.unlock();
+				delete StrTable->at(i)->Ptr; delete StrTable->at(i); StrTable->at(i) = NULL;
 			}
+			MasterMtx.unlock();
 		}
 	}
 	static void Get(H2Stream* s);
@@ -120,14 +121,14 @@ private:
 					Value[t] = hexconv(&Value[t+1]);
 				}
 				catch (const std::invalid_argument&) {
-					ServerHeadersM(s, 400, 1, ""); return 1;
+					return 1;
 				}
 				memmove(&Value[t + 1], &Value[t + 3], pos - t); pos -= 2;
 			}
 		}
 		Value.resize(pos);
 		// Query string
-		pos = Value.find('&');
+		pos = Value.find('?');
 		if (pos != 255) {
 			unsigned char _sz = Value.size();
 			s->cl.qStr.resize(_sz - pos); memcpy(s->cl.qStr.data(), &Value[pos + 1], _sz - pos - 1);
@@ -135,7 +136,7 @@ private:
 		}
 		// Sanity checks
 		s->cl.RequestPath = Value;
-		if ((int)Value.find(".alyssa") > -1) { ServerHeadersM(s, 400, 1, ""); return 1; }
+		if ((int)Value.find(".alyssa") > -1) { return 1; }
 		char level = 0; char t = 1; while (Value[t] == '/') t++;
 		for (; t < pos;) {
 			if (Value[t] == '/') {
@@ -148,7 +149,7 @@ private:
 				t++; while (Value[t] == '/') t++;
 			}
 			else t++;
-			if (level < 0) { ServerHeadersM(s, 400, 1, ""); return 1; } //Client tried to access above htroot
+			if (level < 0) { return 1; } //Client tried to access above htroot
 			return 0;
 		}
 	}

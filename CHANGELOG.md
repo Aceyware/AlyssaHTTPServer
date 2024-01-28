@@ -1,5 +1,15 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4.3
+- Fixes and improvements for HTTP/2
+	- Fixed the crash caused when client is disconnected
+	- Initial implementation of dynamic header table
+	- Fixup for incorrect server headers
+	- Fixup of response with status 400 not being sent, **which also leads to a security vulnerability**
+	- Some other fixes
+	- Overall its now much better and actually usable.
+- Fixed the incorrect behavior regarding to Query Strings.
+
 ## 2.4.2 - 26.01.2024
 - Fixed an important issue on custom actions which causes a crash when virtual hosts are disabled.
 - Fixed compilation issues caused by wrong #ifdef's

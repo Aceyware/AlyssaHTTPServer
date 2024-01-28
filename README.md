@@ -7,7 +7,7 @@ edit ports or other stuff if needed, and run the executable.
 ## Documentation
 Documentation about configuration, compiling and much more is available [here.](docs/Home.md)
 ## Features
-- HTTP/2 (EXPERIMENTAL)
+- HTTP/2 (still work in progress)
 - SSL/TLS
 - Redirection(soft and hard), authentication
 - CGI applications
@@ -40,7 +40,6 @@ And more.
 - [ ] Digest authentication
 - [ ] Source code documentation (maybe)
 - [ ] Modules/extensions support
-- [ ] Chunked transfer
 - [x] Compression encodings (deflate).
 - [ ] Make sure the server is really ready for production use.
 - [ ] Get a girlfriend
