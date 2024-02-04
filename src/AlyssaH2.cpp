@@ -844,14 +844,14 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 			}
 			if (!Element) Element = FindIndex(&StrTable, FrameStrId, StrmsMtx, sr);
 			if (FrameStrId!=0 && !Element->Ptr->StrOpen) {
+				if (Element->Ptr->cl.Sr->host == "") {
+					ServerHeadersM(Element->Ptr, 400, 1, "");
+					DeleteStream(&StrTable, FrameStrId, StrmsMtx); break;
+				}
 				if (HasVHost) { // Virtual host stuff
-					if(Element->Ptr->cl.Sr->host=="") {
-						ServerHeadersM(Element->Ptr, 400, 1, "");
-						DeleteStream(&StrTable, FrameStrId, StrmsMtx); break;
-					}
 					bool Break = 0;// Break from main loop
 					for (int i = 1; i < VirtualHosts.size(); i++) {
-						if(VirtualHosts[i].Hostname== Element->Ptr->cl.Sr->host){
+						if(VirtualHosts[i].Hostname == Element->Ptr->cl.Sr->host){
 							Element->Ptr->cl.VHostNum = i;
 							if (VirtualHosts[i].Type == 0) { // Standard VHost
 								Element->Ptr->cl._RequestPath=VirtualHosts[i].Location; break;
@@ -860,11 +860,35 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 								ServerHeadersM(Element->Ptr, 302, 1, VirtualHosts[i].Location);
 								DeleteStream(&StrTable, FrameStrId, StrmsMtx); Break = 1; break;
 							}
+							else if (VirtualHosts[i].Type == 2) { // Forbidden VHost
+								ServerHeadersM(Element->Ptr, 403, 1);
+								DeleteStream(&StrTable, FrameStrId, StrmsMtx); Break = 1; break;
+							}
+							else if (VirtualHosts[i].Type == 3) { // "Hang-up" VHost. We just say fuck off to client.
+								if (logging) AlyssaLogging::literal(Element->Ptr->cl.Sr->clhostname + " -> " + VirtualHosts[i].Hostname + Element->Ptr->cl.RequestPath + " rejected and hung-up.", 'C');
+								goto ClientEnd;
+							}
 						}
 					}
 					if (Break) break;
-					if (Element->Ptr->cl._RequestPath == "") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
-						Element->Ptr->cl._RequestPath = VirtualHosts[0].Location;
+					if (Element->Ptr->cl._RequestPath == "") { // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
+						// Same as above.
+						if (VirtualHosts[0].Type == 0) {
+							Element->Ptr->cl._RequestPath = VirtualHosts[0].Location; break;
+						}
+						else if (VirtualHosts[0].Type == 1) {
+							ServerHeadersM(Element->Ptr, 302, 1, VirtualHosts[0].Location);
+							DeleteStream(&StrTable, FrameStrId, StrmsMtx); Break = 1; break;
+						}
+						else if (VirtualHosts[0].Type == 2) {
+							ServerHeadersM(Element->Ptr, 403, 1);
+							DeleteStream(&StrTable, FrameStrId, StrmsMtx); Break = 1; break;
+						}
+						else if (VirtualHosts[0].Type == 3) {
+							if (logging) AlyssaLogging::literal(Element->Ptr->cl.Sr->clhostname + " -> " + Element->Ptr->cl.host + Element->Ptr->cl.RequestPath + " rejected and hung-up.", 'C');
+							goto ClientEnd;
+						}
+					}
 					Element->Ptr->cl._RequestPath += std::filesystem::u8path(Element->Ptr->cl.RequestPath);
 				}
 				else {

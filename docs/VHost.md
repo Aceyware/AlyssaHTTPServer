@@ -20,7 +20,9 @@ There's also the **default** hostname that is used for all hostnames that doesn'
 and it uses htroot on config if you don't define it separately (by using 'default' as hostname).
 
 ### Type 
-There's 3 supported types:
+There's 5 supported types:
 1. **Standard:** Just standard host, parameter is htroot of virtual host.
 2. **Redirect:** Redirector virtual host, same as the redirect on custom actions. Parameter is the URI you want to redirect to.
-3. **Copy:** Copies/inherits the virtual host on parameter.
+3. **Forbid all:** Responds with a 403 to all requests to such host. " all" is required in the end.
+4. **Hangup all:** Hangs up the connection to this host. " all" is required in the end.
+5. **Copy:** Copies/inherits the virtual host on parameter.

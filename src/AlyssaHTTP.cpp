@@ -215,21 +215,43 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			// Check if client connects with SSL or not if HSTS is enabled
 			if (HSTS && !cl->Sr->ssl) return -4; // client doesn't use SSL.
 			// Virtual host stuff
+			if (cl->host == "") { cl->flags |= 2; return -1; }
 			if (HasVHost) {
-				if (cl->host == "") { cl->flags |= 2; return -1; }
 				for (int i = 1; i < VirtualHosts.size(); i++) {
 					if (VirtualHosts[i].Hostname == cl->host) {
 						cl->VHostNum = i;
 						if (VirtualHosts[i].Type == 0) // Standard virtual host
 							cl->_RequestPath = VirtualHosts[i].Location;
-						if (VirtualHosts[i].Type == 1) { // Redirecting virtual host
+						else if (VirtualHosts[i].Type == 1) { // Redirecting virtual host
 							ServerHeadersM(cl, 302, VirtualHosts[i].Location); return -3;
+						}
+						else if (VirtualHosts[i].Type == 2) { // Forbidden virtual host
+							ServerHeadersM(cl, 403); return -3;
+						}
+						else if (VirtualHosts[i].Type == 3) { // "Hang-up" virtual host
+							closesocket(cl->Sr->sock); 
+							if (logging) AlyssaLogging::literal(cl->Sr->clhostname + " -> " + VirtualHosts[i].Hostname + cl->RequestPath + " rejected and hung-up.", 'C');
+							return -3;// No clean shutdown or anything, we just say fuck off to client.
 						}
 						break;
 					}
 				}
-				if (cl->_RequestPath == "") // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
-					cl->_RequestPath = VirtualHosts[0].Location;
+				if (cl->_RequestPath == "") { // _RequestPath is empty, which means we havent got into a virtual host, inherit from default.
+					// Same as above.
+					if (VirtualHosts[0].Type == 0)
+						cl->_RequestPath = VirtualHosts[0].Location;
+					else if (VirtualHosts[0].Type == 1) { 
+						ServerHeadersM(cl, 302, VirtualHosts[0].Location); return -3;
+					}
+					else if (VirtualHosts[0].Type == 2) { 
+						ServerHeadersM(cl, 403); return -3;
+					}
+					else if (VirtualHosts[0].Type == 3) { 
+						closesocket(cl->Sr->sock); 
+						if (logging) AlyssaLogging::literal(cl->Sr->clhostname + "->" + cl->host + cl->RequestPath + " rejected and hung-up.", 'C');
+						return -3;
+					}
+				}
 				cl->_RequestPath += std::filesystem::u8path(cl->RequestPath);
 			}
 			else {

@@ -300,8 +300,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			else if (type == "redirect") Element.Type = 1;
 			else if (type == "copy") {
 				for (int i = 0; i < VirtualHosts.size(); i++) {
-					if (VirtualHosts[i].Hostname == hostname) {
-						Element = VirtualHosts[i]; Element.Hostname = hostname;
+					if (VirtualHosts[i].Hostname == value) {
+						Element = VirtualHosts[i]; Element.Hostname = hostname; goto VHostAdd;
 					}
 				}
 				ConsoleMsg(1, "Virtual hosts: ", "source element not found for copying, ignoring.\n"); continue;
@@ -309,6 +309,9 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 					AlyssaLogging::literal(std::string("Virtual hosts: source element " + hostname + "not found for copying."), 'W');
 				}
 			}
+			else if (type == "forbid") Element.Type = 2;
+			else if (type == "hangup") Element.Type = 3;
+VHostAdd:
 			if (hostname == "default") VirtualHosts[0] = Element;
 			else VirtualHosts.emplace_back(Element);
 		}

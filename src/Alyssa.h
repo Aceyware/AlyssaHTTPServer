@@ -215,9 +215,9 @@ class DirectoryIndex {
 
 namespace AlyssaLogging {
 	extern void connection(clientInfo* cl, uint16_t statusCode);
-	extern void literal(char* s, char logType);
-	extern void literal(std::string& s, char logType);
-	extern void literal(std::string s, char logType);
+	extern void literal(const char* s, const char logType);
+	extern void literal(const std::string& s, const char logType);
+	//extern void literal(std::string s, const char logType);
 	extern void startup();
 };
 
@@ -367,9 +367,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.4.4d";
+	static std::string version = "2.4.5d";
 #else
-	static std::string version = "2.4.4";
+	static std::string version = "2.4.5";
 #endif
 #endif
 #ifdef _WIN32

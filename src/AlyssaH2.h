@@ -44,7 +44,7 @@ class AlyssaHTTP2 {
 public:
 	static void ClientConnection(_Surrogate* sr);
 	static void ServerHeaders(HeaderParameters* p, H2Stream* s);
-	static void ServerHeadersM(H2Stream* s, uint16_t statusCode, bool endStream, const std::string& param);
+	static void ServerHeadersM(H2Stream* s, uint16_t statusCode, bool endStream, const std::string& param = "");
 	static void ParseHeaders(H2Stream* s, char* buf, int sz);
 	static void SendData(H2Stream* s, const void* d, size_t sz);
 private:

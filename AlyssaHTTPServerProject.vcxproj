@@ -77,17 +77,17 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
-    <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Users\Tracey\wolfssl\Release\Win32;</LibraryPath>
+    <LibraryPath>C:\Users\Tracey\zlib;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Users\Tracey\wolfssl\Release\Win32</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>C:\Users\Tracey\zlib\x64;C:\Users\Tracey\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl\Release\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>C:\Users\Tracey\zlib\x64\;C:\Users\Tracey\wolfssl\Release\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

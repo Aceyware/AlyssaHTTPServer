@@ -13,21 +13,14 @@ namespace AlyssaLogging {
 	}
 	// Logs a literal string line. 's' is the string to log, 'logType' is the character
 	// that specifes the type of line at the beginning of line (like 'E' for errors, 'I' for info, 'C' for connections etc.
-	void literal(char* s, char logType) {
+	void literal(const char* s, const char logType) {
 		logMutex.lock();
 		Log << logType << " [" << currentTime() << "] " << s << std::endl;
 		logMutex.unlock();
 	}
 	// Logs a literal string line. 's' is the string to log, 'logType' is the character
 	// that specifes the type of line at the beginning of line (like 'E' for errors, 'I' for info, 'C' for connections etc.
-	void literal(std::string& s, char logType) {
-		logMutex.lock();
-		Log << logType << " [" << currentTime() << "] " << s << std::endl;
-		logMutex.unlock();
-	}
-	// Logs a literal string line. 's' is the string to log, 'logType' is the character
-	// that specifes the type of line at the beginning of line (like 'E' for errors, 'I' for info, 'C' for connections etc.
-	void literal(std::string s, char logType) {
+	void literal(const std::string& s, const char logType) {
 		logMutex.lock();
 		Log << logType << " [" << currentTime() << "] " << s << std::endl;
 		logMutex.unlock();

@@ -1,5 +1,14 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4.5 - 04.02.2024
+- Added two new virtual hosts directives
+	- "forbid all": sends 403 to every request
+	- "hangup all": hangs-up (disconnects) on request to such host.
+- Fixed the bug of "Copy" not working on virtual hosts.
+- Now default vhosts are not limited to "standard"
+- Changed behavior on lack of "Host" header. Now they always will be rejected regardless if virtual hosts are enabled or not.
+- Fixed a typo 
+
 ## 2.4.4 - 04.02.2024
 - Improved logging system
 	- Log lines now has indicators at the beginning

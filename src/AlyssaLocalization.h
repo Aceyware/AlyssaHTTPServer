@@ -70,7 +70,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"Custom actions: ",
 		L"Alyssa HTTP Server ",
 		L"Listening on",
-		L"virtual hosts active",
+		L" virtual hosts active",
 		L"Config: ",
 		// 10
 		L"cannot open Alyssa.cfg, using default values...",
@@ -124,7 +124,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"Özel eylem: ",
 		L"Alyssa HTTP Sunucusu ",
 		L"Şu kapılar dinleniyor:",
-		L"sanal sunucu etkin",
+		L" sanal sunucu etkin",
 		L"Yapılandırma: ",
 		// 10
 		L"Alyssa.cfg yapılandırma dosyası açılamadı, varsayılan ayarlar kullanılıyor...",
