@@ -10,6 +10,9 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 	c->LastHeader.ContentLength = h->ContentLength; c->LastHeader.StatusCode = h->StatusCode;
 	c->LastHeader.MimeType = h->MimeType;
 #endif
+	if (logging) {
+		AlyssaLogging::connection(c, h->StatusCode);
+	}
 	std::string ret = "HTTP/1.1 "; ret.reserve(512);
 	switch (h->StatusCode) {
 		case 200:	ret += "200 OK\r\n"; break;
@@ -75,6 +78,9 @@ void AlyssaHTTP::ServerHeadersM(clientInfo* c, unsigned short statusCode, const 
 #ifdef AlyssaTesting
 	c->LastHeader.StatusCode = statusCode;
 #endif
+	if (logging) {
+		AlyssaLogging::connection(c, statusCode);
+	}
 	std::string ret = "HTTP/1.1 "; ret.reserve(512);
 	switch (statusCode) {
 		case 200:	ret += "200 OK\r\n"; break;
@@ -391,9 +397,6 @@ ParseReturn:
 
 void AlyssaHTTP::Get(clientInfo* cl) {
 	HeaderParameters h;
-	if (logging) {
-		Logging(cl);
-	}
 
 	if (!strncmp(&cl->RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, set path to respath and also skip custom actions
 		cl->_RequestPath = respath + Substring(&cl->RequestPath[0], 0, htrespath.size());
@@ -560,9 +563,6 @@ NoRange:
 #ifdef Compile_CustomActions
 void AlyssaHTTP::Post(clientInfo* cl) {
 	HeaderParameters h;
-	if (logging) {
-		Logging(cl);
-	}
 	if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
 		{

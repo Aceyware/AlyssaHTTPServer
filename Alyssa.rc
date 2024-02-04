@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,4,2,0
- PRODUCTVERSION 2,4,2,0
+ FILEVERSION 2,4,4,0
+ PRODUCTVERSION 2,4,4,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -69,12 +69,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Alyssa Software"
             VALUE "FileDescription", "Alyssa HTTP Server Project"
-            VALUE "FileVersion", "2.4.2"
+            VALUE "FileVersion", "2.4.4"
             VALUE "InternalName", "AlyssaHTTP.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2024 PEPSIMANTR, Alyssa Software"
+            VALUE "LegalCopyright", "Copyright (C) 2024 Alyssa Software - GPLv3 Licensed"
             VALUE "OriginalFilename", "AlyssaHTTP.exe"
             VALUE "ProductName", "Alyssa HTTP Server Project"
-            VALUE "ProductVersion", "2.4.2"
+            VALUE "ProductVersion", "2.4.4"
         END
     END
     BLOCK "VarFileInfo"

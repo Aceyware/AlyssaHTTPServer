@@ -213,6 +213,14 @@ class DirectoryIndex {
 };
 #endif
 
+namespace AlyssaLogging {
+	extern void connection(clientInfo* cl, uint16_t statusCode);
+	extern void literal(char* s, char logType);
+	extern void literal(std::string& s, char logType);
+	extern void literal(std::string s, char logType);
+	extern void startup();
+};
+
 template <typename TP> std::time_t to_time_t(TP tp) { // This must stay here otherwise it'll error at linkage.
 	using namespace std::chrono;
 	auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now()
@@ -230,9 +238,6 @@ void ToLower(char* c, int l);
 size_t btoull(string str, int size);
 unsigned int Convert24to32(unsigned char* Source);
 size_t Append(void* Source, void* Destination, size_t Position, size_t Size = 0);
-void Logging(clientInfo* cl);
-void LogString(const char* s);
-void LogString(string s);
 void SetPredefinedHeaders();
 void ConsoleMsg(int8_t MsgType, const char* UnitName, const char* Msg);
 void ConsoleMsg(int8_t MsgType, int UnitStr, int MsgStr);
@@ -362,9 +367,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.4.2d";
+	static std::string version = "2.4.4d";
 #else
-	static std::string version = "2.4.2";
+	static std::string version = "2.4.4";
 #endif
 #endif
 #ifdef _WIN32

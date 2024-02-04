@@ -16,6 +16,9 @@
 std::string PredefinedHeadersH2; short int PredefinedHeadersH2Size = 0;
 
 void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s) {
+	if (logging) {
+		AlyssaLogging::connection(&s->cl, p->StatusCode);
+	}
 	// RFC 7541 will be a guide for you to understand what those all does.
 	if (!s->StrIdent) return;
 	char buf[4096] = { 0 }; uint16_t pos = 9;
@@ -161,6 +164,9 @@ void AlyssaHTTP2::ServerHeaders(HeaderParameters* p, H2Stream* s) {
 
 void AlyssaHTTP2::ServerHeadersM(H2Stream* s, uint16_t statusCode, bool endStream, 
 								const std::string& param) {
+	if (logging) {
+		AlyssaLogging::connection(&s->cl, statusCode);
+	}
 	if (!s->StrIdent) return;
 	char buf[1024] = { 0 }; uint16_t pos = 9;
 	buf[3] = H2THEADERS;
@@ -516,10 +522,6 @@ void AlyssaHTTP2::SendData(H2Stream* s, const void* d, size_t sz) {
 
 void AlyssaHTTP2::Get(H2Stream* s) {// Pretty similar to its HTTP/1.1 counterpart.
 	HeaderParameters h;
-	if (logging) {
-		Logging(&s->cl);
-	}
-
 	if (!strncmp(&s->cl.RequestPath[0], &htrespath[0], htrespath.size())) {//Resource, skip custom actions if so.
 		s->cl._RequestPath = respath + Substring(&s->cl.RequestPath[0], 0, htrespath.size());
 	}
@@ -693,9 +695,6 @@ NoRange:
 #ifdef Compile_CustomActions
 void AlyssaHTTP2::Post(H2Stream* s) {
 	HeaderParameters h;
-	if (logging) {
-		Logging(&s->cl);
-	}
 	if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl, s)) {
 		case 0:

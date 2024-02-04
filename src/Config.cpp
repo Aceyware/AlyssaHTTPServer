@@ -107,21 +107,19 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	}
 	HSTS = stoi(getValue("hsts", "0"));
 	if (HSTS && !enableSSL) { ConsoleMsg(0, "Config: ", "HSTS is set on config but SSL is not enabled."); HSTS = 0; }
-	//if (HSTS && SSLport != 443) { cout << "Config: Error: HSTS is set but SSL port is not 443." << endl; HSTS = 0; }
-	switch (stoi(getValue("customactions", "0"))) {
-		case 1:
-			CAEnabled=1;
-			break;
-		case 2:
-			CAEnabled = 1; CARecursive = 1; break;
-		default:
-			break;
-	}
 #ifdef Compile_H2
 	EnableH2 = stoi(getValue("http2", "0"));
 #endif // Compile_H2
 
 #endif //Compile_WolfSSL
+
+#ifdef Compile_CustomActions
+	switch (stoi(getValue("customactions", "0"))) {
+		case 1:  CAEnabled = 1; break;
+		case 2:  CAEnabled = 1; CARecursive = 1; break;
+		default: break;
+	}
+#endif // Compile_CustomActions
 
 #ifdef Compile_locales
 	if (getValue("locale", "") == "tr") Locale = 1; else Locale = 0;
@@ -132,6 +130,6 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 #ifdef Compile_zlib
 	deflateEnabled = stoi(getValue("deflate", "0"));
 #endif // Compile_zlib
-
+	configcache.clear(); configcache_value.clear();
 	return 1;
 }

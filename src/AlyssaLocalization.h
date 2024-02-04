@@ -106,7 +106,7 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		// 30
 		L"Argument required for '%s' action on node %s\n",
 		L"Unknown command: %.*s on node %s\n",
-		L"Syntax error (%s) at char %d on fie %s\n",
+		L"Syntax error (%s) at char %d on file %s\n",
 		L"closure of a non-existent scope",
 		L"invalid node identifier keyword",
 		L"beginning of another scope before previous one closed",

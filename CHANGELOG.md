@@ -1,6 +1,14 @@
 # Alyssa HTTP Server Changelog
 
-## 2.4.3
+## 2.4.4 - 04.02.2024
+- Improved logging system
+	- Log lines now has indicators at the beginning
+	- Connection logs now include the host client connected and the status code server returned, and now not successful requests will be logged as well.
+	- Errors on core server and Custom Actions are now logged.
+- Slight improvements for Custom Actions.
+- Fixed the misplacement on config code that Custom Actions are only checked if compiled with SSL and regardless if Custom Actions is added or not.
+
+## 2.4.3 - 28.01.2024
 - Fixes and improvements for HTTP/2
 	- Fixed the crash caused when client is disconnected
 	- Initial implementation of dynamic header table

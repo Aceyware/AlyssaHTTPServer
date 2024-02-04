@@ -123,25 +123,6 @@ size_t Append(void* Source, void* Destination, size_t Position, size_t Size) {
 	memcpy(Destination, &static_cast<char*>(Source)[Position], Size);
 	return Size + Position;
 }
-void Logging(clientInfo* cl) {
-	if (!Log.is_open()) {
-		std::terminate();
-	}
-	// A very basic logging implementation
-	// This implementation gets the clientInfo and logs the IP address of client, the path where it requested and a timestamp.
-	logMutex.lock();
-	Log << "[" << currentTime() << "] " << cl->Sr->clhostname << " - " << cl->RequestPath;
-	//if (cl->RequestType != "GET") Log << " (" << cl->RequestType << ")";
-	Log << std::endl;
-	logMutex.unlock();
- }
- // Log a predefined message instead of reading from clientInfo, for things like error logging.
-void LogString(const char* s) {
-	logMutex.lock(); Log << s; logMutex.unlock();
-}
-void LogString(string s) {
-	logMutex.lock(); Log << s; logMutex.unlock();
-}
 void SetPredefinedHeaders() {
 	std::string ret;
 #ifdef Compile_WolfSSL

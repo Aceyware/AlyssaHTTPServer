@@ -92,7 +92,12 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			ConsoleMsg(0, STR_SERVER, STR_LOG_FAIL); logging = 0;
 		}
 		else {
-			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() << " - Version: " << version << " -----" << std::endl;
+			Log << "----- Alyssa HTTP Server Log File - Logging started at: " << currentTime() 
+				<< " - Version: " << version 
+#ifdef _WIN32
+				<< " on Windows"
+#endif
+				<< " -----" << std::endl;
 		}
 	}
 
@@ -102,13 +107,19 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	if (enableSSL) {
 		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
-			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_INTFAIL); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_INTFAIL);
+			if (logging) AlyssaLogging::literal("WolfSSL: internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled.",'E');
+			enableSSL = 0; goto SSLEnd;
 		}
 		if (wolfSSL_CTX_use_PrivateKey_file(ctx, SSLkeypath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_KEYFAIL); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_KEYFAIL); 
+			if (logging) AlyssaLogging::literal("WolfSSL: failed to load SSL private key file, SSL is disabled.",'E');
+			enableSSL = 0; goto SSLEnd;
 		}
 		if (wolfSSL_CTX_use_certificate_file(ctx, SSLcertpath.c_str(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_CERTFAIL); enableSSL = 0; goto SSLEnd;
+			ConsoleMsg(0, STR_WOLFSSL, STR_SSL_CERTFAIL); 
+			if (logging) AlyssaLogging::literal("WolfSSL: failed to load SSL certificate file, SSL is disabled.",'E');
+			enableSSL = 0; goto SSLEnd;
 		}
 	}
 	SSLEnd:
@@ -142,12 +153,14 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
 			ConsoleMsgM(0, STR_SERVER);
 			wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
 			return -2;
 		}
 		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 		else if (port[i] != ntohs(hint.sin_port)) { 
 			ConsoleMsgM(0, STR_SERVER);
 			wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
 			return -2;
 		}
 		listen(listening, SOMAXCONN);
@@ -174,11 +187,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
 				ConsoleMsgM(0, STR_SERVER);
 				wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
 				return -2;
 			}
 			else if (SSLport[i] != ntohs(hint.sin_port)) {
 				ConsoleMsgM(0, STR_SERVER);
 				wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
 				return -2;
 			}
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
@@ -208,11 +223,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 			bind(listening, (sockaddr*)&hint, sizeof(hint));
 			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
 				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
 				return -2;
 			}
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 			else if (port[i] != ntohs(hint.sin6_port)) {
 				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+				if(logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
 				return -2;
 			}
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
@@ -241,11 +258,13 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 				bind(listening, (sockaddr*)&hint, sizeof(hint));
 				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
 					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+					AlyssaLogging::literal("Failed to reserve port6 "+SSLport[i], 'E');
 					return -2;
 				}
 				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 				else if (SSLport[i] != ntohs(hint.sin6_port)) {
 					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+					AlyssaLogging::literal("Failed to reserve port6 " + SSLport[i], 'E');
 					return -2;
 				}
 				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
@@ -271,7 +290,10 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		VirtualHost Element; VirtualHosts.emplace_back(Element);// Leave a space for default host.
 		std::ifstream VHostFile(VHostFilePath);
 		string hostname, type, value;
-		if (!VHostFile) { ConsoleMsg(0, "Virtual hosts: ", "Cannot open virtual hosts config file.\n"); HasVHost = 0; }
+		if (!VHostFile) { 
+			ConsoleMsg(0, "Virtual hosts: ", "Cannot open virtual hosts config file.\n"); HasVHost = 0;
+			AlyssaLogging::literal("Virtual hosts: cannot open virtual hosts config file", 'E');
+		}
 		while (VHostFile >> hostname >> type >> value) {
 			Element.Hostname = hostname; Element.Location = value;
 			if (type == "standard") Element.Type = 0;
@@ -283,6 +305,9 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 					}
 				}
 				ConsoleMsg(1, "Virtual hosts: ", "source element not found for copying, ignoring.\n"); continue;
+				if (logging) {
+					AlyssaLogging::literal(std::string("Virtual hosts: source element " + hostname + "not found for copying."), 'W');
+				}
 			}
 			if (hostname == "default") VirtualHosts[0] = Element;
 			else VirtualHosts.emplace_back(Element);
@@ -312,6 +337,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #endif
 	std::cout << std::endl;
+	if (logging) AlyssaLogging::startup();
 
 	while (true) {
 	/*

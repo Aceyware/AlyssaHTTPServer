@@ -33,6 +33,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (result != 0) {
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_FAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
+		if (logging) AlyssaLogging::literal("Custom actions: Failed to execute CGI: "+std::string(exec), 'E');
 #ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -56,6 +57,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (ret.size() == 0) {// Error if no output or it can't be read.
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_OUTFAIL], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
+		if (logging) AlyssaLogging::literal("Custom actions: Failed to read output of or executing, or no output on CGI: " + std::string(exec),'E');
 #ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -74,6 +76,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 	if (HeaderEndpoint == ret.size()) {// Error if there's no empty line for terminating headers.
 		ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 		wprintf(LocaleTable[Locale][STR_CGI_HEADER], exec); ConsoleMutex.unlock(); hp.StatusCode = 500;
+		if (logging) AlyssaLogging::literal("Custom actions: missing header terminator on CGI: " + std::string(exec),'E');
 #ifdef Compile_H2
 		if (h)
 			AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -96,8 +99,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					HeaderEndpoint = 0; break;
 				}
 				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-				wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); hp.StatusCode = 500; break;
-				hp.CustomHeaders.clear();
+				wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); 
+				if (logging) AlyssaLogging::literal("Custom actions: malformed headers on CGI: " + std::string(exec),'E');
+				hp.StatusCode = 500; hp.CustomHeaders.clear();
 #ifdef Compile_H2
 				if (h)
 					AlyssaHTTP2::ServerHeaders(&hp, h);
@@ -113,7 +117,16 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				}
 				catch (const std::invalid_argument&) {
 					ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-					wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec); ConsoleMutex.unlock(); hp.StatusCode = 500; break;
+					wprintf(LocaleTable[Locale][STR_CGI_MALFORM], exec);
+					if (logging) AlyssaLogging::literal("Custom actions:  malformed headers on CGI: " + std::string(exec),'E');
+					ConsoleMutex.unlock(); hp.StatusCode = 500;
+#ifdef Compile_H2
+					if (h)
+						AlyssaHTTP2::ServerHeaders(&hp, h);
+					else
+#endif
+						AlyssaHTTP::ServerHeaders(&hp, cl);
+					return;
 				}
 			}
 			else if (!strncmp(headerline.data(), "Content-Type", 12)) {
@@ -183,7 +196,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		f=fopen(p,"rb");
 		if(!f){
 			ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-			wprintf(LocaleTable[Locale][STR_CRED_FAIL], p); ConsoleMutex.unlock(); return -1;
+			wprintf(LocaleTable[Locale][STR_CRED_FAIL], p); ConsoleMutex.unlock();
+			if (logging) AlyssaLogging::literal("Custom actions: failed to read credentials file:"+std::string(p),'E');
+			return -1;
 		}
 		int sz=std::filesystem::file_size(std::filesystem::path(p));
 		char* buf=new char[sz+1];
@@ -220,7 +235,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							ct++;
 						if(ct-cn<2){
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-							wprintf(LocaleTable[Locale][STR_CA_ARG], "Authenticate", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "Authenticate", cl->RequestPath.data()); ConsoleMutex.unlock();
+							if (logging) AlyssaLogging::literal("Custom actions: missing argument for Authenticate on node" + cl->RequestPath, 'E');
+							return -1;
 						}
 						c[ct] = '\0';
 						if (cl->auth == "") {
@@ -256,7 +273,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							ct++;
 						if(ct-cn<2){
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-							wprintf(LocaleTable[Locale][STR_CA_ARG], "Redirect", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "Redirect", cl->RequestPath.data()); ConsoleMutex.unlock(); 
+							if (logging) AlyssaLogging::literal("Custom actions: missing argument for Redirect on node" + cl->RequestPath, 'E');
+							return -1;
 						}
 						string rd(ct - cn, 0); memcpy(&rd[0], &c[cn], ct - cn); hp.StatusCode = 302; hp.AddParamStr = rd;
 #ifdef Compile_H2
@@ -273,7 +292,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							ct++;
 						if(ct-cn<2){
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-							wprintf(LocaleTable[Locale][STR_CA_ARG], "SoftRedirect", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "SoftRedirect", cl->RequestPath.data()); ConsoleMutex.unlock(); 
+							if (logging) AlyssaLogging::literal("Custom actions: missing argument for SoftRedirect on node" + cl->RequestPath, 'E');
+							return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments, &c[cn], ct - cn); Action = 1;
 					}
@@ -283,7 +304,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							ct++;
 						if (ct - cn < 2) {
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-							wprintf(LocaleTable[Locale][STR_CA_ARG], "ExecCGI", cl->RequestPath.data()); ConsoleMutex.unlock(); return -1;
+							wprintf(LocaleTable[Locale][STR_CA_ARG], "ExecCGI", cl->RequestPath.data()); ConsoleMutex.unlock();
+							if (logging) AlyssaLogging::literal("Custom actions: missing argument for ExecCGI on node"+cl->RequestPath,'E');
+							return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
                     }
@@ -302,6 +325,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						ConsoleMsgM(0, STR_CUSTOMACTIONS);
 						wprintf(LocaleTable[Locale][STR_CA_UNKN], ct - 1 - cn, &c[cn], cl->RequestPath.c_str());
 						ConsoleMutex.unlock();
+						if (logging) AlyssaLogging::literal("Custom actions: unknown command on node "+cl->RequestPath,'E');
 						return -1;
 					}
 					cn=ct;
@@ -314,10 +338,8 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				cl->RequestPath=Arguments;
 				break;
 			case 2:
-			{
 				ExecCGI(Arguments.c_str(), cl, h);
 				return 0;
-			}
 			default:
 				break;
 		}
@@ -334,8 +356,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 		while(cn<len){
 			if(buf[cn]=='}'){ //Syntax error (closure of a non-existent scope)
 				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
-				wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_1]); 
-				ConsoleMutex.unlock(); return -1;
+				wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_1]); ConsoleMutex.unlock(); 
+				if (logging) AlyssaLogging::literal("Custom actions: syntax error (closure of a non-existent scope) at char " + cn + string("on file: ") + p.string(), 'E');
+				return -1;
 			}
 			else if(buf[cn]=='{'){
 				bool isAffecting=0;
@@ -358,7 +381,9 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						else { // Syntax error (invalid node identifier keyword)
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 							wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_2]); 
-							ConsoleMutex.unlock(); return -1;
+							ConsoleMutex.unlock();
+							if (logging) AlyssaLogging::literal("Custom actions: syntax error (invalid node identifier keyword) at char " + cn + string("on file: ") + p.string(), 'E');
+							return -1;
 						}
 					}
 				}
@@ -368,13 +393,17 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					else if (buf[cn] == '{') {// Syntax error (beginning of another scope before previous one closed)
 						ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 						wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_3]);
-						ConsoleMutex.unlock(); return -1;
+						ConsoleMutex.unlock(); 
+						if (logging) AlyssaLogging::literal("Custom actions: syntax error (beginning of another scope before previous one closed) at char " + cn + string("on file: ")+p.string(), 'E');
+						return -1;
 					}
 					cn++; }
-				if (cn == len) {// Syntax error (missing '}'
+				if (cn == len) {// Syntax error (missing '}')
 					ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 					wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_4]); 
-					ConsoleMutex.unlock(); return -1;
+					ConsoleMutex.unlock(); 
+					if (logging) AlyssaLogging::literal("Custom actions: syntax error (missing '}') at char " + cn + string("on file: ") + p.string(), 'E');
+					return -1;
 				}
 				for (; cn < len && buf[cn] < 32; cn++) {}
 				if (!isAffecting) {
