@@ -212,10 +212,8 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 		cl->ContentLength -= sz; pos = sz;
 		if (!cl->ContentLength) { // If nothing more left to receive, request is done.
 		EndRequest:
-			// Check if client connects with SSL or not if HSTS is enabled
-			if (HSTS && !cl->Sr->ssl) return -4; // client doesn't use SSL.
 			// Virtual host stuff
-			if (cl->host == "") { cl->flags |= 2; return -1; }
+			if (cl->host == "") { cl->flags |= 2; return -1; } // No host, bad request.
 			if (HasVHost) {
 				for (int i = 1; i < VirtualHosts.size(); i++) {
 					if (VirtualHosts[i].Hostname == cl->host) {
@@ -248,7 +246,7 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					}
 					else if (VirtualHosts[0].Type == 3) { 
 						closesocket(cl->Sr->sock); 
-						if (logging) AlyssaLogging::literal(cl->Sr->clhostname + "->" + cl->host + cl->RequestPath + " rejected and hung-up.", 'C');
+						if (logging) AlyssaLogging::literal(cl->Sr->clhostname + " -> " + cl->host + cl->RequestPath + " rejected and hung-up.", 'C');
 						return -3;
 					}
 				}
@@ -257,6 +255,9 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 			else {
 				cl->_RequestPath = std::filesystem::u8path(htroot + cl->RequestPath);
 			}
+			// Check if client connects with SSL or not if HSTS is enabled
+			if (HSTS && !cl->Sr->ssl) return -4; // client doesn't use SSL.
+
 			return cl->RequestTypeInt;
 		}
 	}

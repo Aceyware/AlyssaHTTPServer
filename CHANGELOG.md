@@ -1,5 +1,8 @@
 # Alyssa HTTP Server Changelog
 
+## 2.4.5.1 - 05.05.2024
+- HSTS redirection is now done after handling virtual hosts.
+
 ## 2.4.5 - 04.02.2024
 - Added two new virtual hosts directives
 	- "forbid all": sends 403 to every request
