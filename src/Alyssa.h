@@ -214,10 +214,15 @@ class DirectoryIndex {
 #endif
 
 namespace AlyssaLogging {
+	// Logs the IP address of client, the path and host where it requested and how server responded, and a timestamp.
 	extern void connection(clientInfo* cl, uint16_t statusCode);
+	// Logs a literal string line. 's' is the string to log, 'logType' is the character
+	// that specifes the type of line at the beginning of line (like 'E' for errors, 'I' for info, 'C' for connections etc.
 	extern void literal(const char* s, const char logType);
+	// Logs a literal string line. 's' is the string to log, 'logType' is the character
+	// that specifes the type of line at the beginning of line (like 'E' for errors, 'I' for info, 'C' for connections etc.
 	extern void literal(const std::string& s, const char logType);
-	//extern void literal(std::string s, const char logType);
+	// Log the server information like ports listening on and some configuration data.
 	extern void startup();
 };
 
@@ -228,6 +233,7 @@ template <typename TP> std::time_t to_time_t(TP tp) { // This must stay here oth
 	return system_clock::to_time_t(sctp);
 }
 
+int AlyssaInit(); void AlyssaCleanListening();
 void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText = 1);
 int Send(char* payload, SOCKET sock, WOLFSSL* ssl, size_t size);
 string fileMime(string& filename);
@@ -258,6 +264,7 @@ std::string LastModify(std::filesystem::path& p);
 	void DummyCGIGet();
 	void DummyCGIPost();
 #endif
+#define getTime() std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 
 extern std::ofstream Log; extern std::mutex logMutex; extern std::mutex ConsoleMutex;
 // Response headers that's never changing in lifetime of server.
@@ -265,6 +272,8 @@ extern std::string PredefinedHeaders;
 #ifdef Compile_H2
 extern std::string PredefinedHeadersH2; extern short int PredefinedHeadersH2Size;
 #endif // Compile_H2
+extern std::vector<pollfd> _SocketArray;
+extern std::vector<int8_t> _SockType;
 
 // Declaration of config variables
 extern bool isCRLF;
@@ -288,6 +297,9 @@ extern bool HasVHost;
 extern string VHostFilePath;
 extern std::deque<VirtualHost> VirtualHosts;
 extern std::deque<std::string> ACAOList; extern bool corsEnabled;
+extern unsigned long pollPeriod; extern unsigned long ratelimit_ms; //2.5
+extern unsigned long ratelimit_ts; extern unsigned long ratelimit_int; //2.5
+extern bool ratelimitEnabled; //2.5
 #ifdef Compile_H2
 	extern bool EnableH2;
 #endif
@@ -367,9 +379,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.4.5.1d";
+	static std::string version = "2.5d";
 #else
-	static std::string version = "2.4.5.1";
+	static std::string version = "2.5";
 #endif
 #endif
 #ifdef _WIN32

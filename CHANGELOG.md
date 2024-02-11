@@ -1,5 +1,22 @@
 # Alyssa HTTP Server Changelog
 
+## 2.5 - 11.02.2024
+- Added ratelimiting feature
+	- Works by specifying an interval, a threshold and an amount (all in milliseconds).
+	- If a connection makes request more than threshold within specified interval, 
+	server will sleep for specified amount and then parse the request.
+- Implemented the ability of setting the period of polling of listening sockets
+	- Specifying a period from config will make server sleep for such amount of milliseconds after accepting connections.
+- Changes regarding to case of failure of polling of listening sockets.
+	- When polling starts to fail for whatever reason, server will try to reinitalizate the sockets instead of getting in an infinite loop (or at least I believe so.)
+	- If it fails repeatedly 10 times, server will terminate entirely.
+	- This change is proposed after the weird behavior that I encountered, which server somehow started to use the whole CPU after being running for ~5 days.
+- Added check for if data client sends is text (which is what HTTP/1.x is), and cut the connection if it's not.
+- Added connection closure code to places that lacks it, required especially for HTTP/1.0 clients or ones that explicitly request 'Connection: close'
+- Added checking for if virtual host paths are accessible.
+- Fixed two bugs causing buffer overrun.
+- Improvements to localization.
+
 ## 2.4.5.1 - 05.05.2024
 - HSTS redirection is now done after handling virtual hosts.
 

@@ -735,7 +735,7 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 	char* buf = new char[16600]; memset(buf, 0, 16600);
 	//char buf[16600] = { 0 }; // This one is for ease of debugging with Visual Studio. You can see the whole content of array when like that but not when it's a pointer.
 	int Received = 0;
-	if ((Received=wolfSSL_recv(sr->ssl, buf, 16600, 0))) {
+	if ((Received=wolfSSL_recv(sr->ssl, buf, 16600, 0))) {// Do handshake
 		if (!strcmp(buf, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) {
 			//wolfSSL_send(sr->ssl, "\0\0\0\4\0\0\0\0\0", 9, 0);
 			if (Received <= 24)
@@ -758,8 +758,12 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 	int16_t pos = 0; StreamTable* Element = NULL;// Variable for position on received data while parsing and index of stream on stream array.
 	unsigned int FrameSize, FrameStrId = 0; uint8_t FrameType, FrameFlags; int Temp = 0;// Frame size, frame stream identifier, frame type, frame flags and a temporary variable that may be used for various purposes.
 	std::deque<StreamTable*> cleanupQueue; //2.4.3: Now streams are saved in a queue and cleaned from here on *main thread* after handling frames. Deleting streams from another stream causes unavoidable race conditions. 
+	size_t last = getTime(), now = last; unsigned short rate = 0;
 	while ((Received=wolfSSL_recv(sr->ssl,buf,16600,0))>0) {
 		for (pos = 0; pos < Received; pos++) {
+			if (ratelimitEnabled) { // HTTP/2 does ratelimiting on frame basis.
+				rate++;
+			}
 			FrameSize = Convert24to32((unsigned char*)&buf[pos]); pos += 3;
 			FrameType = buf[pos]; pos++;
 			FrameFlags = buf[pos]; pos++;
@@ -926,6 +930,16 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 			delete cleanupQueue[i]->Ptr; delete cleanupQueue[i];
 		}
 		cleanupQueue.clear();
+
+		if (ratelimitEnabled) {
+			now = getTime();
+			if (now - last < ratelimit_int) {// Request is in ratelimit interval
+				if (rate >= ratelimit_ts) { Sleep(ratelimit_ms); } // Rate exceeded threshold, sleep for specified time.
+			}
+			else rate = 1;
+
+			last = now;
+		}
 	}
 ClientEnd:
 	closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); 

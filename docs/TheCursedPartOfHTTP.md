@@ -29,4 +29,4 @@ But if it doesn't, script will fail. Browser won't pass the response to script.
 
 Only way for solving the faulty script is adding `4lyssa.net` (or just `*` for allowing EVERY domain, unrecommended) to ACAO in `coolscripts.com` server. 
 
-Now the CSP part comes. If `4lyssa.net` headers doesn't have `coolscripts.net` in CSP `connect-src` list, the script will fail instantly, without even doing any request at all.
+Now the CSP part comes. If `4lyssa.net` headers doesn't have `coolscripts.com` in CSP `connect-src` list, the script will fail instantly, without even doing any request at all.

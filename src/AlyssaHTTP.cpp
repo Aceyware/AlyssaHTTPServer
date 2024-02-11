@@ -119,10 +119,11 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 	unsigned short pos = 0;//Position of EOL
 
 	if (!(cl->flags & (1<<0))) {// First line is not parsed yet.
+		if (strnlen(buf, 4097) != sz) return -6;//Not a text.
 		for (; pos < sz + 1; pos++)
 		if (buf[pos] < 32) {
 			if (buf[pos] > 0) {
-				unsigned char _pos = 0, oldpos = 0;
+				unsigned short _pos = 0;
 				if (!strncmp(buf, "GET", 3)) {
 					cl->RequestTypeInt = 1; _pos = 4;
 				}
@@ -138,8 +139,23 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				else if (!strncmp(buf, "HEAD", 4)) {
 					cl->RequestTypeInt = 5; _pos = 5;
 				}
+				// 2.5: Added the methods that is specified on HTTP/1.1 specification
+				// but is not implemented on Alyssa HTTP Server. They will be responded with 501.
+				// Any other thing will be treated as non-HTTP and will be terminated.
+				else if (!strncmp(buf, "DELETE", 6)) {
+					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+				}
+				else if (!strncmp(buf, "CONNECT", 7)) {
+					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 8;
+				}
+				else if (!strncmp(buf, "TRACE", 5)) {
+					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 6;
+				}
+				else if (!strncmp(buf, "MODIFY", 6)) {
+					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+				}
 				else {
-					cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse;
+					return -6;
 				}
 				cl->RequestPath.resize(pos - _pos - 9); memcpy(&cl->RequestPath[0], &buf[_pos], pos - _pos - 9); cl->RequestPath[pos - _pos - 9] = 0;
 				// Decode percents
@@ -158,14 +174,13 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				}
 				cl->RequestPath.resize(_pos);
 				// Sanity checks
-				oldpos = _pos;
 				_pos = cl->RequestPath.find('?');// Query string
-				if (_pos != 255) {
+				if (_pos != 65535) {
 					unsigned char _sz = cl->RequestPath.size();
 					cl->qStr.resize(_sz - _pos); memcpy(cl->qStr.data(), &cl->RequestPath[_pos + 1], _sz - _pos - 1);
 					cl->RequestPath.resize(_pos);
 				}
-				_pos = oldpos;
+				else _pos = cl->RequestPath.size();
 				if (!(cl->flags & (1 << 1))) {// You can't remove that if scope else you can't goto.
 					if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; }
 					char level = 0; char t = 1; while (cl->RequestPath[t] == '/') t++;
@@ -198,8 +213,17 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				break;
 			}
 			else {
-				cl->LastLine.resize(sz);
-				memcpy(&cl->LastLine[0], buf, sz);
+				if (sz < cl->LastLine.max_size()) {// If false, size is larger than we can ever hold. Discard the line
+					try
+					{
+						cl->LastLine.resize(sz);
+					}
+					catch (const std::bad_alloc a)
+					{
+						std::wcout << L"MIH DEDİN YARRAĞI YEDİN: " << a.what(); std::terminate();
+					}
+					memcpy(&cl->LastLine[0], buf, sz);
+				}
 				goto ParseReturn;
 			}
 		}
@@ -426,16 +450,16 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 	}
 #ifdef _DEBUG
 	else if (!strncmp(&cl->RequestPath[0], "/Debug/", 7) && debugFeaturesEnabled) {
-		DebugNode(cl); return;
+		DebugNode(cl); if (cl->close) shutdown(cl->Sr->sock, 2); return;
 	}
 #endif // _DEBUG
 
 #ifdef Compile_CustomActions
 	else if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl)) {
-			case 0:  return;
-			case -1: h.StatusCode = 500; ServerHeaders(&h, cl); return;
-			case -3: return;
+			case 0:  if (cl->close) shutdown(cl->Sr->sock, 2); return;
+			case -1: h.StatusCode = 500; ServerHeaders(&h, cl); if (cl->close) shutdown(cl->Sr->sock, 2); return;
+			case -3: if (cl->close) shutdown(cl->Sr->sock, 2); return;
 			default: break;
 		}
 	}
@@ -490,12 +514,12 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 			// Check if file client requests is same as one we have.
 			if (cl->CrcCondition) {
 				if (cl->CrcCondition != h._Crc) {// Check by ETag failed.
-					h.StatusCode = 402; ServerHeaders(&h, cl); return;
+					h.StatusCode = 402; ServerHeaders(&h, cl); if (cl->close) shutdown(cl->Sr->sock, 2); return;
 				}
 			}
 			else if (cl->DateCondition != "") {
 				if (cl->DateCondition != h.LastModified) {// Check by date failed.
-					h.StatusCode = 402; ServerHeaders(&h, cl); return;
+					h.StatusCode = 402; ServerHeaders(&h, cl); if (cl->close) shutdown(cl->Sr->sock, 2); return;
 				}
 			}
 			// Check done.
@@ -526,7 +550,7 @@ NoRange:
 #endif //Compile_zlib
 		ServerHeaders(&h, cl);
 		if (cl->RequestTypeInt == 5) {
-			fclose(file); delete[] buf; return;
+			fclose(file); delete[] buf; if (cl->close) shutdown(cl->Sr->sock, 2); return;
 		}
 #ifndef AlyssaTesting
 #ifdef Compile_zlib
@@ -617,67 +641,59 @@ void AlyssaHTTP::clientConnection(_Surrogate* sr) {//This is the thread function
 	char* buf = new char[4097]; memset(buf, 0, 4097);
 	unsigned short off = 0; // Offset for last incomplete header line.
 	clientInfo cl; cl.Sr = sr; int Received = 0;
-#ifdef Compile_WolfSSL // Wait for client to send data
-	if (sr->ssl != NULL) {
-		while ((Received = wolfSSL_recv(sr->ssl, &buf[off], 4096, 0)) > 0) {
-			if (off) {
-				memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
-			}
-			switch (parseHeader(&cl, buf, Received + off)) {
-				case -3: cl.clear(); break; // Parsing is done and response is sent already, just clear the clientInfo.
-				case -2: ServerHeadersM(&cl, 403); cl.clear(); break; // Bad request but send 403.
-				case -1: ServerHeadersM(&cl, 400); cl.clear(); break; // Bad request.
-				case  0: break; // Parsing is not done yet, do nothing.
-				case  1: Get(&cl); cl.clear(); break;
-#ifdef Compile_CustomActions
-				case  2: Post(&cl); cl.clear(); break;
-				case  3: Post(&cl); cl.clear(); break;
-				case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD"); 
-					ServerHeaders(&h, &cl); cl.clear(); break; }
+	size_t last = getTime(), now = last; unsigned short rate = 0;
+	// Wait for client to send data
+#ifdef Compile_WolfSSL
+	while ((Received = (sr->ssl != NULL) ? wolfSSL_recv(sr->ssl, &buf[off], 4096, 0) : recv(sr->sock, &buf[off], 4096, 0)) > 0) {
 #else
-				case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD");
-					ServerHeaders(&h, &cl); cl.clear();  break; }
-#endif
-				case  5: Get(&cl); cl.clear(); break;
+	while ((Received = recv(sr->sock, &buf[off], 4096, 0)) > 0) {
+#endif // Compile_WolfSSL
+
+		// Check for ratelimit
+		if (ratelimitEnabled) {
+			now = getTime();
+			if (now - last < ratelimit_int) {// Request is in ratelimit interval
+				if (rate >= ratelimit_ts) { Sleep(ratelimit_ms); } // Rate exceeded threshold, sleep for specified time.
+				else rate++;
 			}
-			memset(buf, 0, Received + off);
-			off = cl.LastLine.size(); if (off > 4000) { // Impossibly large header line and will cause buffer overflow, stop parsing.
-				cl.LastLine.clear(); cl.flags |= 2; cl.RequestTypeInt = -1;
-			}
+			else rate = 1;
+
+			last = now;
+		}
+
+		if (off) {
+			memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
+		}
+		switch (parseHeader(&cl, buf, Received + off)) {
+			case -6: goto ccReturn; // Close the connection. Perhaps it's a non-HTTP
+			case -5: ServerHeadersM(&cl, 501); cl.clear(); break; // Not implemented
+#ifdef Compile_WolfSSL
+			case -4: ServerHeadersM(&cl, 302, ((SSLport[0] == 80) ? "https://" + cl.host : "https://" + cl.host + ":" + std::to_string(SSLport[0]))); goto ccReturn; // HSTS is enabled but client doesn't use SSL.
+#endif // Compile_WolfSSL
+			case -3: cl.clear(); break; // Parsing is done and response is sent already, just clear the clientInfo.
+			case -2: ServerHeadersM(&cl, 403); cl.clear(); break; // Bad request but send 403.
+			case -1: ServerHeadersM(&cl, 400); cl.clear(); break; // Bad request.
+			case  0: break; // Parsing is not done yet, do nothing.
+			case  1: Get(&cl); cl.clear(); break;
+#ifdef Compile_CustomActions
+			case  2: Post(&cl); cl.clear(); break;
+			case  3: Post(&cl); cl.clear(); break;
+			case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD");
+				ServerHeaders(&h, &cl); cl.clear(); break; }
+#else
+			case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD");
+				ServerHeaders(&h, &cl); cl.clear();  break; }
+#endif // Compile_CustomActions
+			case  5: Get(&cl); cl.clear(); break;
+		}
+		memset(buf, 0, Received + off);
+		off = cl.LastLine.size(); if (off > 4000) { // Impossibly large header line and will cause buffer overflow, stop parsing.
+			cl.LastLine.clear(); cl.flags |= 2; cl.RequestTypeInt = -1; off = 0;
 		}
 	}
-	else {
-#endif // Compile_WolfSSL
-		while ((Received = recv(sr->sock, &buf[off], 4096, 0)) > 0) {
-			if (off) {
-				memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
-			}
-			switch (parseHeader(&cl, buf, Received + off)) {
-				case -4: ServerHeadersM(&cl, 302, ((SSLport[0] == 80) ? "https://" + cl.host : "https://" + cl.host + ":" + std::to_string(SSLport[0]))); goto ccReturn; // HSTS is enabled but client doesn't use SSL.
-				case -3: cl.clear(); break; // Parsing is done and response is sent already, just clear the clientInfo.
-				case -2: ServerHeadersM(&cl, 403); cl.clear(); break; // Bad request but send 403.
-				case -1: ServerHeadersM(&cl, 400); cl.clear(); break; // Bad request.
-				case  0: break; // Parsing is not done yet, do nothing.
-				case  1: Get(&cl); cl.clear(); break;
-#ifdef Compile_CustomActions
-				case  2: Post(&cl); cl.clear(); break;
-				case  3: Post(&cl); cl.clear(); break;
-				case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,POST,PUT,OPTIONS,HEAD");
-					ServerHeaders(&h, &cl); cl.clear(); break; }
-#else
-				case  4: { HeaderParameters h; h.StatusCode = 200; h.CustomHeaders.emplace_back("Allow: GET,OPTIONS,HEAD");
-					ServerHeaders(&h, &cl); cl.clear();  break; }
-#endif
-				case  5: Get(&cl); cl.clear(); break;
-			}
-			memset(buf, 0, Received + off);
-			off = cl.LastLine.size(); if (off > 4000) { // Impossibly large header line and will cause buffer overflow, stop parsing.
-				cl.LastLine.clear(); cl.flags |= 2;
-			}
-		}
-#ifdef Compile_WolfSSL
-	} wolfSSL_free(sr->ssl);
-#endif
 ccReturn:
+#ifdef Compile_WolfSSL
+	wolfSSL_free(sr->ssl);
+#endif // Compile_WolfSSL
 	closesocket(sr->sock); delete[] buf; delete sr; return;
 }

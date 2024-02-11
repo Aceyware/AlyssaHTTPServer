@@ -14,6 +14,7 @@ Documentation about configuration, compiling and much more is available [here.](
 - IPv6 ready
 - Directory index pages
 - Name-based virtual hosts
+- Built-in ratelimiting
 
 And more.
 

@@ -4,6 +4,154 @@
 
 using std::cout;
 
+int AlyssaInit() {
+	sockaddr_in hint;
+	// Create sockets: plain, IPv4
+	for (size_t i = 0; i < port.size(); i++) {
+		SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
+		if (listening == INVALID_SOCKET) {
+			ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
+			return -1;
+		}
+		hint.sin_family = AF_INET;
+		hint.sin_port = htons(port[i]);
+		inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+		socklen_t len = sizeof(hint);
+		bind(listening, (sockaddr*)&hint, sizeof(hint));
+		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+			ConsoleMsgM(0, STR_SERVER);
+			wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
+			return -2;
+		}
+		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+		else if (port[i] != ntohs(hint.sin_port)) {
+			ConsoleMsgM(0, STR_SERVER);
+			wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
+			return -2;
+		}
+		listen(listening, SOMAXCONN);
+		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
+		_SocketArray.emplace_back(pollfd{ listening, POLLRDNORM, 0 });
+		_SockType.emplace_back(0);
+	}
+
+	// Create sockets: SSL, IPv4
+#ifdef Compile_WolfSSL
+	if (enableSSL) {
+		for (size_t i = 0; i < SSLport.size(); i++) {
+			SOCKET listening;
+			listening = socket(AF_INET, SOCK_STREAM, 0);
+			if (listening == INVALID_SOCKET) {
+				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
+				return -1;
+			}
+			hint.sin_family = AF_INET;
+			hint.sin_port = htons(SSLport[i]);
+			inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+			socklen_t Slen = sizeof(hint);
+			bind(listening, (sockaddr*)&hint, sizeof(hint));
+			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
+				ConsoleMsgM(0, STR_SERVER);
+				wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
+				return -2;
+			}
+			else if (SSLport[i] != ntohs(hint.sin_port)) {
+				ConsoleMsgM(0, STR_SERVER);
+				wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
+				return -2;
+			}
+			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
+			_SocketArray[_SocketArray.size() - 1].fd = listening; _SocketArray[_SocketArray.size() - 1].events = POLLRDNORM;
+			_SockType.emplace_back(1);
+		}
+	}
+#endif // Compile_WolfSSL
+
+	// Create sockets: plain, IPv6
+	if (EnableIPv6) {
+		for (size_t i = 0; i < port.size(); i++) {
+			// Create sockets
+			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
+			if (listening == INVALID_SOCKET) {
+				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
+				return -1;
+			}
+			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+			sockaddr_in6 hint;
+			hint.sin6_family = AF_INET6;
+			hint.sin6_port = htons(port[i]);
+			hint.sin6_flowinfo = 0;
+			hint.sin6_scope_id = 0;
+			inet_pton(AF_INET6, "::", &hint.sin6_addr);
+			socklen_t len = sizeof(hint);
+			bind(listening, (sockaddr*)&hint, sizeof(hint));
+			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
+				return -2;
+			}
+			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+			else if (port[i] != ntohs(hint.sin6_port)) {
+				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
+				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
+				return -2;
+			}
+			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
+			_SocketArray[_SocketArray.size() - 1].fd = listening; _SocketArray[_SocketArray.size() - 1].events = POLLRDNORM;
+			_SockType.emplace_back(2);
+		}
+
+		// Create sockets: SSL, IPv6
+#ifdef Compile_WolfSSL
+		if (enableSSL) {
+			for (size_t i = 0; i < SSLport.size(); i++) {
+				// Create sockets
+				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
+				if (listening == INVALID_SOCKET) {
+					ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
+					return -1;
+				}
+				setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+				sockaddr_in6 hint;
+				hint.sin6_family = AF_INET6;
+				hint.sin6_port = htons(SSLport[i]);
+				hint.sin6_flowinfo = 0;
+				hint.sin6_scope_id = 0;
+				inet_pton(AF_INET6, "::", &hint.sin6_addr);
+				socklen_t len = sizeof(hint);
+				bind(listening, (sockaddr*)&hint, sizeof(hint));
+				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
+					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
+					AlyssaLogging::literal("Failed to reserve port6 " + SSLport[i], 'E');
+					return -2;
+				}
+				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
+				else if (SSLport[i] != ntohs(hint.sin6_port)) {
+					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
+					AlyssaLogging::literal("Failed to reserve port6 " + SSLport[i], 'E');
+					return -2;
+				}
+				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
+				_SocketArray[_SocketArray.size() - 1].fd = listening; _SocketArray[_SocketArray.size() - 1].events = POLLRDNORM;
+				_SockType.emplace_back(3);
+			}
+		}
+#endif // Compile_WolfSSL
+	}
+	return 0;
+}
+
+void AlyssaCleanListening() {
+	for (size_t i = 0; i < _SocketArray.size(); i++) {
+		closesocket(_SocketArray[i].fd);
+	}
+	_SocketArray.clear(); _SockType.clear();
+}
+
 void Send(string* payload, SOCKET sock, WOLFSSL* ssl, bool isText) {
 	size_t size = 0;
 	if (isText)
@@ -303,27 +451,27 @@ char ParseCL(int argc, char** argv) {// This func parses command line arguments.
 			cout << "WolfSSL Library Version: " << WOLFSSL_VERSION << std::endl;
 #endif
 			cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl;
-			cout << "Features: Core, "
+			cout << "Features: Core"
 #ifdef _DEBUG
-				<< "Debug, "
+				<< ", Debug"
 #endif
 #ifdef Compile_WolfSSL
-				<< "SSL, "
+				<< ", SSL"
 #endif
 #ifdef Compile_H2
-				<< "HTTP/2, "
+				<< ", HTTP/2"
 #endif
 #ifdef Compile_CustomActions
-				<< "Custom Actions, "
+				<< ", Custom Actions"
 #endif
 #ifdef Compile_CGI
-				<< "CGI, "
+				<< ", CGI"
 #endif
 #ifdef Compile_DirIndex
-				<< "Directory Index, "
+				<< ", Directory Index"
 #endif
 #ifdef Compile_zlib
-				<< "zlib "
+				<< ", zlib"
 #endif
 				<< std::endl;
 			cout << std::endl << GPLDisclaimer;

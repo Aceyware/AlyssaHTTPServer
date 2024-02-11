@@ -35,3 +35,10 @@ Changing is not necessary unless your dynamic content stack conflicts with it.
 ### CORS/CSP
 - **CORSAllowOrigin [no value]** Sets the value of `Access-Control-Allow-Origin` header.
 - **CSPHeaders [no value]** Sets the value of `Content-Security-Policy` header.
+### Ratelimiting
+- **RatelimitInterval 0:** Ratelimit interval. If more amount than specified threshold of request will be made, 
+ratelimit will be applied for specified milliseconds. Default is 1000 when unspecified.
+- **RatelimitThreshold 0:** Threshold that I said above, default is 10 when unspecified.
+- **RatelimitAmount 0:** Amount of milliseconds to defer. default is 150 when unspecified.
+- **PollPeriod 0:** Period of poll() calls. (will defer each call that much of milliseconds, 
+think that like the ratelimit but for new connections.)

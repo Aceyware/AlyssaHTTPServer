@@ -55,11 +55,18 @@ enum Strings {
 	STR_CA_STX_1,
 	STR_CA_STX_2,
 	STR_CA_STX_3,
-	STR_CA_STX_4
+	STR_CA_STX_4,
 #endif
+	STR_ERR_SOCKS_TRASHED,
+	STR_ERR_SOCKS_TRASHED2,
+	STR_ERR_SOCKS_REINIT_FAIL,
+// 40
+	STR_VHOST,
+	STR_VHOST_INACCESSIBLE,
+	STR_END
 };
 
-static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
+static const wchar_t* LocaleTable[][STR_END] = {
 	{
 		// 0
 		L"English",
@@ -110,8 +117,14 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"closure of a non-existent scope",
 		L"invalid node identifier keyword",
 		L"beginning of another scope before previous one closed",
-		L"missing '}'"
+		L"missing '}'",
 #endif
+		L"A fatal error occured with listening sockets. Trying to reinitialize them.",
+		L"Too much errors due to listening sockets, terminating...",
+		L"Failed to reinitialize sockets, terminating...",
+		// 40
+		L"Virtual hosts:",
+		L"invalid virtual host path specified or path is inaccessible. Virtual hosts disabled."
 	}
 #ifdef Compile_locales
 	,{
@@ -133,8 +146,8 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"günlük dosyası açılamadı, günlük devre dışı.",
 		L"WolfSSL: ",
 		L"SSL ile bir içsel hata oldu (wolfSSL_CTX_new error), SSL devre dışı.",
-		L"SSL gizli anahtar dosyasını yükleme başarısız, SSL devre dışı.",
-		L"SSL sertifika dosyasını yükleme başarısız, SSL devre dışı.",
+		L"SSL gizli anahtar dosyasını yükleme başarısız oldu, SSL devre dışı.",
+		L"SSL sertifika dosyasını yükleme başarısız oldu, SSL devre dışı.",
 		L"Winsock başlatma başarısız oldu, çıkılıyor.",
 		L"Soket oluşturma başarısız oldu, çıkılıyor.",
 		// 20
@@ -163,8 +176,14 @@ static const wchar_t* LocaleTable[][STR_CA_STX_4+1] = {
 		L"olmayan bir kapsamın kapatılması",
 		L"geçersiz düğüm tanımlama anahtar kelimesi",
 		L"önceki kapsam kapatılmadan başka kapsam başlatıldı.",
-		L"'}' eksik."
+		L"'}' eksik.",
 #endif
+		L"Yeni bağlantı dinleme soketlerinde önemli hata oluştu, soketler tekrar oluşturuluyor...",
+		L"Dinleme soketleriyle ilgili çok fazla hata oluştu. Sunucu sonlandırılıyor...",
+		L"Soketleri tekrar oluşturma başarısız oldu. Sunucu sonlandırılıyor...",
+		// 40
+		L"Sanal konaklar: ",
+		L"sanal konak yolu geçerli değil veya erişilemez. Sanal konaklar devre dışı bırakıldı."
 	}
 #endif
 };

@@ -21,6 +21,7 @@ bool CAEnabled = 0;
 bool CARecursive = 0;
 bool ColorOut = 1; 
 bool HasVHost = 0; 
+unsigned long pollPeriod = 0, ratelimit_ms = 0, ratelimit_ts = 0, ratelimit_int = 0; bool ratelimitEnabled = 0; //2.5
 string VHostFilePath = ""; 
 std::deque<std::string> ACAOList; 
 unsigned char Locale = 0;

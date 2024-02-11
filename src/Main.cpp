@@ -30,6 +30,9 @@ using std::terminate;
 std::ofstream Log; std::mutex logMutex; std::mutex ConsoleMutex;
 std::deque<VirtualHost> VirtualHosts;
 
+std::vector<pollfd> _SocketArray;
+std::vector<int8_t> _SockType;
+
 #ifdef AlyssaTesting
 int ServerEntry(int argc, char* argv[]) {
 #else
@@ -134,147 +137,8 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #endif
 
-	std::vector<pollfd> _SocketArray;
-	std::vector<int8_t> _SockType;
-
-	sockaddr_in hint;
-	// Create sockets: plain, IPv4
-	for (size_t i = 0; i < port.size(); i++) {
-		SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
-		if (listening == INVALID_SOCKET) {
-			ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
-			return -1;
-		}
-		hint.sin_family = AF_INET;
-		hint.sin_port = htons(port[i]);
-		inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
-		socklen_t len = sizeof(hint);
-		bind(listening, (sockaddr*)&hint, sizeof(hint));
-		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-			ConsoleMsgM(0, STR_SERVER);
-			wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
-			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
-			return -2;
-		}
-		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-		else if (port[i] != ntohs(hint.sin_port)) { 
-			ConsoleMsgM(0, STR_SERVER);
-			wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
-			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
-			return -2;
-		}
-		listen(listening, SOMAXCONN);
-		//_SocketArray[i].fd=listening; _SocketArray[i].events = POLLIN | POLLPRI | POLLRDBAND | POLLRDNORM;
-		_SocketArray.emplace_back(pollfd{listening, POLLRDNORM, 0});
-		_SockType.emplace_back(0);
-	}
-
-	// Create sockets: SSL, IPv4
-#ifdef Compile_WolfSSL
-	if (enableSSL) {
-		for (size_t i = 0; i < SSLport.size(); i++) {
-			SOCKET listening;
-			listening = socket(AF_INET, SOCK_STREAM, 0);
-			if (listening == INVALID_SOCKET) {
-				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
-				return -1;
-			}
-			hint.sin_family = AF_INET;
-			hint.sin_port = htons(SSLport[i]);
-			inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
-			socklen_t Slen = sizeof(hint);
-			bind(listening, (sockaddr*)&hint, sizeof(hint));
-			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
-				ConsoleMsgM(0, STR_SERVER);
-				wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
-				return -2;
-			}
-			else if (SSLport[i] != ntohs(hint.sin_port)) {
-				ConsoleMsgM(0, STR_SERVER);
-				wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
-				return -2;
-			}
-			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
-			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-			_SockType.emplace_back(1);
-		}
-	}
-#endif // Compile_WolfSSL
-
-	// Create sockets: plain, IPv6
-	if (EnableIPv6) {
-		for (size_t i = 0; i < port.size(); i++) {
-			// Create sockets
-			SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
-			if (listening == INVALID_SOCKET) {
-				ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
-				return -1;
-			}
-			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
-			sockaddr_in6 hint;
-			hint.sin6_family = AF_INET6;
-			hint.sin6_port = htons(port[i]);
-			hint.sin6_flowinfo = 0;
-			hint.sin6_scope_id = 0;
-			inet_pton(AF_INET6, "::", &hint.sin6_addr);
-			socklen_t len = sizeof(hint);
-			bind(listening, (sockaddr*)&hint, sizeof(hint));
-			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
-				return -2;
-			}
-			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-			else if (port[i] != ntohs(hint.sin6_port)) {
-				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
-				if(logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
-				return -2;
-			}
-			listen(listening, SOMAXCONN); _SocketArray.emplace_back();
-			_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-			_SockType.emplace_back(2);
-		}
-
-		// Create sockets: SSL, IPv6
-#ifdef Compile_WolfSSL
-		if (enableSSL) {
-			for (size_t i = 0; i < SSLport.size(); i++) {
-				// Create sockets
-				SOCKET listening = socket(AF_INET6, SOCK_STREAM, 0);
-				if (listening == INVALID_SOCKET) {
-					ConsoleMsg(0, STR_SERVER, STR_SOCKET_FAIL);
-					return -1;
-				}
-				setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
-				sockaddr_in6 hint;
-				hint.sin6_family = AF_INET6;
-				hint.sin6_port = htons(SSLport[i]);
-				hint.sin6_flowinfo = 0;
-				hint.sin6_scope_id = 0;
-				inet_pton(AF_INET6, "::", &hint.sin6_addr);
-				socklen_t len = sizeof(hint);
-				bind(listening, (sockaddr*)&hint, sizeof(hint));
-				if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
-					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
-					AlyssaLogging::literal("Failed to reserve port6 "+SSLport[i], 'E');
-					return -2;
-				}
-				//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
-				else if (SSLport[i] != ntohs(hint.sin6_port)) {
-					ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
-					AlyssaLogging::literal("Failed to reserve port6 " + SSLport[i], 'E');
-					return -2;
-				}
-				listen(listening, SOMAXCONN); _SocketArray.emplace_back();
-				_SocketArray[_SocketArray.size()-1].fd=listening; _SocketArray[_SocketArray.size()-1].events = POLLRDNORM;
-				_SockType.emplace_back(3);
-			}
-		}
-#endif // Compile_WolfSSL
-	}
-
+	if (int ret = AlyssaInit()) return ret;
+	
 	// After setting sockets successfully, do the initial setup of rest of server
 	SetPredefinedHeaders(); // Define the predefined headers that will used until lifetime of executable and will never change.
 #ifdef Compile_CGI
@@ -291,12 +155,22 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 		std::ifstream VHostFile(VHostFilePath);
 		string hostname, type, value;
 		if (!VHostFile) { 
-			ConsoleMsg(0, "Virtual hosts: ", "Cannot open virtual hosts config file.\n"); HasVHost = 0;
+			ConsoleMsg(0, STR_VHOST, STR_VHOST_FAIL); HasVHost = 0;
 			AlyssaLogging::literal("Virtual hosts: cannot open virtual hosts config file", 'E');
 		}
 		while (VHostFile >> hostname >> type >> value) {
 			Element.Hostname = hostname; Element.Location = value;
-			if (type == "standard") Element.Type = 0;
+			if (type == "standard") {
+				Element.Type = 0;
+				try {
+					for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(value))) {
+						break;
+					}
+				}
+				catch (std::filesystem::filesystem_error&) {//VHost is inaccessible.
+					ConsoleMsg(0, STR_VHOST, STR_VHOST_INACCESSIBLE); HasVHost = 0; break;
+				}
+			}
 			else if (type == "redirect") Element.Type = 1;
 			else if (type == "copy") {
 				for (int i = 0; i < VirtualHosts.size(); i++) {
@@ -304,7 +178,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 						Element = VirtualHosts[i]; Element.Hostname = hostname; goto VHostAdd;
 					}
 				}
-				ConsoleMsg(1, "Virtual hosts: ", "source element not found for copying, ignoring.\n"); continue;
+				ConsoleMsg(1, STR_VHOST, STR_VHOST_COPYFAIL); continue;
 				if (logging) {
 					AlyssaLogging::literal(std::string("Virtual hosts: source element " + hostname + "not found for copying."), 'W');
 				}
@@ -317,7 +191,7 @@ VHostAdd:
 		}
 		VHostFile.close();
 		if (VirtualHosts[0].Location == "") {// No "default" on vhost config, inherit from main config.
-			VirtualHosts[0].Location = htroot;
+			VirtualHosts[0].Location = htroot; VirtualHosts[0].Type = 0;
 		}
 	}
 #ifdef branch
@@ -342,6 +216,9 @@ VHostAdd:
 	std::cout << std::endl;
 	if (logging) AlyssaLogging::startup();
 
+	// Timestamp of when last polling error occured and amount of it in interval of 10 secs.
+	size_t lastTrash = getTime(); uint8_t trashCount = 0;
+
 	while (true) {
 	/*
 		You point to the trail where the blossoms have fallen
@@ -351,7 +228,26 @@ VHostAdd:
 		But I'm brought to my knees by the clover
 		And it feels like, it's just the poll()en
 	*/
+
 		int ActiveSocket = poll(&_SocketArray[0],_SocketArray.size(), -1);
+		if (ActiveSocket < 0) {// Error while polling.
+			if (getTime() - lastTrash < 10000) {
+				trashCount++;
+				if (trashCount >= 10) {
+					ConsoleMsg(0, STR_SERVER, STR_ERR_SOCKS_TRASHED2); if (logging) AlyssaLogging::literal("Too much errors with list. sockets. Terminating...", 'E');
+				}
+				else trashCount = 1;
+
+				lastTrash = getTime();
+			}
+			ConsoleMsg(0, STR_SERVER, STR_ERR_SOCKS_TRASHED); if (logging) AlyssaLogging::literal("Listening sockets trashed. Reinitializing...", 'E');
+			AlyssaCleanListening(); ActiveSocket = AlyssaInit();
+			if (ActiveSocket) {
+				if (logging) AlyssaLogging::literal("Failed to reinitialize sockets, terminating...", 'E');
+				return ActiveSocket;
+			} 
+			break;
+		}
 
 		for (int i = 0; i < _SocketArray.size(); i++) {
 			if (_SocketArray[i].revents == POLLRDNORM) {
@@ -444,6 +340,25 @@ VHostAdd:
 #endif
 				ActiveSocket--; if(!ActiveSocket) break;
 			}
+			else if (_SocketArray[i].revents==(POLLERR | POLLNVAL)) {// Error while polling.
+				if (getTime() - lastTrash < 10000) {
+					trashCount++; 
+					if (trashCount >= 10) {
+						ConsoleMsg(0, STR_SERVER, STR_ERR_SOCKS_TRASHED2); if (logging) AlyssaLogging::literal("Too much errors with list. sockets. Terminating...", 'E');
+					}
+					else trashCount = 1;
+
+					lastTrash = getTime();
+				}
+				ConsoleMsg(0, STR_SERVER, STR_ERR_SOCKS_TRASHED); if (logging) AlyssaLogging::literal("Listening sockets trashed. Reinitializing...", 'E');
+				AlyssaCleanListening(); ActiveSocket = AlyssaInit(); 
+				if (ActiveSocket) { 
+					if (logging) AlyssaLogging::literal("Failed to reinitialize sockets, terminating...", 'E');
+					return ActiveSocket; }
+				break;
+			}
 		}
+
+		if (pollPeriod) Sleep(pollPeriod);
 	}
 }

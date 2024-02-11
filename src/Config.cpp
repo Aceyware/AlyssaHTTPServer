@@ -81,6 +81,16 @@ bool Config::initialRead() {//Initial read of the config file and setup of setti
 	ColorOut = stoi(getValue("coloroutput", "1"));
 	VHostFilePath = getValue("virtualhosts", "");
 	if (VHostFilePath != "") HasVHost = 1;
+	pollPeriod = stoi(getValue("pollperiod", "0"));
+	ratelimit_ts = stoi(getValue("ratelimitthreshold", "0"));
+	ratelimit_int = stoi(getValue("ratelimitinterval", "0"));
+	ratelimit_ms = stoi(getValue("ratelimitamount", "0"));
+	if (ratelimit_ms || ratelimit_int || ratelimit_ts) {// If any of ratelimit settings are enabled, check if others has a value too and if they not set them to default.
+		if (!ratelimit_int) ratelimit_int = 1000;
+		if (!ratelimit_ms)  ratelimit_ms = 150;
+		if (!ratelimit_ts)  ratelimit_ts = 10;
+		ratelimitEnabled = 1;
+	}
 
 #ifdef Compile_WolfSSL
 	enableSSL = stoi(getValue("enablessl", "0"));
