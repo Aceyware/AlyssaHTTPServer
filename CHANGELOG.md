@@ -1,4 +1,9 @@
-# Alyssa HTTP Server Changelog
+﻿# Alyssa HTTP Server Changelog
+
+## 2.5.1 - 16.02.2024
+- Fixed the integer overflow on code that causes infinite loop, and eventually using all of CPU
+	- Problem was happening with long requests. Now limit of request paths are increased to 32768 bytes
+	- Longer than 32768 will be responded with 414.
 
 ## 2.5 - 11.02.2024
 - Added ratelimiting feature

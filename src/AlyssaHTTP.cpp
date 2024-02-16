@@ -28,6 +28,7 @@ void AlyssaHTTP::ServerHeaders(HeaderParameters* h, clientInfo* c) {
 		case 402:	ret += "402 Precondition Failed\r\n"; break;
 		case 403:	ret += "403 Forbidden\r\nWWW-Authenticate: Basic\r\n"; break;
 		case 404:	ret += "404 Not Found\r\n"; break;
+		case 414:	ret += "414 URI Too Long\r\n"; break;
 		case 416:	ret += "416 Range Not Satisfiable\r\n"; break;
 		case 418:	ret += "418 I'm a teapot\r\n"; break;
 		case 500:	ret += "500 Internal Server Error\r\n"; break;
@@ -95,6 +96,7 @@ void AlyssaHTTP::ServerHeadersM(clientInfo* c, unsigned short statusCode, const 
 		case 402:	ret += "402 Precondition Failed\r\n"; break;
 		case 403:	ret += "403 Forbidden\r\n"; break;
 		case 404:	ret += "404 Not Found\r\n"; break;
+		case 414:	ret += "414 URI Too Long\r\n"; break;
 		case 416:	ret += "416 Range Not Satisfiable\r\n"; break;
 		case 418:	ret += "418 I'm a teapot\r\n"; break;
 		case 500:	ret += "500 Internal Server Error\r\n"; break;
@@ -158,6 +160,9 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 					return -6;
 				}
 				cl->RequestPath.resize(pos - _pos - 9); memcpy(&cl->RequestPath[0], &buf[_pos], pos - _pos - 9); cl->RequestPath[pos - _pos - 9] = 0;
+				if (cl->RequestPath.size() > 32768) {
+					cl->RequestTypeInt = -7; cl->flags |= 3; goto ExitParse;
+				}
 				// Decode percents
 				_pos = cl->RequestPath.size(); // Reusing _pos for not calling size() again and again.
 				if (_pos == 0) { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
@@ -665,6 +670,7 @@ void AlyssaHTTP::clientConnection(_Surrogate* sr) {//This is the thread function
 			memcpy(buf, &cl.LastLine[0], off); cl.LastLine.clear();
 		}
 		switch (parseHeader(&cl, buf, Received + off)) {
+			case -7: ServerHeadersM(&cl, 414); cl.clear(); break; // URI Too Long
 			case -6: goto ccReturn; // Close the connection. Perhaps it's a non-HTTP
 			case -5: ServerHeadersM(&cl, 501); cl.clear(); break; // Not implemented
 #ifdef Compile_WolfSSL

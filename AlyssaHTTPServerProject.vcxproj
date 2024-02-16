@@ -81,8 +81,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Users\Tracey\zlib;C:\Users\Tracey\wolfssl;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Tracey\zlib\x64;C:\Users\Tracey\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\Tracey2\zlib;C:\Users\Tracey2\wolfssl;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\Tracey2\zlib\x64;C:\Users\Tracey2\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>

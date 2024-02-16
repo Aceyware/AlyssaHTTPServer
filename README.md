@@ -43,5 +43,5 @@ And more.
 - [ ] Modules/extensions support
 - [x] Compression encodings (deflate).
 - [ ] Make sure the server is really ready for production use.
-- [ ] Get a girlfriend
+- [x] Get a girlfriend
 
