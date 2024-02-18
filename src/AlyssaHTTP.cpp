@@ -166,7 +166,7 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				// Decode percents
 				_pos = cl->RequestPath.size(); // Reusing _pos for not calling size() again and again.
 				if (_pos == 0) { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
-				for (char t = 0; t < _pos; t++) {
+				for (unsigned short t = 0; t < _pos; t++) {
 					if (cl->RequestPath[t] == '%') {
 						try {
 							cl->RequestPath[t] = hexconv(&cl->RequestPath[t+1]);
@@ -181,14 +181,14 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				// Sanity checks
 				_pos = cl->RequestPath.find('?');// Query string
 				if (_pos != 65535) {
-					unsigned char _sz = cl->RequestPath.size();
+					unsigned short _sz = cl->RequestPath.size();
 					cl->qStr.resize(_sz - _pos); memcpy(cl->qStr.data(), &cl->RequestPath[_pos + 1], _sz - _pos - 1);
 					cl->RequestPath.resize(_pos);
 				}
 				else _pos = cl->RequestPath.size();
 				if (!(cl->flags & (1 << 1))) {// You can't remove that if scope else you can't goto.
 					if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; }
-					char level = 0; char t = 1; while (cl->RequestPath[t] == '/') t++;
+					short level = 0; unsigned short t = 1; while (cl->RequestPath[t] == '/') t++;
 					// Check for level client tries to access.
 					for (; t < _pos;) {
 						if (cl->RequestPath[t] == '/') {

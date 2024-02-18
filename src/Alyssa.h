@@ -379,9 +379,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.5.2d";
+	static std::string version = "2.5.2.1d";
 #else
-	static std::string version = "2.5.2";
+	static std::string version = "2.5.2.1";
 #endif
 #endif
 #ifdef _WIN32

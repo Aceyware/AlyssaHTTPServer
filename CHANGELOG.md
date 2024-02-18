@@ -1,5 +1,8 @@
 ﻿# Alyssa HTTP Server Changelog
 
+## 2.5.2.1 - 18.02.2024
+- Really fixed the integer overflow this time.
+
 ## 2.5.2 - 18.02.2024
 - Potential fix to crash caused by SSL on some requests
 - Connections with SSL now will be logged as '(SSL)' on log file.
