@@ -256,8 +256,8 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 							ServerHeadersM(cl, 403); return -3;
 						}
 						else if (VirtualHosts[i].Type == 3) { // "Hang-up" virtual host
-							closesocket(cl->Sr->sock); 
-							if (logging) AlyssaLogging::literal(cl->Sr->clhostname + " -> " + VirtualHosts[i].Hostname + cl->RequestPath + " rejected and hung-up.", 'C');
+							shutdown(cl->Sr->sock, 2);
+							if (logging) AlyssaLogging::literal(((cl->Sr->ssl) ? "(SSL)" : "") + cl->Sr->clhostname + " -> " + VirtualHosts[i].Hostname + cl->RequestPath + " rejected and hung-up.", 'C');
 							return -3;// No clean shutdown or anything, we just say fuck off to client.
 						}
 						break;
@@ -274,7 +274,7 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 						ServerHeadersM(cl, 403); return -3;
 					}
 					else if (VirtualHosts[0].Type == 3) { 
-						closesocket(cl->Sr->sock); 
+						shutdown(cl->Sr->sock, 2);
 						if (logging) AlyssaLogging::literal(cl->Sr->clhostname + " -> " + cl->host + cl->RequestPath + " rejected and hung-up.", 'C');
 						return -3;
 					}

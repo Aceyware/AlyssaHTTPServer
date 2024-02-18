@@ -112,7 +112,7 @@ private:
 	}
 	static void Get(H2Stream* s);
 	static bool __AlyssaH2ParsePath(H2Stream* s, std::string& Value) {
-		uint8_t pos = -1;
+		uint16_t pos = -1;
 		// Decode percents
 		pos = Value.size();
 		for (char t = 0; t < pos; t++) {
@@ -129,7 +129,7 @@ private:
 		Value.resize(pos);
 		// Query string
 		pos = Value.find('?');
-		if (pos != 255) {
+		if (pos != 65535) {
 			unsigned char _sz = Value.size();
 			s->cl.qStr.resize(_sz - pos); memcpy(s->cl.qStr.data(), &Value[pos + 1], _sz - pos - 1);
 			Value.resize(pos);

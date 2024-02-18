@@ -1,5 +1,9 @@
 ﻿# Alyssa HTTP Server Changelog
 
+## 2.5.2 - 18.02.2024
+- Potential fix to crash caused by SSL on some requests
+- Connections with SSL now will be logged as '(SSL)' on log file.
+
 ## 2.5.1 - 16.02.2024
 - Fixed the integer overflow on code that causes infinite loop, and eventually using all of CPU
 	- Problem was happening with long requests. Now limit of request paths are increased to 32768 bytes

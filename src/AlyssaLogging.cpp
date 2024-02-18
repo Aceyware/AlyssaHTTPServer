@@ -6,8 +6,9 @@ namespace AlyssaLogging {
 			std::terminate();
 		}
 		logMutex.lock();
-		Log << "C [" << currentTime() << "] (" << statusCode << ") " 
-			<< cl->Sr->clhostname << " -> "<< cl->host << cl->RequestPath
+		Log << "C [" << currentTime() << "] (" << statusCode <<
+			((cl->Sr->ssl) ? ") (SSL) '" : ") '")
+			<< cl->Sr->clhostname << "' -> "<< cl->host << cl->RequestPath
 			<< std::endl;
 		logMutex.unlock();
 	}
