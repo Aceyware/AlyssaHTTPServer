@@ -411,27 +411,27 @@ std::string ErrorPage(unsigned short ErrorCode) {
 	// Synthetic error pages
 	ret = "<!DOCTYPE html><html><head><style>html{font-family:sans-serif;background:black;color:white;text-align:center;font-size:140%}</style><title>";
 	switch (ErrorCode) {
-	case 400:	ret += "400 Bad Request"; break;
-	case 401:	ret += "401 Unauthorized"; break;
-	case 403:	ret += "403 Forbidden"; break;
-	case 404:	ret += "404 Not Found"; break;
-	case 416:	ret += "416 Range Not Satisfiable"; break;
-	case 418:	ret += "418 I'm a teapot"; break;
-	case 500:	ret += "500 Internal Server Error"; break;
-	case 501:	ret += "501 Not Implemented"; break;
-	default:	ret += "501 Not Implemented"; break;
+		case 400:	ret += "400 Bad Request"; break;
+		case 401:	ret += "401 Unauthorized"; break;
+		case 403:	ret += "403 Forbidden"; break;
+		case 404:	ret += "404 Not Found"; break;
+		case 416:	ret += "416 Range Not Satisfiable"; break;
+		case 418:	ret += "418 I'm a teapot"; break;
+		case 500:	ret += "500 Internal Server Error"; break;
+		case 501:	ret += "501 Not Implemented"; break;
+		default:	ret += "501 Not Implemented"; break;
 	}
 	ret += "</title></head><body><h1>";
 	switch (ErrorCode) {
-	case 400:	ret += "400 Bad Request</h1><p>You've made an invalid request."; break;
-	case 401:	ret += "401 Unauthorized</h1><p>You haven't provided any credentials."; break;
-	case 403:	ret += "403 Forbidden</h1><p>You're not authorized to view this document."; break;
-	case 404:	ret += "404 Not Found</h1><p>Requested documented is not found on server."; break;
-	case 416:	ret += "416 Range Not Satisfiable</h1><p>Requested range is invalid (i.e. beyond the size of document)."; break;
-	case 418:	ret += "418 I'm a teapot</h1><p>Wanna some tea?"; break;
-	case 500:	ret += "500 Internal Server Error</h1><p>An error occurred in our side."; break;
-	case 501:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
-	default:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
+		case 400:	ret += "400 Bad Request</h1><p>You've made an invalid request."; break;
+		case 401:	ret += "401 Unauthorized</h1><p>You haven't provided any credentials."; break;
+		case 403:	ret += "403 Forbidden</h1><p>You're not authorized to view this document."; break;
+		case 404:	ret += "404 Not Found</h1><p>Requested documented is not found on server."; break;
+		case 416:	ret += "416 Range Not Satisfiable</h1><p>Requested range is invalid (i.e. beyond the size of document)."; break;
+		case 418:	ret += "418 I'm a teapot</h1><p>Wanna some tea?"; break;
+		case 500:	ret += "500 Internal Server Error</h1><p>An error occurred in our side."; break;
+		case 501:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
+		default:	ret += "501 Not Implemented</h1><p>Request type is not supported at that moment."; break;
 	}
 	ret += "</p><hr><pre>Alyssa HTTP Server " + version + "</pre></body></html>";
 	return ret;
@@ -448,7 +448,7 @@ char ParseCL(int argc, char** argv) {// This func parses command line arguments.
 		if (!strcmp(argv[i], "version")) {
 			cout << "Alyssa HTTP Server " << version << std::endl;
 #ifdef Compile_WolfSSL
-			cout << "WolfSSL Library Version: " << WOLFSSL_VERSION << std::endl;
+			cout << "WolfSSL Library Version: " << wolfSSL_lib_version() << std::endl;
 #endif
 			cout << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl;
 			cout << "Features: Core"

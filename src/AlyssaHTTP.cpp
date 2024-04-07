@@ -122,114 +122,121 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 
 	if (!(cl->flags & (1<<0))) {// First line is not parsed yet.
 		if (strnlen(buf, 4097) != sz) return -6;//Not a text.
-		for (; pos < sz + 1; pos++)
-		if (buf[pos] < 32) {
-			if (buf[pos] > 0) {
-				unsigned short _pos = 0;
-				if (!strncmp(buf, "GET", 3)) {
-					cl->RequestTypeInt = 1; _pos = 4;
-				}
-				else if (!strncmp(buf, "POST", 4)) {
-					cl->RequestTypeInt = 2; _pos = 5;
-				}
-				else if (!strncmp(buf, "PUT", 3)) {
-					cl->RequestTypeInt = 3; _pos = 4;
-				}
-				else if (!strncmp(buf, "OPTIONS", 7)) {
-					cl->RequestTypeInt = 4; _pos = 8;
-				}
-				else if (!strncmp(buf, "HEAD", 4)) {
-					cl->RequestTypeInt = 5; _pos = 5;
-				}
-				// 2.5: Added the methods that is specified on HTTP/1.1 specification
-				// but is not implemented on Alyssa HTTP Server. They will be responded with 501.
-				// Any other thing will be treated as non-HTTP and will be terminated.
-				else if (!strncmp(buf, "DELETE", 6)) {
-					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
-				}
-				else if (!strncmp(buf, "CONNECT", 7)) {
-					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 8;
-				}
-				else if (!strncmp(buf, "TRACE", 5)) {
-					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 6;
-				}
-				else if (!strncmp(buf, "MODIFY", 6)) {
-					cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+		for (; pos < sz + 1; pos++) {
+			if (buf[pos] < 32) {
+				if (buf[pos] > 0) {
+					// Determine the method
+					unsigned short _pos = 0;
+					if (!strncmp(buf, "GET", 3)) {
+						cl->RequestTypeInt = 1; _pos = 4;
+					}
+					else if (!strncmp(buf, "POST", 4)) {
+						cl->RequestTypeInt = 2; _pos = 5;
+					}
+					else if (!strncmp(buf, "PUT", 3)) {
+						cl->RequestTypeInt = 3; _pos = 4;
+					}
+					else if (!strncmp(buf, "OPTIONS", 7)) {
+						cl->RequestTypeInt = 4; _pos = 8;
+					}
+					else if (!strncmp(buf, "HEAD", 4)) {
+						cl->RequestTypeInt = 5; _pos = 5;
+					}
+					// 2.5: Added the methods that is specified on HTTP/1.1 specification
+					// but is not implemented on Alyssa HTTP Server. They will be responded with 501.
+					// Any other thing will be treated as non-HTTP and will be terminated.
+					else if (!strncmp(buf, "DELETE", 6)) {
+						cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+					}
+					else if (!strncmp(buf, "CONNECT", 7)) {
+						cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 8;
+					}
+					else if (!strncmp(buf, "TRACE", 5)) {
+						cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 6;
+					}
+					else if (!strncmp(buf, "MODIFY", 6)) {
+						cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+					}
+					else if (!strncmp(buf, "NOTIFY", 6)) {
+						cl->RequestTypeInt = -5; cl->flags |= 3; _pos = 7;
+					}
+					else {
+						return -6;
+					}
+					// Get the request path which is between method and protocol version.
+					// _pos is the where method ends and path begins. 9 is the sizeof(" HTTP/1.1")
+					cl->RequestPath.resize(pos - _pos - 9); memcpy(&cl->RequestPath[0], &buf[_pos], pos - _pos - 9); cl->RequestPath[pos - _pos - 9] = 0;
+					if (cl->RequestPath.size() > 32768) {
+						cl->RequestTypeInt = -7; cl->flags |= 3; goto ExitParse;
+					}
+					// Decode percents
+					_pos = cl->RequestPath.size(); // Reusing _pos for not calling size() again and again.
+					if (_pos == 0) { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
+					for (unsigned short t = 0; t < _pos; t++) {
+						if (cl->RequestPath[t] == '%') {
+							try {
+								cl->RequestPath[t] = hexconv(&cl->RequestPath[t + 1]);
+							}
+							catch (const std::invalid_argument&) {
+								cl->flags |= 3; cl->RequestTypeInt = -1; break;
+							}
+							memmove(&cl->RequestPath[t + 1], &cl->RequestPath[t + 3], _pos - t); _pos -= 2;
+						}
+					}
+					cl->RequestPath.resize(_pos);
+					// Sanity checks
+					_pos = cl->RequestPath.find('?');// Query string
+					if (_pos != 65535) {
+						unsigned short _sz = cl->RequestPath.size();
+						cl->qStr.resize(_sz - _pos); memcpy(cl->qStr.data(), &cl->RequestPath[_pos + 1], _sz - _pos - 1);
+						cl->RequestPath.resize(_pos);
+					}
+					else _pos = cl->RequestPath.size();
+					if (!(cl->flags & (1 << 1))) {// You can't remove that if scope else you can't goto.
+						if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; }
+						short level = 0; unsigned short t = 1; while (cl->RequestPath[t] == '/') t++;
+						// Check for level client tries to access.
+						for (; t < _pos;) {
+							if (cl->RequestPath[t] == '/') {
+								level++; t++;
+								while (cl->RequestPath[t] == '/') t++;
+							}
+							else if (cl->RequestPath[t] == '.') {
+								t++; if (cl->RequestPath[t] == '.') level--;  // Parent directory, decrease.
+								//else if (cl->RequestPath[t] == '/') t++; // Current directory. don't increase.
+								t++; while (cl->RequestPath[t] == '/') t++;
+							}
+							else t++;
+						}
+						if (level < 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; } //Client tried to access above htroot
+						// Check for version
+						if (!strncmp(&buf[pos - 8], "HTTP/1.", 7)) {
+							cl->flags |= 1;
+							if (buf[pos - 1] == '0') {// HTTP/1.0 client
+								cl->close = 1;
+							}
+						}
+						else { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
+					}
+					else { cl->RequestTypeInt = -1; cl->flags |= 3; }
+				ExitParse:
+					pos++; if (buf[pos] < 31) pos++; // line delimiters are CRLF, iterate pos one more.
+					break;
 				}
 				else {
-					return -6;
-				}
-				cl->RequestPath.resize(pos - _pos - 9); memcpy(&cl->RequestPath[0], &buf[_pos], pos - _pos - 9); cl->RequestPath[pos - _pos - 9] = 0;
-				if (cl->RequestPath.size() > 32768) {
-					cl->RequestTypeInt = -7; cl->flags |= 3; goto ExitParse;
-				}
-				// Decode percents
-				_pos = cl->RequestPath.size(); // Reusing _pos for not calling size() again and again.
-				if (_pos == 0) { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
-				for (unsigned short t = 0; t < _pos; t++) {
-					if (cl->RequestPath[t] == '%') {
-						try {
-							cl->RequestPath[t] = hexconv(&cl->RequestPath[t+1]);
+					if (sz < cl->LastLine.max_size()) {// If false, size is larger than we can ever hold. Discard the line
+						try
+						{
+							cl->LastLine.resize(sz);
 						}
-						catch (const std::invalid_argument&) {
-							cl->flags |= 3; cl->RequestTypeInt = -1; break;
+						catch (const std::bad_alloc a)
+						{
+							std::wcout << L"MIH DEDİN YARRAĞI YEDİN: " << a.what(); std::terminate();
 						}
-						memmove(&cl->RequestPath[t + 1], &cl->RequestPath[t + 3], _pos - t); _pos -= 2;
+						memcpy(&cl->LastLine[0], buf, sz);
 					}
+					goto ParseReturn;
 				}
-				cl->RequestPath.resize(_pos);
-				// Sanity checks
-				_pos = cl->RequestPath.find('?');// Query string
-				if (_pos != 65535) {
-					unsigned short _sz = cl->RequestPath.size();
-					cl->qStr.resize(_sz - _pos); memcpy(cl->qStr.data(), &cl->RequestPath[_pos + 1], _sz - _pos - 1);
-					cl->RequestPath.resize(_pos);
-				}
-				else _pos = cl->RequestPath.size();
-				if (!(cl->flags & (1 << 1))) {// You can't remove that if scope else you can't goto.
-					if ((int)cl->RequestPath.find(".alyssa") >= 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; }
-					short level = 0; unsigned short t = 1; while (cl->RequestPath[t] == '/') t++;
-					// Check for level client tries to access.
-					for (; t < _pos;) {
-						if (cl->RequestPath[t] == '/') {
-							level++; t++;
-							while (cl->RequestPath[t] == '/') t++;
-						}
-						else if (cl->RequestPath[t] == '.') {
-							t++; if (cl->RequestPath[t] == '.') level--;  // Parent directory, decrease.
-							//else if (cl->RequestPath[t] == '/') t++; // Current directory. don't increase.
-							t++; while (cl->RequestPath[t] == '/') t++;
-						}
-						else t++;
-					}
-					if (level < 0) { cl->RequestTypeInt = -2; cl->flags |= 3; goto ExitParse; } //Client tried to access above htroot
-					// Check for version
-					if (!strncmp(&buf[pos - 8], "HTTP/1.", 7)) {
-						cl->flags |= 1;
-						if (buf[pos - 1] == '0') {// HTTP/1.0 client
-							cl->close = 1;
-						}
-					}
-					else { cl->RequestTypeInt = -1; cl->flags |= 3; goto ExitParse; }
-				}
-				else { cl->RequestTypeInt = -1; cl->flags |= 3; }
-				ExitParse:
-				pos++; if (buf[pos] < 31) pos++; // line delimiters are CRLF, iterate pos one more.
-				break;
-			}
-			else {
-				if (sz < cl->LastLine.max_size()) {// If false, size is larger than we can ever hold. Discard the line
-					try
-					{
-						cl->LastLine.resize(sz);
-					}
-					catch (const std::bad_alloc a)
-					{
-						std::wcout << L"MIH DEDİN YARRAĞI YEDİN: " << a.what(); std::terminate();
-					}
-					memcpy(&cl->LastLine[0], buf, sz);
-				}
-				goto ParseReturn;
 			}
 		}
 	}
@@ -482,7 +489,7 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 			ServerHeaders(&h, cl);
 			if (cl->RequestTypeInt!=5)
 				Send(&asd, cl->Sr->sock, cl->Sr->ssl, 1);
-			return;
+			if (cl->close) shutdown(cl->Sr->sock, 2); return;
 		}
 #endif
 		else {
@@ -494,6 +501,7 @@ void AlyssaHTTP::Get(clientInfo* cl) {
 			}
 			else
 				ServerHeaders(&h, cl);
+			if (cl->close) shutdown(cl->Sr->sock, 2);
 			return;
 		}
 	}
@@ -619,15 +627,17 @@ void AlyssaHTTP::Post(clientInfo* cl) {
 		switch (CustomActions::CAMain((char*)cl->RequestPath.c_str(), cl))
 		{
 		case 0:
-			return;
+			if (cl->close) shutdown(cl->Sr->sock, 2); return;
 		case -1:
 			h.StatusCode = 500;
-			ServerHeaders(&h, cl); return;
+			ServerHeaders(&h, cl); 
+			if (cl->close) shutdown(cl->Sr->sock, 2); return;
 		case -3:
 			shutdown(cl->Sr->sock, 2); return;
 		default:
 			h.StatusCode = 404;
-			ServerHeaders(&h, cl); return;
+			ServerHeaders(&h, cl);
+			if (cl->close) shutdown(cl->Sr->sock, 2); return;
 		}
 	}
 	h.StatusCode = 404; 
@@ -638,7 +648,7 @@ void AlyssaHTTP::Post(clientInfo* cl) {
 	}
 	else
 		ServerHeaders(&h, cl); 
-	return;
+	if (cl->close) shutdown(cl->Sr->sock, 2); return;
 }
 #endif
 

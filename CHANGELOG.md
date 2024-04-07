@@ -1,5 +1,10 @@
 ﻿# Alyssa HTTP Server Changelog
 
+## 2.5.2.2 - 07.04.2024
+- Some more fixes regarding to old clients.
+- Synthetic error pages are now enabled by default.
+- Some other small improvements.
+
 ## 2.5.2.1 - 18.02.2024
 - Really fixed the integer overflow this time.
 
