@@ -56,6 +56,7 @@ Alyssa.log
 
 # macOS persistent storage(?) stuff
 ._*
+.DS_Store
 
 # Compiled resources
 *.res

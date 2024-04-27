@@ -292,8 +292,9 @@ int8_t AlyssaHTTP::parseHeader(clientInfo* cl, char* buf, int sz) {
 				cl->_RequestPath = std::filesystem::u8path(htroot + cl->RequestPath);
 			}
 			// Check if client connects with SSL or not if HSTS is enabled
+#ifdef Compile_WolfSSL
 			if (HSTS && !cl->Sr->ssl) return -4; // client doesn't use SSL.
-
+#endif
 			return cl->RequestTypeInt;
 		}
 	}

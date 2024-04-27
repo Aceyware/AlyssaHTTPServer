@@ -150,8 +150,8 @@ private:
 			}
 			else t++;
 			if (level < 0) { return 1; } //Client tried to access above htroot
-			return 0;
 		}
+		return 0;
 	}
 #ifdef Compile_CustomActions
 	static void Post(H2Stream* s);

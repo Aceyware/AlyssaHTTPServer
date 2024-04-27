@@ -307,14 +307,10 @@ void AlyssaHTTP2::ParseHeaders(H2Stream* s,char* buf, int sz){//You're entering 
 				//if (_Byte - 62 >= s->cl.Sr->DynTable.size()) continue; Commenting this for now to see if it overruns
 				DynElement* el = &s->cl.Sr->DynTable[_Byte - 62];
 				switch (el->Type) {
-				case 2:
-					s->cl.RequestTypeInt = (int8_t)el->Data; break;
-				case 16:
-					s->cl.hasEncoding = 1; break;
-				case 50:
-					memcpy(&s->cl.rstart, el->Data, 8);  memcpy(&s->cl.rstart, el->Data + 8, 8); break;
-				default:
-					break;
+					case 2:  s->cl.RequestTypeInt = (int8_t)el->Data[0]; break;
+					case 16: s->cl.hasEncoding = 1; break;
+					case 50: memcpy(&s->cl.rstart, el->Data, 8);  memcpy(&s->cl.rstart, el->Data + 8, 8); break;
+					default: break;
 				}
 			}
 			else {
@@ -697,17 +693,14 @@ void AlyssaHTTP2::Post(H2Stream* s) {
 	HeaderParameters h;
 	if (CAEnabled) {
 		switch (CustomActions::CAMain((char*)s->cl.RequestPath.c_str(), &s->cl, s)) {
-		case 0:
-			return;
-		case -1:
-			h.StatusCode = 500; ServerHeaders(&h, s); return;
-		case -3: 
-			return;
-		default:
-			break;
+			case 0:  return;
+			case -1: h.StatusCode = 500; ServerHeaders(&h, s); return;
+			case -3: return;
+			default: break;
 		}
 	}
-	h.StatusCode = 404; if (errorpages) {
+	h.StatusCode = 404;
+	if (errorpages) {
 		std::string ep = ErrorPage(404); h.ContentLength = ep.size();
 		ServerHeaders(&h, s);
 		if (ep != "") SendData(s, ep.c_str(), ep.size());
@@ -901,22 +894,15 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 				std::thread([&, Element, FrameStrId](){
 					Element->Ptr->StrMtx.lock();
 					switch (Element->Ptr->cl.RequestTypeInt) {
-						case -1:
-							ServerHeadersM(Element->Ptr, 400, 1, ""); break;
-						case 1:
-							Get(Element->Ptr); break;
+						case -1: ServerHeadersM(Element->Ptr, 400, 1, ""); break;
+						case 1:  Get(Element->Ptr); break;
 	#ifdef Compile_CustomActions
-						case 2:
-							Post(Element->Ptr); break;
-						case 3:
-							Post(Element->Ptr); break;
+						case 2:  Post(Element->Ptr); break;
+						case 3:  Post(Element->Ptr); break;
 	#endif
-						case 4:
-							ServerHeadersM(Element->Ptr, 204, 1, ""); break;
-						case 5:
-							Get(Element->Ptr); break;
-						default:
-							ServerHeadersM(Element->Ptr, 501, 1, ""); break;
+						case 4:  ServerHeadersM(Element->Ptr, 204, 1, ""); break;
+						case 5:  Get(Element->Ptr); break;
+						default: ServerHeadersM(Element->Ptr, 501, 1, ""); break;
 					}
 					cleanupQueue.emplace_back(Element);
 					Element->Ptr->StrMtx.unlock();
@@ -944,11 +930,7 @@ void AlyssaHTTP2::ClientConnection(_Surrogate* sr) {
 ClientEnd:
 	closesocket(sr->sock); delete[] buf; wolfSSL_free(sr->ssl); 
 	StreamCleanup(&StrTable, StrmsMtx); 
-	StrTable.clear();
-	delete sr;
+	StrTable.clear(); delete sr;
 	return;
 }
-
-
-
 #endif

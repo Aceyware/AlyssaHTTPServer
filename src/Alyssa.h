@@ -61,7 +61,7 @@
 #endif //Compile_WolfSSL
 
 #ifndef Compile_WolfSSL
-	typedef struct WOLFSSL {};
+	typedef struct {} WOLFSSL;
 #endif
 
 #ifdef Compile_zlib
@@ -77,6 +77,9 @@
 	#define closesocket close
 	#define Sleep sleep
 	static void sigpipe_handler(int unused){}
+#ifdef __APPLE__ //macOS has no MSG_MORE apparently.
+	#define MSG_MORE 0
+#endif
 	#define MSG_PARTIAL MSG_MORE
 #endif
 // Definitions for Windows
@@ -89,7 +92,7 @@ using std::string;
 
 #ifdef Compile_H2// This has to be here currently.
 struct DynElement {
-	uint8_t Type = 0; char Data[16] = { NULL };
+	uint8_t Type = 0; char Data[16] = { 0 };
 };
 #endif
 
@@ -331,7 +334,7 @@ static char h1[] = "a"; //Constant char array used as a placeholder when APLN is
 static int off = 0;
 static int on = 1;
 static string GPLDisclaimer=
-	"Copyright (C) 2024 PEPSIMANTR, Alyssa Software\n"
+	"Copyright (C) 2025 Aceyware\n"
 	"This program is free software: you can redistribute it and/or modify "
 	"it under the terms of the GNU General Public License as published by "
 	"the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\n"
@@ -379,9 +382,9 @@ static const char* MsgTypeStr[] = { "Error: ","Warning: ","Info: " };
 #endif
 #else
 #ifdef _DEBUG
-	static std::string version = "2.5.2.2d";
+	static std::string version = "2.5.2.3d";
 #else
-	static std::string version = "2.5.2.2";
+	static std::string version = "2.5.2.3";
 #endif
 #endif
 #ifdef _WIN32

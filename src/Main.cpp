@@ -1,6 +1,6 @@
 /*
 	Alyssa HTTP Server Project
-	Copyright (C) 2024 Alyssa Software
+	Copyright (C) 2025 Aceyware
 
 	Alyssa is a HTTP server project that aims to be 
 	as good as mainstream HTTP server implementation 
@@ -137,6 +137,7 @@ int main(int argc, char* argv[]) {//This is the main server function that fires 
 	}
 #endif
 
+	// Initialize sockets
 	if (int ret = AlyssaInit()) return ret;
 	
 	// After setting sockets successfully, do the initial setup of rest of server

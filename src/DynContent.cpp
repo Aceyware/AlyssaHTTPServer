@@ -309,17 +309,17 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							return -1;
 						}
 						Arguments.resize(ct - cn); memcpy(&Arguments[0], &c[cn], ct - cn); Action = 2;
-                    }
-                    else if (!strcmp(&c[cn], "forbid")){
-                        hp.StatusCode = 403;
+					}
+					else if (!strcmp(&c[cn], "forbid")){
+						hp.StatusCode = 403;
 #ifdef Compile_H2
-                        if (h)
-                            AlyssaHTTP2::ServerHeaders(&hp, h);
-                        else
+						if (h)
+							AlyssaHTTP2::ServerHeaders(&hp, h);
+						else
 #endif
-                            AlyssaHTTP::ServerHeaders(&hp, cl);
-                        return 0;
-                    }
+							AlyssaHTTP::ServerHeaders(&hp, cl);
+						return 0;
+					}
 					else { // Unknown command.
 						ConsoleMutex.lock();
 						ConsoleMsgM(0, STR_CUSTOMACTIONS);
@@ -357,7 +357,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 			if(buf[cn]=='}'){ //Syntax error (closure of a non-existent scope)
 				ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 				wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_1]); ConsoleMutex.unlock(); 
-				if (logging) AlyssaLogging::literal("Custom actions: syntax error (closure of a non-existent scope) at char " + cn + string("on file: ") + p.string(), 'E');
+				if (logging) AlyssaLogging::literal("Custom actions: syntax error (closure of a non-existent scope) at char " + std::to_string(cn) + string("on file: ") + p.string(), 'E');
 				return -1;
 			}
 			else if(buf[cn]=='{'){
@@ -369,7 +369,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 				else if (isSameDir) {
 					if (!strncmp(&buf[ct], "WholeDirectory", 14))
 						isAffecting = 1;
-					else if(n[0] == NULL) {
+					else if(n[0] == '\0') {
 						if (!strncmp(&buf[ct], "DirectoryRoot", 13))
 							isAffecting = 1;
 					}
@@ -382,7 +382,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 							ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 							wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_2]); 
 							ConsoleMutex.unlock();
-							if (logging) AlyssaLogging::literal("Custom actions: syntax error (invalid node identifier keyword) at char " + cn + string("on file: ") + p.string(), 'E');
+							if (logging) AlyssaLogging::literal("Custom actions: syntax error (invalid node identifier keyword) at char " + std::to_string(cn) + string("on file: ") + p.string(), 'E');
 							return -1;
 						}
 					}
@@ -394,7 +394,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 						ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 						wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_3]);
 						ConsoleMutex.unlock(); 
-						if (logging) AlyssaLogging::literal("Custom actions: syntax error (beginning of another scope before previous one closed) at char " + cn + string("on file: ")+p.string(), 'E');
+						if (logging) AlyssaLogging::literal("Custom actions: syntax error (beginning of another scope before previous one closed) at char " + std::to_string(cn) + string("on file: ")+p.string(), 'E');
 						return -1;
 					}
 					cn++; }
@@ -402,7 +402,7 @@ void ExecCGI(const char* exec, clientInfo* cl, H2Stream* h) {// CGI driver funct
 					ConsoleMutex.lock(); ConsoleMsgM(0, STR_CUSTOMACTIONS);
 					wprintf(LocaleTable[Locale][STR_CA_SYNTAX], LocaleTable[Locale][STR_CA_STX_4]); 
 					ConsoleMutex.unlock(); 
-					if (logging) AlyssaLogging::literal("Custom actions: syntax error (missing '}') at char " + cn + string("on file: ") + p.string(), 'E');
+					if (logging) AlyssaLogging::literal("Custom actions: syntax error (missing '}') at char " + std::to_string(cn) + string("on file: ") + p.string(), 'E');
 					return -1;
 				}
 				for (; cn < len && buf[cn] < 32; cn++) {}

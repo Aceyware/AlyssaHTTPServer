@@ -84,10 +84,12 @@ static const wchar_t* LocaleTable[][STR_END] = {
 		L"invalid htroot path specified on config or path is inaccessible. Trying to create the directory...",
 		L"failed to create the folder. Quitting",
 		L"cannot open log file, logging is disabled.",
+#ifdef Compile_WolfSSL
 		L"WolfSSL: ",
 		L"internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled.",
 		L"failed to load SSL private key file, SSL is disabled.",
 		L"failed to load SSL certificate file, SSL is disabled.",
+#endif
 		L"Can't Initialize winsock! Quitting.",
 		L"Socket creation failed! Quitting.",
 		// 20

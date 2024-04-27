@@ -1,5 +1,8 @@
 ﻿# Alyssa HTTP Server Changelog
 
+## 2.5.2.3 - 27.04.2024
+- This release only has some fixes on source that resolves compilation errors and some warnings, and also maybe some potential bugs.
+
 ## 2.5.2.2 - 07.04.2024
 - Some more fixes regarding to old clients.
 - Synthetic error pages are now enabled by default.

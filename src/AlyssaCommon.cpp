@@ -21,14 +21,14 @@ int AlyssaInit() {
 		if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
 			ConsoleMsgM(0, STR_SERVER);
 			wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
-			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + std::to_string(port[i]), 'E');
 			return -2;
 		}
 		//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 		else if (port[i] != ntohs(hint.sin_port)) {
 			ConsoleMsgM(0, STR_SERVER);
 			wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
-			if (logging) AlyssaLogging::literal("Failed to reserve port " + port[i], 'E');
+			if (logging) AlyssaLogging::literal("Failed to reserve port " + std::to_string(port[i]), 'E');
 			return -2;
 		}
 		listen(listening, SOMAXCONN);
@@ -55,13 +55,13 @@ int AlyssaInit() {
 			if (getsockname(listening, (struct sockaddr*)&hint, &Slen) == -1) {
 				ConsoleMsgM(0, STR_SERVER);
 				wprintf(LocaleTable[Locale][STR_PORTFAIL], SSLport[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + std::to_string(SSLport[i]), 'E');
 				return -2;
 			}
 			else if (SSLport[i] != ntohs(hint.sin_port)) {
 				ConsoleMsgM(0, STR_SERVER);
 				wprintf(LocaleTable[Locale][STR_PORTFAIL2], SSLport[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port " + SSLport[i], 'E');
+				if (logging) AlyssaLogging::literal("Failed to reserve port " + std::to_string(SSLport[i]), 'E');
 				return -2;
 			}
 			listen(listening, SOMAXCONN);_SocketArray.emplace_back();
@@ -91,13 +91,13 @@ int AlyssaInit() {
 			bind(listening, (sockaddr*)&hint, sizeof(hint));
 			if (getsockname(listening, (struct sockaddr*)&hint, &len) == -1) {//Cannot reserve socket
 				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL], port[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
+				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + std::to_string(port[i]), 'E');
 				return -2;
 			}
 			//Linux can assign socket to different port than desired when is a small port number (or at leats that's what happening for me)
 			else if (port[i] != ntohs(hint.sin6_port)) {
 				ConsoleMsgM(0, STR_SERVER); wprintf(LocaleTable[Locale][STR_PORTFAIL2], port[i]);
-				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + port[i], 'E');
+				if (logging) AlyssaLogging::literal("Failed to reserve port6 " + std::to_string(port[i]), 'E');
 				return -2;
 			}
 			listen(listening, SOMAXCONN); _SocketArray.emplace_back();

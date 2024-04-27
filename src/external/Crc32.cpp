@@ -57,7 +57,9 @@
 
 // abort if byte order is undefined
 #if !defined(__BYTE_ORDER)
-#error undefined byte order, compile with -D__BYTE_ORDER=1234 (if little endian) or -D__BYTE_ORDER=4321 (big endian)
+//#error undefined byte order, compile with -D__BYTE_ORDER=1234 (if little endian) or -D__BYTE_ORDER=4321 (big endian)
+#define __BYTE_ORDER 1234
+#warning undefined byte order, treating as little endian. Set byte order with -D__BYTE_ORDER=1234 (for little endian, 4321 for BE.)
 #endif
 
 
