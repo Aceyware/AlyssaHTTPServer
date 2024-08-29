@@ -1,0 +1,286 @@
+#include "Alyssa.h"
+
+char* predefinedHeaders; int predefinedSize;
+void setPredefinedHeaders() {
+	char buf[256] = "Server: Alyssa/" version "\r\n";
+	predefinedSize = strlen(buf); predefinedHeaders = new char[predefinedSize];
+	memcpy(predefinedHeaders, buf, predefinedSize);
+}
+
+short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz) {
+	int pos = 0; if (strnlen(buf, 2048) != sz) return -6;
+	if (r->flags ^ FLAG_FIRSTLINE) {// First line is not parsed.
+		switch (buf[0]) {// Method
+			case 'G': if (buf[1] == 'E' && buf[2] == 'T' && buf[3] == ' ') { r->method = 1; pos = 4; } break;
+			case 'P': if (buf[1] == 'O' && buf[2] == 'S' && buf[3] == 'T' && buf[4]==' ')   { r->method = 2; pos = 5; }
+				 else if (buf[1] == 'U' && buf[2] == 'T' && buf[3] == ' ') { r->method = 3; pos = 4; } break;
+			default: r->method = -2; break;
+		}
+		char* end = (char*)memchr(&buf[pos], ' ', sz); // Search for the end of path.
+		if (!end) { r->method = -1; }// Ending space not found, invalid request.
+		else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
+		else {// All is well, keep parsing.
+			memcpy(&clientPaths[c->off * maxpath], &buf[pos], end - &buf[pos]);// Copy request path
+			clientPaths[c->off * maxpath + end - &buf[pos]] = '\0';// Add null terminator
+			end = &clientPaths[c->off * maxpath + end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
+			pos += end - &clientPaths[c->off * maxpath] + 1;
+			if (!strncmp(&buf[pos], "HTTP/1", 6)) {
+				pos += 7; if (buf[pos] == '0') { 
+					c->flags ^= FLAG_CLOSE; } 
+				pos++;
+			}
+			else { r->method = -1; } // No HTTP/1.x, bad request.
+			while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
+		}
+		r->flags |= FLAG_FIRSTLINE;
+		pathParsing(&clientPaths[c->off * maxpath], end, r);
+	}
+	// Parse lines one by one till' end of buffer.
+	int bpos = pos;//Beginning position of current line.
+
+	// Do parsing depending on state of where we are at headers.
+	if (r->flags ^ FLAG_HEADERSEND) {// We are still at headers
+		for (; pos < sz;) {
+			if (buf[pos] > 31) { pos++; continue; }// Increase counter until end of line.
+			if (bpos == pos) { // End of headers.
+				r->flags |= FLAG_HEADERSEND; return r->method; 
+			}
+			
+			if (buf[bpos]=='c' || buf[bpos]=='C') { // Content-length is a special case and we must parse it in any way. Rest headers are parsed only if request is not bad.
+				if (!strncmp(&buf[bpos], "ontent-", 7)) {
+					bpos += 7; if (!strncmp(&buf[bpos+1], "ength", 5)) {
+						bpos += 6; char* end = NULL;
+						r->contentLength = strtol(&buf[bpos], &end, 10);
+					}
+				}
+			}
+			else if (r->flags ^ FLAG_INVALID) {
+				switch (buf[bpos]) {
+					case 'a':
+					case 'A': // Content negotiation (Accept-*) headers.
+						break;
+					case 'c':
+					case 'C':
+						if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
+							bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
+						}
+						break;
+					case 'h':
+					case 'H':
+						if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {
+							bpos += 6;
+							if (numVhosts) {
+								for (int i = 1; i < numVhosts; i++) {
+									if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {
+										c->vhost = i; break;
+									}
+								}
+							}
+						}
+						break;
+					case 'i':
+					case 'I': // Conditional headers.
+						break;
+					case 'r':
+					case 'R':
+						if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {
+							bpos += 6; if (!strncmp(&buf[pos], "bytes=", 6)) {
+								bpos += 6; if (buf[pos] == '-') r->rstart = -1; // Read last n bytes.
+								else {
+									char* end = NULL;
+									r->rstart = strtoll(&buf[pos], &end, 10);
+									if ((int) & end < 32) r->rend = -1;
+								}
+							}
+							else { // Bad request.
+								r->flags |= FLAG_INVALID; r->method = -1;
+							}
+						}
+						break;
+					default:
+						break;
+				}
+			}
+			//while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
+			pos++; if (buf[pos] < 32) pos++; // Itarete from line demiliters to beginning.
+			bpos = pos;
+		}
+		if (pos > bpos) {// Last line was incomplete
+			
+		}
+		epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Reset polling.
+	}
+	else {// Received remainder of payload, append it.
+
+	}
+}
+
+void serverHeaders(respHeaders* h, clientInfo* c) {
+	// Set up the error page to send if there is an error
+	if (h->statusCode >= 400 && errorPagesEnabled) { 
+		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->vhost, c->stream[0]); c->stream[0].fs = h->conLength;
+		if (h->conLength) h->conType = "text/html";
+	}
+
+	char buf[512] = "HTTP/1.1 "; short pos = 9;
+	switch (h->statusCode) {
+		case 200: memcpy(&buf[pos], "200 OK",					  6); pos += 6;  break;
+		case 206: memcpy(&buf[pos], "206 Partial Content\r\nContent-Range: bytes ", 42); pos += 42; 
+				  pos += snprintf(&buf[pos], 512-pos, "%llu-%llu/%llu", c->stream[0].rstart, c->stream[0].rend, h->conLength); 
+				  break;
+		case 302: memcpy(&buf[pos], "302 Found\r\nLocation: ",	 21); pos += 21;
+				  memcpy(&buf[pos], h->conType, strlen(h->conType)); pos += strlen(h->conType);// Content type is reused as redirect target.
+				  break;
+		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
+		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
+		case 401: memcpy(&buf[pos], "401 Unauthorized\r\nWWW-Authenticate: Basic", 41); pos += 41; break;
+		case 402: memcpy(&buf[pos], "402 Precondition Failed",	 23); pos += 23; break;
+		case 403: memcpy(&buf[pos], "403 Forbidden",			 13); pos += 13; break;
+		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
+		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
+		case 416: memcpy(&buf[pos], "416 Range Not Satisfiable", 25); pos += 25; break;
+		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
+		case 500: memcpy(&buf[pos], "500 Internal Server Error", 25); pos += 25; break;
+		case 501:
+		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
+	}
+	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
+	pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", h->conLength);
+	// Content MIME type if available.
+	if (h->conType != NULL) {
+		memcpy(&buf[pos], "Content-Type: ", 14); pos += 14;
+		pos += snprintf(&buf[pos], 512 - pos, "%s\r\n", h->conType);
+	}
+	// Last modify date and ETag if available.
+	if (h->lastMod != 0) {
+		memcpy(&buf[pos], "ETag: ", 6); pos += 6;
+		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", h->lastMod);
+		memcpy(&buf[pos], "Last-Modified: ", 15); pos += 15;
+		pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&h->lastMod));
+	}
+	// Add Accept-Ranges if available
+	if (h->flags & FLAG_HASRANGE) {
+		memcpy(&buf[pos], "Accept-Ranges: bytes\r\n", 22); pos += 22;
+	}
+	// Current time
+	time_t currentDate = time(NULL);
+	memcpy(&buf[pos], "Date: ", 6); pos += 6; pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
+	// Predefined headers
+	memcpy(&buf[pos], predefinedHeaders, predefinedSize); pos += predefinedSize;
+	// Add terminating newline and send.
+	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	Send(c, buf, pos);
+}
+
+void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags) {// Same one but without headerParameters type argument.
+	// Set up the error page to send if there is an error
+	if (statusCode > 400 && errorPagesEnabled) { 
+		conLength = errorPages(tBuf[c->cT], statusCode, c->vhost, c->stream[0]); c->stream[0].fs = conLength;
+	}
+
+	char buf[256] = "HTTP/1.1 "; short pos = 9;
+	switch (statusCode) {
+		case 200: memcpy(&buf[pos], "200 OK",					  6); pos += 6;  break;
+		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
+		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
+		case 401: memcpy(&buf[pos], "401 Unauthorized\r\nWWW-Authenticate: Basic", 41); pos += 41; break;
+		case 402: memcpy(&buf[pos], "402 Precondition Failed",	 23); pos += 23; break;
+		case 403: memcpy(&buf[pos], "403 Forbidden",			 13); pos += 13; break;
+		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
+		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
+		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
+		case 500: memcpy(&buf[pos], "500 Internal Server Error", 25); pos += 25; break;
+		case 501:
+		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
+	}
+	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	// Content length
+	memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
+	pos += snprintf(&buf[pos], 512 - pos, "%d\r\n", conLength);
+	// Current time
+	time_t currentDate = time(NULL);
+	memcpy(&buf[pos], "Date: ", 6); pos += 6; pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
+	// Predefined headers
+	memcpy(&buf[pos], predefinedHeaders, predefinedSize); pos += predefinedSize;
+	// Add terminating newline and send.
+	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	Send(c, buf, pos);
+	// Send the error page to user agent.
+	if (errorPagesEnabled) errorPagesSender(c);
+}
+
+void getInit(clientInfo* c) {
+	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = NULL;
+	if (c->stream[0].flags & FLAG_INVALID) {
+		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
+		else h.statusCode = 400;
+
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(tBuf[c->cT], h.statusCode, c->stream[0].vhost, c->stream[0]);
+			h.conLength = eSz; h.conType = "text/html"; serverHeaders(&h, c);
+			errorPagesSender(c);
+		}
+		else {// Reset polling.
+			h.conLength = 0; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+		}
+		return;
+	}
+
+	if (numVhosts) {// Handle the virtual host.
+		switch (virtualHosts[c->vhost].type) {
+			case 0: // Standard virtual host.
+				memcpy(tBuf[c->cT], virtualHosts[c->vhost].target, strlen(virtualHosts[c->vhost].target));
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), &clientPaths[c->off * maxpath], strlen(&clientPaths[c->off * maxpath]) + 1);
+				break;
+			case 1: // Redirecting virtual host.
+				h.conType = virtualHosts[c->vhost].target; // Reusing content-type variable for redirection path.
+				h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+				return; break;
+			case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
+				epollRemove(c->s); closesocket(c->s); 
+#ifdef COMPILE_WOLFSSL
+				if (c->ssl) wolfSSL_free(c->ssl);
+#endif // COMPILE_WOLFSSL
+				return; break;
+			default: break;
+		}
+	}
+	else {// Virtual hosts are not enabled. Use the htroot path from config.
+		memcpy(tBuf[c->cT], htroot, sizeof(htroot) - 1);
+		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, &clientPaths[c->off * maxpath], strlen(&clientPaths[c->off * maxpath]) + 1);
+	}
+
+openFilePoint:
+	r->f = fopen(tBuf[c->cT], "rb");
+	if (!r->f) {
+		struct stat attr; stat(tBuf[c->cT], &attr);
+		if (attr.st_mode & S_IFDIR) { strcat(tBuf[c->cT], "/index.html"); goto openFilePoint; }// It is a directory, check for index.html inside it.
+		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c); 
+		if (errorPagesEnabled) errorPagesSender(c);
+		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		return;
+	}
+	else {
+		struct stat attr; stat(tBuf[c->cT], &attr); 
+		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(tBuf[c->cT], "/index.html"); goto openFilePoint; }// It is a directory, check for index.html inside it.
+																											 // Yes, it exists on both cases because fopen'ing directories is not defined on standard
+																											 // and its behavior differs.
+		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs;
+		h.conType = fileMime(tBuf[c->cT]);
+		if (r->rstart || r->rend) {
+			if(r->rstart==-1) { // read last rend bytes 
+				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+			}
+			else if (r->rend == -1) { // read thru end
+				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+			}
+			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
+			h.statusCode = 206; serverHeaders(&h, c); epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
+		}
+		else {
+			h.statusCode = 200; serverHeaders(&h, c); epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+		}
+		return;
+	}
+}

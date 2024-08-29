@@ -146,10 +146,12 @@ static const wchar_t* LocaleTable[][STR_END] = {
 		L"geçersiz veya erişilemez bir htroot dizini belirlendi. Dizin oluşturulmaya çalışılıyor...",
 		L"dizin oluşturma başarısız oldu, çıkılıyor.",
 		L"günlük dosyası açılamadı, günlük devre dışı.",
+#ifdef Compile_WolfSSL
 		L"WolfSSL: ",
 		L"SSL ile bir içsel hata oldu (wolfSSL_CTX_new error), SSL devre dışı.",
 		L"SSL gizli anahtar dosyasını yükleme başarısız oldu, SSL devre dışı.",
 		L"SSL sertifika dosyasını yükleme başarısız oldu, SSL devre dışı.",
+#endif
 		L"Winsock başlatma başarısız oldu, çıkılıyor.",
 		L"Soket oluşturma başarısız oldu, çıkılıyor.",
 		// 20

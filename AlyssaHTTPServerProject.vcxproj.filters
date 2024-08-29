@@ -93,7 +93,7 @@
       <Filter>Header\External</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>Header</Filter>
+      <Filter>Header\External</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

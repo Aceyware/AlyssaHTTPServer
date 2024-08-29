@@ -4,7 +4,7 @@
 	#error C++17 compatible compiler is required.
 #endif
 // Define that if this code is of another branch.
-//#define branch "polling"
+#define branch "v3prerelease"
 
 // Compile with SSL support
 #define Compile_WolfSSL
@@ -32,3 +32,5 @@
 
 // Compile with zlib for gz encoding support.
 #define Compile_zlib
+
+#define multiMethod 2
