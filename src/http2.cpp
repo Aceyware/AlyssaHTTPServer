@@ -37,8 +37,8 @@ static short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads 
 			if (ret - oldpos > 3) throw std::out_of_range("too big index on H2 indexed header field.");
 		}
 #else
-		while (buf[pos] == 0xFF) {// Keep adding until enough.
-			index += buf[pos]; pos++;
+		while (buf[0] == 0xFF) {// Keep adding until enough.
+			ret += buf[0]; pos++;
 		}
 #endif	
 		return ret;
@@ -271,7 +271,7 @@ void parseFrames(clientInfo* c, int sz) {
 			case H2HEADERS: 
 			case H2CONTINUATION:
 				switch (h2parseHeader(c, &buf[i + 4], fsz - 4, str)) {
-					case -7: std::terminate(); break;
+					case -7: goAway(c, H2COMPRESSION_ERROR); return; break;
 					default:				   break;
 				}
 				if (flags & END_STREAM) h2getInit(c, str);

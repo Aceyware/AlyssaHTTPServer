@@ -7,7 +7,6 @@
 
 // These are used for making file descriptors monotonic.
 // The base value of FDs and their increment rate is platform-dependent.
-short base = 0; 
 #ifdef _WIN32
 short rate = 4;
 #else 
@@ -21,8 +20,8 @@ char* tBuf[threadCount] = { 0 };
 struct clientInfo* clients = NULL;
 char* clientPaths = NULL;
 
-#define clientIndex(num) (tShared[num].data.fd-base)/rate
-#define clientIndex2(fd) (fd-base)/rate
+#define clientIndex(num) tShared[num].data.fd/rate
+#define clientIndex2(fd) fd/rate
 
 HANDLE ep;
 
@@ -208,23 +207,22 @@ int main() {
 		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
 			std::cout<<"WolfSSL: internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."<<std::endl;
-			enableSSL = 0; goto SSLEnd;
+			enableSSL = 0;
 		}
-		if (wolfSSL_CTX_use_PrivateKey_file(ctx, sslKeyPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+		else if (wolfSSL_CTX_use_PrivateKey_file(ctx, sslKeyPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
 			std::cout<<"WolfSSL: failed to load SSL private key file, SSL is disabled."<<std::endl;
-			enableSSL = 0; goto SSLEnd;
+			enableSSL = 0;
 		}
-		if (wolfSSL_CTX_use_certificate_file(ctx, sslCertPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+		else if (wolfSSL_CTX_use_certificate_file(ctx, sslCertPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
 			std::cout<<"WolfSSL: failed to load SSL certificate file, SSL is disabled."<<std::endl;
-			enableSSL = 0; goto SSLEnd;
+			enableSSL = 0;
 		}
-
-		sslListening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-		if (sslListening == INVALID_SOCKET) abort();
-		hints.sin_port = htons(4433); bind(sslListening, (struct sockaddr*)&hints, hintSize); listen(sslListening, SOMAXCONN);
+		else {
+			sslListening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+			if (sslListening == INVALID_SOCKET) abort();
+			hints.sin_port = htons(4433); bind(sslListening, (struct sockaddr*)&hints, hintSize); listen(sslListening, SOMAXCONN);
+		}
 	}
-SSLEnd:
-	if (!enableSSL) abort();
 #endif // COMPILE_WOLFSSL
 
 	// Set epoll
@@ -258,9 +256,10 @@ SSLEnd:
 	// Set data for listening sockets.
 	clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
 #ifdef COMPILE_WOLFSSL
-	clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL; clients[clientIndex2(sslListening)].s = sslListening;
+	if (enableSSL) {
+		clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL; clients[clientIndex2(sslListening)].s = sslListening;
+	}
 #endif // COMPILE_WOLFSSL
-
 
 	// Set predefined headers
 	setPredefinedHeaders();
@@ -282,6 +281,9 @@ SSLEnd:
 #endif // _DEBUG
 				if (ee[i].data.fd == listening) abort();
 				closesocket(ee[i].data.sock); epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
+				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
+					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
+				}
 			}
 			else if (ee[i].events & EPOLLIN) {
 				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) {// New connection incoming
@@ -289,7 +291,11 @@ SSLEnd:
 					SOCKET cSock = accept(ee[i].data.sock, (struct sockaddr*)&client, &_len);
 					element.data.fd = cSock; element.data.sock = cSock;
 					element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
-					if (cSock == INVALID_SOCKET) abort();
+					if (cSock == INVALID_SOCKET) continue;
+					if (cSock / rate > maxclient) {
+						printf("Error: socket exceeds allocated space.\n");	
+						closesocket(cSock); continue;
+					}
 					clients[clientIndex2(cSock)] = clientInfo(); 
 					clientInfo* watch = &clients[clientIndex2(cSock)];
 					clients[clientIndex2(cSock)].stream.emplace_back();
@@ -326,6 +332,7 @@ SSLEnd:
 					// Search for a free thread.
 #ifdef _DEBUG
 					printf("IN : %d\r\n", ee[i].data.sock);
+
 #endif // _DEBUG
 
 					for (int k = 0; k < threadCount; k++) {
@@ -334,6 +341,7 @@ SSLEnd:
 							tLk[k] = 1; 
 #ifdef _DEBUG
 							printf("Thread %d: locked\r\n", k);
+
 #endif // _DEBUG
 
 							break;
