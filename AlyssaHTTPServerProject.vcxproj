@@ -169,8 +169,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src/external/base64.cpp" />
-    <ClCompile Include="src/external/Crc32.cpp" />
+    <None Include="src/external/base64.cpp" />
+    <None Include="src/external/Crc32.cpp" />
     <ClCompile Include="src\misc.cpp" />
     <ClCompile Include="src\errorPages.cpp" />
     <ClCompile Include="src\http.cpp" />

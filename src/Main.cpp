@@ -80,7 +80,7 @@ int threadMain(int num) {
 		if (tShared[num].events & EPOLLOUT) { // Client is ready to receive data.
 			if (shit->flags & FLAG_HTTP2) {
 				int streams = clients[clientIndex(num)].activeStreams;
-				for (size_t i = 0; i < clients[clientIndex(num)].stream.size(); i++) {
+				for (size_t i = 0; i < 8; i++) {
 					if (clients[clientIndex(num)].stream[i].f) {
 						if (clients[clientIndex(num)].stream[i].fs > 16375) {
 							// Frame size = 16384 - 9 = 16375
@@ -89,9 +89,9 @@ int threadMain(int num) {
 							tBuf[num][2] = 16375 >> 0;
 							tBuf[num][3] = 0; // Type: 0 (DATA)
 							tBuf[num][4] = 0; // Flags: 0
-							int iamk = htonl(i); memcpy(&tBuf[num][5], &iamk, 4); // Stream identifier (converted to big endian)
-							// Read and send file
-							fread(&tBuf[num][9], 16375, 1, clients[clientIndex(num)].stream[i].f);
+							int iamk = htonl(clients[clientIndex(num)].stream[i].id); memcpy(&tBuf[num][5], &iamk, 4);
+							// ^^^ Stream identifier (converted to big endian) ^^^ / vvv read and send file vvv
+							fread(&tBuf[num][9], clients[clientIndex(num)].stream[i].fs, 1, clients[clientIndex(num)].stream[i].f);
 							wolfSSL_send(clients[clientIndex(num)].ssl, &tBuf[num], 16384, 0);
 							streams--; if (!streams) break;
 						}
@@ -102,13 +102,15 @@ int threadMain(int num) {
 							tBuf[num][2] = clients[clientIndex(num)].stream[i].fs >> 0;
 							tBuf[num][3] = 0; // Type: 0 (DATA)
 							tBuf[num][4] = 1; // Flags: END_STREAM
-							int iamk = htonl(i); memcpy(&tBuf[num][5], &iamk, 4); // Stream identifier (converted to big endian)
-							// Read and send file
+							int iamk = htonl(clients[clientIndex(num)].stream[i].id); memcpy(&tBuf[num][5], &iamk, 4); 
+							// ^^^ Stream identifier (converted to big endian) ^^^ / vvv read and send file vvv
 							fread(&tBuf[num][9], clients[clientIndex(num)].stream[i].fs, 1, clients[clientIndex(num)].stream[i].f);
 							wolfSSL_send(clients[clientIndex(num)].ssl, tBuf[num], clients[clientIndex(num)].stream[i].fs + 9, 0);
 							// Close file and stream.
 							fclose(clients[clientIndex(num)].stream[i].f); clients[clientIndex(num)].stream[i].f = NULL;
-							clients[clientIndex(num)].activeStreams--; streams--; if (!streams) break;
+							// Free the stream memory.
+							clients[clientIndex(num)].stream[i].id = 0; clients[clientIndex(num)].activeStreams--; 
+							streams--; if (!streams) break;
 						}
 					}
 				}
@@ -248,7 +250,7 @@ int main() {
 #endif // COMPILE_WOLFSSL
 
 	// Allocate space for clients (and for listening sockets)
-	clients = new clientInfo[maxclient * sizeof(struct clientInfo)];
+	clients = new clientInfo[maxclient];
 	clientPaths = new char[maxclient * maxpath];
 	// Zero the memory
 	memset(clients, 0, maxclient * sizeof(struct clientInfo));
@@ -297,8 +299,8 @@ int main() {
 						closesocket(cSock); continue;
 					}
 					clients[clientIndex2(cSock)] = clientInfo(); 
+					memset(&clients[clientIndex2(cSock)].stream[0], 0, 8 * sizeof(requestInfo));
 					clientInfo* watch = &clients[clientIndex2(cSock)];
-					clients[clientIndex2(cSock)].stream.emplace_back();
 #ifdef COMPILE_WOLFSSL
 					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_SSL) {// SSL 
 						WOLFSSL* ssl = wolfSSL_new(ctx);
@@ -312,12 +314,11 @@ int main() {
 						clients[clientIndex2(cSock)].ssl = ssl; clients[clientIndex2(cSock)].flags = FLAG_SSL;
 						if (!strncmp(amklpn, "h2", 2)) {
 							clients[clientIndex2(cSock)].flags |= FLAG_HTTP2; 
-							clients[clientIndex2(cSock)].stream.resize(64);
 							char magic[24] = { 0 };
 							wolfSSL_recv(ssl, magic, 24, 0);
 							if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
-								// Send an empty SETTINGS frame
-								wolfSSL_send(ssl, "\0\0\0\4\1\0\0\0\0", 9, 0);
+								// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = 8
+								wolfSSL_send(ssl, "\0\0\x06\4\0\0\0\0\0\0\3\0\0\0\x08", 15, 0);
 							}
 						}
 					}

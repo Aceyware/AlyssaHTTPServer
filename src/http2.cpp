@@ -24,6 +24,7 @@ const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
 #define H2_ACK 1
 #define H2CONNECTION_ERROR 1
 #define H2COMPRESSION_ERROR 9
+#define H2REFUSED_STREAM 7
 
 static short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads integer representations in headers and converts them to normal integer.
 	if (buf[0] == fullValue) {// Index is bigger than byte, add next bit to it too.
@@ -130,6 +131,11 @@ static std::string decodeHuffman(char* huffstr, int16_t sz) {// How the fuck is 
 	return out;
 }
 
+static void resetStream(clientInfo* c, unsigned int stream, char statusCode) {
+	char buf[13] = "\4\0\0\3\0\0\0\0\0\0\0\0";
+	*(unsigned int*)&buf[9] = htonl(stream);
+	wolfSSL_send(c->ssl, buf, 13, 0);
+}
 void goAway(clientInfo* c, char code) {
 	// Craft and send the GOAWAY frame.
 	char frame[17] = { 0 };
@@ -143,32 +149,55 @@ void goAway(clientInfo* c, char code) {
 	wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
 	wolfSSL_free(c->ssl); epollRemove(c->s); closesocket(c->s);
 	// Close and delete stream datas.
-	for (int i = 0; i < c->lastStream+4; i++) {
+	for (int i = 0; i < 8; i++) {
 		c->stream[i].fs = 0;
 		if (c->stream[i].f) {
 			fclose(c->stream[i].f); c->stream[i].f = NULL;
 		}
 	}
-	c->stream.clear();
 }
 
 short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
-	unsigned short pos = 5; unsigned short index = 0, size = 0; bool isHuffman = 0;
-	if (buf[0] & PADDED) {
-		sz -= buf[1]; pos++;
+	unsigned char streamIndex;
+	if (buf[3] == H2HEADERS) {
+		// Search for an empty space in frames buffer and allocate it to this stream.
+		for (char i = 0; i < MAXSTREAMS; i++) {
+			if (!c->stream[i].id) {
+				streamIndex = i; c->stream[i].id = s;
+				goto streamFound;
+			}
+		}
+		// No empty space found. Discard this stream with RST_STREAM
+		resetStream(c, s, H2REFUSED_STREAM); return -8;
 	}
-	if (buf[0] & PRIORITY) pos += 5; // Priority header fields are not used
+	else {
+		// This is a CONTINUATION header, so it should be a allocated stream.
+		// Find the stream or return goaway if not found.
+		for (char i = 0; i < MAXSTREAMS; i++) {
+			if (c->stream[i].id==s) {
+				streamIndex = i; goto streamFound;
+			}
+		}
+		// Stream not found.
+		return -9;
+	}
+streamFound:
+	unsigned short pos = 9; unsigned short index = 0, size = 0; bool isHuffman = 0;
+	if (buf[4] & PADDED) {
+		sz -= buf[5]; pos++;
+	}
+	if (buf[4] & PRIORITY) pos += 5; // Priority header fields are not used
 	while (pos < sz) {
 		if (buf[pos] & 128) {// Indexed header field.
 			buf[pos] ^= 128; 
 			if ((index = h2Integer(&buf[pos], &pos, 127)) < 1) return -7; // Index 0 is invalid. -1 is error.
 			else if (index < 62) {// Index is on static table.
 				switch (index) {
-					case 2: c->stream[s].method = 1;	break; // :method: GET
-					case 3: c->stream[s].method = 2;	break; // :method: POST
-					case 4: c->stream[s].path[0] = '/';
-						c->stream[s].path[1] = 0;		break; // :path: /
-					case 5: memcpy(c->stream[s].path, "/index.html", 12);
+					case 2: c->stream[streamIndex].method = 1;	break; // :method: GET
+					case 3: c->stream[streamIndex].method = 2;	break; // :method: POST
+					case 4: c->stream[streamIndex].path[0] = '/';
+						c->stream[streamIndex].path[1] = 0;		break; // :path: /
+					case 5: memcpy(c->stream[streamIndex].path, "/index.html", 12);
 														break; // :path: /index.html
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
 					default: break;
@@ -212,21 +241,21 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 								((isHuffman) ? huffstr.data() : &buf[pos]),
 								strlen(virtualHosts[i].hostname))) {
 							
-								c->stream[s].vhost = i;
+								c->stream[streamIndex].vhost = i;
 							}
 						}
 						break;
 					}
-					case 2: c->stream[s].method = 1;	break; // :method
+					case 2: c->stream[streamIndex].method = 1;	break; // :method
 					case 4: // :path
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							memcpy(c->stream[s].path, huffstr.data(), huffstr.size());
-							pathParsing(c->stream[s].path, c->stream[s].path + huffstr.size(), &c->stream[s]);
+							memcpy(c->stream[streamIndex].path, huffstr.data(), huffstr.size());
+							pathParsing(c->stream[streamIndex].path, c->stream[streamIndex].path + huffstr.size(), &c->stream[streamIndex]);
 						}
 						else {
-							memcpy(c->stream[s].path, &buf[pos], size);
-							pathParsing(c->stream[s].path, c->stream[s].path + size, &c->stream[s]);
+							memcpy(c->stream[streamIndex].path, &buf[pos], size);
+							pathParsing(c->stream[streamIndex].path, c->stream[streamIndex].path + size, &c->stream[streamIndex]);
 						}
 						
 						break;
@@ -244,7 +273,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 	}
 
 	//// Stub function that writes hardcoded headers.
-	//c->stream[s].method = 1; memcpy(c->stream[s].path, "./htroot/asd.txt", 17);
+	//c->stream[streamIndex].method = 1; memcpy(c->stream[streamIndex].path, "./htroot/asd.txt", 17);
 	return 0;
 }
 
@@ -265,21 +294,27 @@ void parseFrames(clientInfo* c, int sz) {
 	for (int i = 0; i < sz;) {// Iterator until end of received data.
 		// Parse the header of frame.
 		fsz = h2size((unsigned char*)&buf[i]); memcpy(&str, buf + i + 5, 4); str = ntohl(str); type = buf[i + 3]; flags = buf[i + 4];
-		if (str > c->stream.size()) c->stream.resize(str+1); // Bastard way to allocate space for more streams. Temporary and will be removed.
 		switch (type) {
 			case H2DATA: break;
 			case H2HEADERS: 
 			case H2CONTINUATION:
-				switch (h2parseHeader(c, &buf[i + 4], fsz - 4, str)) {
+				switch (h2parseHeader(c, &buf[i], fsz, str)) {
 					case -7: goAway(c, H2COMPRESSION_ERROR); return; break;
+					case -9: goAway(c, H2CONNECTION_ERROR ); return; break;
 					default:				   break;
 				}
 				if (flags & END_STREAM) h2getInit(c, str);
 				break;
 			case H2RST_STREAM: 
-				c->stream[str].fs = 0;
-				if (c->stream[str].f) {
-					fclose(c->stream[str].f); c->stream[str].f = NULL;
+				// Search for the stream
+				for (char i = 0; i < 8; i++) {
+					if (c->stream[i].id == str) {
+						c->stream[i].fs = 0;
+						if (c->stream[i].f) {
+							fclose(c->stream[i].f); c->stream[i].f = NULL;
+						}
+						c->stream[i].id = 0; c->activeStreams--;
+					}
 				}
 				break;
 			case H2SETTINGS: 
@@ -296,13 +331,14 @@ void parseFrames(clientInfo* c, int sz) {
 				wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
 				wolfSSL_free(c->ssl); epollRemove(c->s); closesocket(c->s);
 				// Close and delete stream datas.
-				for (int j = 0; j < c->lastStream + 4; j++) {
+				for (int j = 0; j < 8; j++) {
 					c->stream[j].fs = 0;
 					if (c->stream[j].f) {
 						fclose(c->stream[j].f); c->stream[j].f = NULL;
+						c->activeStreams--; if (!c->activeStreams) break;
 					}
 				}
-				c->stream.clear(); return; break;
+				return; break;
 			default: break;
 		}
 		i += fsz + 9;
@@ -373,13 +409,17 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 }
 
 void h2getInit(clientInfo* c, int s) {
-	respHeaders h; requestInfo* r = &c->stream[s]; h.conType = NULL;
+	char streamIndex;
+	for (char i = 0; i < 8; i++) {
+		if (c->stream[i].id == s) { streamIndex = i; break; }
+	}
+	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
 	char buff[1024] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
-	if (c->stream[s].flags & FLAG_INVALID) {
-		if (c->stream[s].flags & FLAG_DENIED) h.statusCode = 403;
+	if (c->stream[streamIndex].flags & FLAG_INVALID) {
+		if (c->stream[streamIndex].flags & FLAG_DENIED) h.statusCode = 403;
 		else h.statusCode = 400;
 		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[s].vhost, c->stream[s]);
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
 			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
 			h2ErrorPagesSender(c, s, buff, eSz);
 		}
@@ -393,27 +433,32 @@ void h2getInit(clientInfo* c, int s) {
 	// Rest of the code is pretty much same as HTTP/1.1
 	
 	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->stream[s].vhost].type) {
+		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 			case 0: // Standard virtual host.
-				memcpy(buff, virtualHosts[c->stream[s].vhost].target, strlen(virtualHosts[c->stream[s].vhost].target));
-				memcpy(buff + strlen(virtualHosts[c->stream[s].vhost].target), c->stream[s].path, strlen(c->stream[s].path) + 1);
+				memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
+				memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
 				break;
 			case 1: // Redirecting virtual host.
-				h.conType = virtualHosts[c->stream[s].vhost].target; // Reusing content-type variable for redirection path.
+				h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
 				h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
 				return; break;
-			case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-				epollRemove(c->s); closesocket(c->s);
-#ifdef COMPILE_WOLFSSL
-				if (c->ssl) wolfSSL_free(c->ssl);
-#endif // COMPILE_WOLFSSL
+			case 2: // Black hole (disconnects the client immediately, without even sending anything back
+				epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
+				// Close and delete stream datas.
+				for (int j = 0; j < 8; j++) {
+					c->stream[j].fs = 0;
+					if (c->stream[j].f) {
+						fclose(c->stream[j].f); c->stream[j].f = NULL;
+						c->activeStreams--; if (!c->activeStreams) break;
+					}
+				}
 				return; break;
 			default: break;
 		}
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[s].path, strlen(c->stream[s].path) + 1);
+		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
 	}
 openFilePoint2:
 	r->f = fopen(buff, "rb");
@@ -422,7 +467,7 @@ openFilePoint2:
 		if (attr.st_mode & S_IFDIR) { strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
 		h.statusCode = 404;
 		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[s].vhost, c->stream[s]);
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
 			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
 			h2ErrorPagesSender(c, s, buff, eSz);
 		}

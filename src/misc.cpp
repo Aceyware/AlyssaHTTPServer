@@ -83,7 +83,7 @@ bool pathParsing(char* path, char* end, requestInfo* r) {
 #pragma endregion
 }
 
-const char* fileMime(char* filename) {//This function returns the MIME type from file extension.
+const char* fileMime(const char* filename) {//This function returns the MIME type from file extension.
     char ExtOffset = 0;
     for (size_t i = strlen(filename) - 1; i > 0; i--) {
         if (filename[i] == '.') {

@@ -21,54 +21,27 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src/AlyssaCommon.cpp">
+    <ClCompile Include="src\misc.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="src/AlyssaH2.cpp">
+    <ClCompile Include="src\errorPages.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="src/AlyssaHTTP.cpp">
+    <ClCompile Include="src\http.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="src/Config.cpp">
+    <ClCompile Include="src\http2.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="src/DirectoryIndex.cpp">
+    <ClCompile Include="src\Main.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="src/DynContent.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="src/Main.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="src/external/Crc32.cpp">
+    <ClCompile Include="src\wepoll.c">
       <Filter>Source\External</Filter>
-    </ClCompile>
-    <ClCompile Include="src/external/base64.cpp">
-      <Filter>Source\External</Filter>
-    </ClCompile>
-    <ClCompile Include="src\AlyssaDebug.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="src\AlyssaTester.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="src\AlyssaDefinitions.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="src\AlyssaLogging.cpp">
-      <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src/Alyssa.h">
-      <Filter>Header</Filter>
-    </ClInclude>
     <ClInclude Include="src/AlyssaBuildConfig.h">
-      <Filter>Header</Filter>
-    </ClInclude>
-    <ClInclude Include="src/AlyssaH2.h">
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="src/AlyssaHuffman.h">
@@ -86,19 +59,30 @@
     <ClInclude Include="src\AlyssaLocalization.h">
       <Filter>Header</Filter>
     </ClInclude>
-    <ClInclude Include="src\AlyssaTester.h">
-      <Filter>Header</Filter>
-    </ClInclude>
     <ClInclude Include="src/resource.h">
       <Filter>Header\External</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>Header\External</Filter>
     </ClInclude>
+    <ClInclude Include="src\Alyssa.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="src\wepoll.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">
       <Filter>Resource</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src/external/Crc32.cpp">
+      <Filter>Source\External</Filter>
+    </None>
+    <None Include="src/external/base64.cpp">
+      <Filter>Source\External</Filter>
+    </None>
   </ItemGroup>
 </Project>

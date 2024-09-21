@@ -16,6 +16,8 @@
 	#define stat _stat64
 	#define S_IFDIR _S_IFDIR
 #else
+	#include <unistd.h>
+	#include <arpa/inet.h>
 	#error ğ
 #endif // _WIN32
 #define COMPILE_WOLFSSL
@@ -28,13 +30,13 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease1.1"
+#define version "3.0-prerelease1.2"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
 #define maxclient 256
+#define MAXSTREAMS 8
 #define threadCount 8
-#define tc threadCount
 #define PORT 9999
 #define errorPagesEnabled 1
 #define bufsize 16600
@@ -44,13 +46,14 @@ extern char* clientPaths;
 extern char* tBuf[threadCount];
 
 typedef struct requestInfo {
+	unsigned int id; // Stream identifier.
 	char method; // HTTP method (GET, POST, etc.)
 	FILE* f; unsigned long long fs; // File stream and file size.
 	unsigned char flags;
 	size_t rstart; size_t rend; // Range start and end.
 	unsigned short contentLength; // client payload content length.
 	char* qStr; // Query string location.
-	char path[256] = { 0 };
+	char path[maxpath] = { 0 };
 	unsigned short vhost; // Virtual host number
 
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
@@ -60,7 +63,7 @@ typedef struct requestInfo {
 } requestInfo;
 
 typedef struct clientInfo {
-	SOCKET s; std::deque<requestInfo> stream; int activeStreams; int lastStream = 0;
+	SOCKET s; requestInfo stream[8]; int activeStreams; int lastStream = 0;
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
@@ -178,7 +181,7 @@ void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"trea
 // Misc. functions
 int epollCtl(SOCKET s, int e);
 int epollRemove(SOCKET s);
-const char* fileMime(char* filename);
+const char* fileMime(const char* filename);
 bool pathParsing(char* path, char* end, requestInfo* r);
 
 static char alpn[] = "h2,http/1.1,http/1.0";

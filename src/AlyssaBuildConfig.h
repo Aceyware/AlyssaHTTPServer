@@ -33,4 +33,3 @@
 // Compile with zlib for gz encoding support.
 #define Compile_zlib
 
-#define multiMethod 2

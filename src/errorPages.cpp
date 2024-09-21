@@ -71,7 +71,7 @@ void h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz) {
 	switch (errorPagesEnabled) {
 		case 1:
 		{
-			if (sz > 512) std::terminate(); // Stack overflow
+			if (sz > 512) std::terminate(); // Buffer overflow
 			// Frame size
 			buf[503] = sz >> 16;
 			buf[504] = sz >> 8;
