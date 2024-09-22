@@ -30,7 +30,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease1.2"
+#define version "3.0-prerelease1.3"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
@@ -40,6 +40,9 @@
 #define PORT 9999
 #define errorPagesEnabled 1
 #define bufsize 16600
+#define hsts 1
+#define hascsp 1
+#define csp "connect-src https://aceyware.net;"
 
 extern struct clientInfo* clients;
 extern char* clientPaths;
@@ -115,6 +118,7 @@ enum clientFlags {
 	FLAG_HEADERSEND = 2,
 	FLAG_INVALID = 4,
 	FLAG_DENIED = 8, // may be removed.
+	FLAG_INCOMPLETE = 16,
 	FLAG_CLOSE = 32,
 	// Server headers
 	FLAG_ERRORPAGE = 1,
@@ -154,6 +158,7 @@ typedef struct respHeaders {
 void setPredefinedHeaders();
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz);
 void serverHeaders(respHeaders* h, clientInfo* c);
+void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags);
 void getInit(clientInfo* c);
 
 // Error pages functions (common)
@@ -176,7 +181,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s); // Parses the HPAC
 void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent sent.
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream); // Sends response headers.
 void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
-//void decodeHuffman(char* buf, ...); // Decode the fucking static Huffman encoding on headers.
+void h2SetPredefinedHeaders();
 
 // Misc. functions
 int epollCtl(SOCKET s, int e);

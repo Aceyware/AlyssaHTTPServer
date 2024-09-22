@@ -8,6 +8,9 @@ void h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz);
 const char h2PingResponse[] =	  "\0\0\x08\6\1\0\0\0\0Aceyware";
 const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
 
+char* h2PredefinedHeaders;	unsigned short h2PredefinedHeadersSize;
+unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
+
 #define H2DATA 0
 #define H2HEADERS 1
 #define H2PRIORITY 2
@@ -131,6 +134,44 @@ static std::string decodeHuffman(char* huffstr, int16_t sz) {// How the fuck is 
 	return out;
 }
 
+void h2SetPredefinedHeaders() {
+	// Set the nonindexed ones first.
+	h2PredefinedHeadersSize = sizeof("Alyssa/") + sizeof(version); // Normally we need two more bytes for index and size
+																   // but sizeof gives +1 null terminators so no need for separately adding it to this sum.
+	h2PredefinedHeadersIndexedSize = 1;
+	if (hsts) {
+		h2PredefinedHeadersSize += sizeof("max-age=31536000; includeSubDomains;") + 1;
+		h2PredefinedHeadersIndexedSize++;
+	}
+	if (hascsp) {
+		h2PredefinedHeadersSize += sizeof(csp) + sizeof("content-security-policy") + 1; h2PredefinedHeadersIndexedSize++;
+	}
+	h2PredefinedHeaders = new char[h2PredefinedHeadersSize + h2PredefinedHeadersIndexedSize];
+	
+	h2PredefinedHeaders[0] = 64 | 54; // Indexed new 54: server
+	h2PredefinedHeaders[1] = sizeof("Alyssa/") + sizeof(version) - 2; // Size, this time without nulls
+	memcpy(&h2PredefinedHeaders[2], "Alyssa/", 7); memcpy(&h2PredefinedHeaders[9], version, sizeof(version) - 1);
+	h2PredefinedHeaders[h2PredefinedHeadersSize] = 128 | 62;
+
+	
+	unsigned short pos = sizeof("Alyssa/") + sizeof(version);
+	if (hsts) {
+		h2PredefinedHeaders[pos] = 64 | 56; // Indexed new 56: strict-transport-security
+		h2PredefinedHeaders[pos + 1] = sizeof("max-age=31536000; includeSubDomains;") - 1; // Size without null
+		memcpy(&h2PredefinedHeaders[pos + 2], "max-age=31536000; includeSubDomains;", 36);
+		pos += 38; h2PredefinedHeaders[h2PredefinedHeadersSize+1] = 128 | 63;
+	}
+
+	if (hascsp) {
+		h2PredefinedHeaders[pos] = 64 | 0; // Indexed literal new
+		h2PredefinedHeaders[pos + 1] = sizeof("content-security-policy") - 1; // Size without null
+		memcpy(&h2PredefinedHeaders[pos + 2], "content-security-policy", 23);
+		pos += 25; h2PredefinedHeaders[pos] = sizeof(csp) - 1; // Value size
+		memcpy(&h2PredefinedHeaders[pos + 1], csp, sizeof(csp)-1);
+		pos += sizeof(csp);
+		h2PredefinedHeaders[h2PredefinedHeadersSize + ((hsts) ? 2 : 1)] = 128 | ((hsts) ? 64 : 63);
+	}
+}
 static void resetStream(clientInfo* c, unsigned int stream, char statusCode) {
 	char buf[13] = "\4\0\0\3\0\0\0\0\0\0\0\0";
 	*(unsigned int*)&buf[9] = htonl(stream);
@@ -368,10 +409,6 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 				  buf[i] = sprintf(&buf[i + 1], "%d", h->statusCode); 
 				  i += buf[i]+1; break;
 	}
-	//if (c->flags ^ FLAG_HEADERS_INDEXED) {
-	//
-	//}
-
 	// Content length
 	buf[i] = 15; buf[i + 1] = 13; i += 2; // Static not indexed 28: content-length
 	buf[i] = sprintf(&buf[i + 1], "%llu", h->conLength); 
@@ -403,6 +440,15 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	buf[i] = 29; // Date is always 29 bytes.
 	time_t currentDate = time(NULL);
 	strftime(&buf[i + 1], 384 - i, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate)); i += 30;
+	// Predefined headers
+	if (c->flags & FLAG_HEADERS_INDEXED) {
+		memcpy(&buf[i], &h2PredefinedHeaders[h2PredefinedHeadersSize], h2PredefinedHeadersIndexedSize);
+		i += h2PredefinedHeadersIndexedSize;
+	}
+	else {
+		c->flags |= FLAG_HEADERS_INDEXED;
+		memcpy(&buf[i], h2PredefinedHeaders, h2PredefinedHeadersSize); i += h2PredefinedHeadersSize;
+	}
 	// Copy size and send it to user agent. Remember that size is in big endian so we need to convert it.
 	i -= 9; buf[1] = i >> 8; buf[2] = i >> 0;
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;

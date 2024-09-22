@@ -70,9 +70,10 @@ int threadMain(int num) {
 			}
 			else {
 				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
-					case -6: abort(); break;
+					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
-					default: abort(); break;
+					case 666: break;
+					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0); break;
 				}
 			}
 		}
@@ -265,6 +266,9 @@ int main() {
 
 	// Set predefined headers
 	setPredefinedHeaders();
+#ifdef COMPILE_WOLFSSL
+	h2SetPredefinedHeaders();
+#endif // COMPILE_WOLFSSL
 	
 	// If we could come this far, then server is started successfully. Print a message and ports.
 	std::cout << "I: Server started successfully. Listening on HTTP: " << PORT << " ";

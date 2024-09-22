@@ -3,112 +3,191 @@
 char* predefinedHeaders; int predefinedSize;
 void setPredefinedHeaders() {
 	char buf[256] = "Server: Alyssa/" version "\r\n";
+	if (hsts) {
+		strcat(buf, "Strict-Transport-Security: max-age=31536000; includeSubDomains;\r\n");
+	}
+	if (hascsp) {
+		strcat(buf, "Content-Security-Policy: "); strcat(buf, csp); strcat(buf, "\r\n");
+	}
 	predefinedSize = strlen(buf); predefinedHeaders = new char[predefinedSize];
 	memcpy(predefinedHeaders, buf, predefinedSize);
 }
 
+// TODO: convert this shit to a macro. Function call is a wasted overhead.
+static void parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos) {
+	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Rest headers are parsed only if request is not bad.
+		if (!strncmp(&buf[bpos], "ontent-", 7)) { 
+			bpos += 7; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
+				bpos += 6; char* end = NULL;																													
+				r->contentLength = strtol(&buf[bpos], &end, 10);																								
+			}																																					
+		}																																						
+	}																																						
+	else if (r->flags ^ FLAG_INVALID) {																														
+		switch (buf[bpos]) {																																
+		case 'a':																																			
+		case 'A': // Content negotiation (Accept-*) headers.																								
+			break;																																			
+		case 'c':																																			
+		case 'C':																																			
+			if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {																								
+				bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;										
+			}																																				
+			break;																																			
+		case 'h':																																			
+		case 'H':																																			
+			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																										
+				bpos += 5;																																	
+				if (numVhosts) {																															
+					for (int i = 1; i < numVhosts; i++) {																									
+						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {												
+							c->vhost = i; break;																											
+						}																																	
+					}																																		
+				}																																			
+			}																																				
+			break;																																			
+		case 'i':																																			
+		case 'I': // Conditional headers.																													
+			break;																																			
+		case 'r':																																			
+		case 'R':																																			
+			if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {																									
+				bpos += 6; if (!strncmp(&buf[bpos], "bytes=", 6)) {																							
+					bpos += 6; if (buf[bpos] == '-') r->rstart = -1; // Read last n bytes.																	
+					else {																																	
+						char* end = NULL;																													
+						r->rstart = strtoll(&buf[bpos], &end, 10);																							
+						if ((int)&end < 32) r->rend = -1;																									
+					}																																		
+				}																																			
+				else { // Bad request.																														
+					r->flags |= FLAG_INVALID; r->method = -1;																								
+				}																																			
+			}																																				
+			break;																																			
+		default:																																			
+			break;																																			
+		}																																					
+	}																																						
+}
+
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz) {
 	int pos = 0; if (strnlen(buf, 2048) != sz) return -6;
-	if (r->flags ^ FLAG_FIRSTLINE) {// First line is not parsed.
-		switch (buf[0]) {// Method
-			case 'G': if (buf[1] == 'E' && buf[2] == 'T' && buf[3] == ' ') { r->method = 1; pos = 4; } break;
-			case 'P': if (buf[1] == 'O' && buf[2] == 'S' && buf[3] == 'T' && buf[4]==' ')   { r->method = 2; pos = 5; }
-				 else if (buf[1] == 'U' && buf[2] == 'T' && buf[3] == ' ') { r->method = 3; pos = 4; } break;
-			default: r->method = -2; break;
-		}
-		char* end = (char*)memchr(&buf[pos], ' ', sz); // Search for the end of path.
-		if (!end) { r->method = -1; }// Ending space not found, invalid request.
-		else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
-		else {// All is well, keep parsing.
-			memcpy(&clientPaths[c->off * maxpath], &buf[pos], end - &buf[pos]);// Copy request path
-			clientPaths[c->off * maxpath + end - &buf[pos]] = '\0';// Add null terminator
-			end = &clientPaths[c->off * maxpath + end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
-			pos += end - &clientPaths[c->off * maxpath] + 1;
-			if (!strncmp(&buf[pos], "HTTP/1", 6)) {
-				pos += 7; if (buf[pos] == '0') { 
-					c->flags ^= FLAG_CLOSE; } 
-				pos++;
+	if (!(r->flags & FLAG_FIRSTLINE)) {// First line is not parsed.
+		// Check if line is completed.
+		while (buf[pos] > 31 && pos < sz) pos++; 
+		if(pos<sz) {// Line is complete.
+			char* oldbuf = buf; int oldpos = pos;
+			if (r->flags & FLAG_INCOMPLETE) { // Incomplete line is now completed. Parse it on its buffer.
+				// Append the new segment
+				memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[0], pos);
+				*(unsigned short*)&c->stream[1] += pos;
+				buf = (char*)&c->stream[1] + 2;
 			}
-			else { r->method = -1; } // No HTTP/1.x, bad request.
-			while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
+			pos = 0;
+			switch (buf[0]) {// Method
+				case 'G': if (buf[1] == 'E' && buf[2] == 'T' && buf[3] == ' ') { r->method = 1; pos = 4; } break;
+				case 'P': if (buf[1] == 'O' && buf[2] == 'S' && buf[3] == 'T' && buf[4] == ' ') { r->method = 2; pos = 5; }
+						else if (buf[1] == 'U' && buf[2] == 'T' && buf[3] == ' ') { r->method = 3; pos = 4; } break;
+				case 'O': if (buf[1] == 'P' && buf[2] == 'T' && buf[3] == 'I' && buf[4] == 'O') { r->method = 4; pos = 5; } break;
+				case 'H': if (buf[1] == 'E' && buf[2] == 'A' && buf[3] == 'D' && buf[4] == ' ') { r->method = 5; pos = 5; } break;
+				default: r->method = -2; break;
+			}
+			char* end = (char*)memchr(&buf[pos], ' ', sz); // Search for the end of path.
+			if (!end) { r->method = -1; }// Ending space not found, invalid request.
+			else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
+			else {// All is well, keep parsing.
+				memcpy(&clientPaths[c->off * maxpath], &buf[pos], end - &buf[pos]);// Copy request path
+				clientPaths[c->off * maxpath + end - &buf[pos]] = '\0';// Add null terminator
+				end = &clientPaths[c->off * maxpath + end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
+				pos += end - &clientPaths[c->off * maxpath] + 1;
+				if (!strncmp(&buf[pos], "HTTP/1", 6)) {
+					pos += 7; if (buf[pos] == '0') {
+						c->flags ^= FLAG_CLOSE;
+					}
+					pos++;
+				}
+				else { r->method = -1; } // No HTTP/1.x, bad request.
+				while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
+			}
+			// Mark first-line parsing as complete.
+			r->flags |= FLAG_FIRSTLINE;
+			pathParsing(&clientPaths[c->off * maxpath], end, r);
+			if (r->flags & FLAG_INCOMPLETE) { // Clear the incomplete-line space, set the buf and pos back
+				buf = oldbuf; pos=oldpos;
+				// Check for line demiliter (was ignored while copying to incomplete line buffer.
+				while (buf[pos] > 1 && buf[pos] < 32 && pos < sz) pos++;
+				*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
+			}
 		}
-		r->flags |= FLAG_FIRSTLINE;
-		pathParsing(&clientPaths[c->off * maxpath], end, r);
+		else { // Line is not complete.
+			// Read the comment on if (pos > bpos) scope below.
+			r->flags |= FLAG_INCOMPLETE;
+			if (*(unsigned short*)&c->stream[1] + pos < (MAXSTREAMS - 1) * sizeof(requestInfo)) {
+				// Append the new segment 
+				memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[0], pos);
+				*(unsigned short*)&c->stream[1] += pos;
+			}
+			else r->flags |= FLAG_INVALID; // Line is too long and exceeds the available space.
+			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return 666;
+		}
 	}
 	// Parse lines one by one till' end of buffer.
 	int bpos = pos;//Beginning position of current line.
 
 	// Do parsing depending on state of where we are at headers.
 	if (r->flags ^ FLAG_HEADERSEND) {// We are still at headers
+		if (r->flags & FLAG_INCOMPLETE) {// There was an incomplete header. Complete it.
+			// Read the comment on the if statement right below the next for loop.
+			while (buf[pos] > 31 && pos<sz) pos++;
+			if (r->flags ^ FLAG_INVALID) {
+				if (*(unsigned short*)&c->stream[1] + (pos - bpos) < (MAXSTREAMS - 1) * sizeof(requestInfo)) {
+					// Append the new segment 
+					memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[bpos], pos - bpos);
+					*(unsigned short*)&c->stream[1] += (pos - bpos);
+					if (pos < sz) {// Line is completed.
+						// Parse the resulting line.
+						// int oldpos = pos;
+						parseLine(c, r, buf, 2);
+						*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
+					}
+					else { // Line being incomplete should mean end of buffer.
+						epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+						return 666;
+					}
+				}
+				else r->flags |= FLAG_INVALID; // Line is too long and exceeds the available space.
+			}
+		}
 		for (; pos < sz;) {
 			if (buf[pos] > 31) { pos++; continue; }// Increase counter until end of line.
 			if (bpos == pos) { // End of headers.
 				r->flags |= FLAG_HEADERSEND; return r->method; 
 			}
-			
-			if (buf[bpos]=='c' || buf[bpos]=='C') { // Content-length is a special case and we must parse it in any way. Rest headers are parsed only if request is not bad.
-				if (!strncmp(&buf[bpos], "ontent-", 7)) {
-					bpos += 7; if (!strncmp(&buf[bpos+1], "ength", 5)) {
-						bpos += 6; char* end = NULL;
-						r->contentLength = strtol(&buf[bpos], &end, 10);
-					}
-				}
-			}
-			else if (r->flags ^ FLAG_INVALID) {
-				switch (buf[bpos]) {
-					case 'a':
-					case 'A': // Content negotiation (Accept-*) headers.
-						break;
-					case 'c':
-					case 'C':
-						if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
-							bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
-						}
-						break;
-					case 'h':
-					case 'H':
-						if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {
-							bpos += 6;
-							if (numVhosts) {
-								for (int i = 1; i < numVhosts; i++) {
-									if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {
-										c->vhost = i; break;
-									}
-								}
-							}
-						}
-						break;
-					case 'i':
-					case 'I': // Conditional headers.
-						break;
-					case 'r':
-					case 'R':
-						if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {
-							bpos += 6; if (!strncmp(&buf[pos], "bytes=", 6)) {
-								bpos += 6; if (buf[pos] == '-') r->rstart = -1; // Read last n bytes.
-								else {
-									char* end = NULL;
-									r->rstart = strtoll(&buf[pos], &end, 10);
-									if ((int) & end < 32) r->rend = -1;
-								}
-							}
-							else { // Bad request.
-								r->flags |= FLAG_INVALID; r->method = -1;
-							}
-						}
-						break;
-					default:
-						break;
-				}
-			}
+			// Parse the line
+			parseLine(c, r, buf, bpos);
 			//while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
 			pos++; if (buf[pos] < 32) pos++; // Itarete from line demiliters to beginning.
 			bpos = pos;
 		}
 		if (pos > bpos) {// Last line was incomplete
-			
+			// HTTP/1.1 does not use more than 1 stream so the unused memory caused by other MAXSTREAMS-1 structs will be used in this regard
+			// Doing efficient software is not always about being a good programmer, it often requires to be a jackass and do hacks like this.
+			// I don't care what rust faggots will say. I don't need a compiler to spoonfed me. All languages are safe as long as you know 
+			// what you're doing. Fuck off and whine on somewhere else.
+
+			// First 2 bytes of second stream is used for size, rest is used as string of incomplete line.
+
+			memcpy((char*)&c->stream[1]+2, &buf[bpos]+*(unsigned short*)&c->stream[1], pos - bpos); 
+			*(unsigned short*)&c->stream[1] += pos - bpos;
+
+			// Set the INCOMPLETE flag too, obv.
+			r->flags |= FLAG_INCOMPLETE;
 		}
-		epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Reset polling.
+		epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		return 666;
 	}
 	else {// Received remainder of payload, append it.
 
