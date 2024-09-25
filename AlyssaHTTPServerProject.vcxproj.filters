@@ -39,6 +39,12 @@
     <ClCompile Include="src\wepoll.c">
       <Filter>Source\External</Filter>
     </ClCompile>
+    <ClCompile Include="src\dirindex.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src\customactions.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/AlyssaBuildConfig.h">

@@ -1,28 +1,32 @@
 #pragma once
 // Configuration for building.
-#if __cplusplus < 201700L
-	#error C++17 compatible compiler is required.
-#endif
+
 // Define that if this code is of another branch.
 #define branch "v3prerelease"
 
 // Compile with SSL support
-#define Compile_WolfSSL
+#define COMPILE_WOLFSSL
 
 // HTTP/2 support
-#define Compile_H2
-#if defined Compile_H2 && !defined Compile_WolfSSL
+#define COMPILE_HTTP2
+#if defined COMPILE_HTTP2 && !defined COMPILE_WOLFSSL
 	#error SSL is required for HTTP/2 support.
 #endif
 
 // CGI execution support
-#define Compile_CGI
+//#define Compile_CGI
 
 // Custom actions support
-#define Compile_CustomActions
+#define COMPILE_CUSTOMACTIONS
 
 // Directory indexes support
-#define Compile_DirIndex
+#define COMPILE_DIRINDEX
+#ifdef COMPILE_DIRINDEX
+#if __cplusplus < 201700L
+	#error C++17 compatible compiler is required for building with directory indexes.
+#endif
+#endif // COMPILE_DIRINDEX
+
 
 // Do testing.
 //#define AlyssaTesting

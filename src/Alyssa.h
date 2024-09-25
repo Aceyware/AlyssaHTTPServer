@@ -8,6 +8,12 @@
 #include <deque>
 #include <iostream>
 
+#if __cplusplus > 201700L
+	#include <filesystem>
+#endif
+
+#include "AlyssaBuildConfig.h"
+
 #ifdef _WIN32
 	#include "wepoll.h" // https://github.com/piscisaureus/wepoll thanks a lot.
 	#include <WS2tcpip.h>
@@ -20,7 +26,7 @@
 	#include <arpa/inet.h>
 	#error ğ
 #endif // _WIN32
-#define COMPILE_WOLFSSL
+
 #ifdef COMPILE_WOLFSSL
 	#include "user_settings.h"
 	#include <wolfssl/ssl.h>
@@ -30,7 +36,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease1.3"
+#define version "3.0-prerelease2"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
@@ -43,9 +49,10 @@
 #define hsts 1
 #define hascsp 1
 #define csp "connect-src https://aceyware.net;"
+#define dirIndexEnabled 1
+#define customactions 2
 
 extern struct clientInfo* clients;
-extern char* clientPaths;
 extern char* tBuf[threadCount];
 
 typedef struct requestInfo {
@@ -66,7 +73,7 @@ typedef struct requestInfo {
 } requestInfo;
 
 typedef struct clientInfo {
-	SOCKET s; requestInfo stream[8]; int activeStreams; int lastStream = 0;
+	SOCKET s; requestInfo stream[MAXSTREAMS]; int activeStreams; int lastStream = 0;
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
@@ -113,13 +120,15 @@ static vhost virtualHosts[4] = {
 #define numVhosts 4
 
 enum clientFlags {
-	// Header parsing
+	// RequestInfo flags regarding to header parsing
 	FLAG_FIRSTLINE = 1,
 	FLAG_HEADERSEND = 2,
 	FLAG_INVALID = 4,
 	FLAG_DENIED = 8, // may be removed.
 	FLAG_INCOMPLETE = 16,
 	FLAG_CLOSE = 32,
+	// Other RequestInfo flags
+	FLAG_CHUNKED = 64,
 	// Server headers
 	FLAG_ERRORPAGE = 1,
 	FLAG_HASRANGE = 2,
@@ -158,7 +167,7 @@ typedef struct respHeaders {
 void setPredefinedHeaders();
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz);
 void serverHeaders(respHeaders* h, clientInfo* c);
-void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags);
+void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg);
 void getInit(clientInfo* c);
 
 // Error pages functions (common)
@@ -166,14 +175,19 @@ int errorPages(char* buf, unsigned short statusCode, unsigned short vhost, reque
 void errorPagesSender(clientInfo* c);
 
 #ifdef COMPILE_WOLFSSL
-	int Send(clientInfo* c, const char* buf, int sz);
-	int Recv(clientInfo* c, char* buf, int sz);
+inline int Send(clientInfo* c, const char* buf, int sz) {
+	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, 0);
+	else return send(c->s, buf, sz, 0);
+}
+inline int Recv(clientInfo* c, char* buf, int sz) {
+	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, 0);
+	else return recv(c->s, buf, sz, 0);
+}
 #else
 	#define Send(a,b,c) send(a->s,b,c,0)
 	#define Recv(a,b,c) recv(a->s,b,c,0)
 #endif // COMPILE_WOLFSSL
 
-#define COMPILE_HTTP2
 #ifdef COMPILE_HTTP2
 // HTTP/2 functions
 void goAway(clientInfo* c, char code); // This one sends GOAWAY packet to user agent and cuts the connection.
@@ -182,15 +196,6 @@ void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent se
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream); // Sends response headers.
 void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
 void h2SetPredefinedHeaders();
-
-// Misc. functions
-int epollCtl(SOCKET s, int e);
-int epollRemove(SOCKET s);
-const char* fileMime(const char* filename);
-bool pathParsing(char* path, char* end, requestInfo* r);
-
-static char alpn[] = "h2,http/1.1,http/1.0";
-
 inline unsigned int h2size(unsigned char* Source) {
 	return (
 		(Source[0] << 24)
@@ -198,5 +203,22 @@ inline unsigned int h2size(unsigned char* Source) {
 		| (Source[2] << 8)
 		) >> 8;
 }
+static char alpn[] = "h2,http/1.1,http/1.0";
 #endif // COMPILE_HTTP2
+
+// Misc. functions
+int epollCtl(SOCKET s, int e);
+int epollRemove(SOCKET s);
+const char* fileMime(const char* filename);
+bool pathParsing(requestInfo* r, unsigned int end);
+
+// Feature functions
+// Directory index
+#ifdef COMPILE_DIRINDEX
+	std::string diMain(const std::filesystem::path& p, const std::string& RelPath);
+#endif // COMPILE_DIRINDEX
+#ifdef COMPILE_CUSTOMACTIONS
+	int caMain(const clientInfo& c, const requestInfo& r);
+#endif // COMPILE_CUSTOMACTIONS
+
 

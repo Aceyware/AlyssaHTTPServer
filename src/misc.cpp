@@ -4,76 +4,76 @@ static const char* extensions[] = { "aac", "abw", "arc", "avif", "avi", "azw", "
 
 static const char* mimes[] = { "audio/aac", "application/x-abiword", "application/x-freearc", "image/avif", "video/x-msvideo", "application/vnd.amazon.ebook", "application/octet-stream", "image/bmp", "application/x-bzip", "application/x-bzip2", "application/x-cdf", "application/x-csh", "text/css", "text/csv", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-fontobject", "application/epub+zip", "application/gzip", "image/gif", "text/html", "text/html", "image/vnd.microsoft.icon", "text/calendar", "application/java-archive", "image/jpeg", "image/jpeg", "text/javascript", "application/json", "application/ld+json", "audio/midi", "audio/midi", "text/javascript", "audio/mpeg", "video/mp4", "video/mpeg", "application/vnd.apple.installer+xml", "application/vnd.oasis.opendocument.presentation", "application/vnd.oasis.opendocument.spreadsheet", "application/vnd.oasis.opendocument.text", "audio/ogg", "video/ogg", "application/ogg", "audio/opus", "font/otf", "image/png", "application/pdf", "application/x-httpd-php", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.rar", "application/rtf", "application/x-sh", "image/svg+xml", "application/x-tar", "image/tiff", "image/tiff", "video/mp2t", "font/ttf", "text/plain", "application/vnd.visio", "audio/wav", "audio/webm", "video/webm", "image/webp", "font/woff", "font/woff2", "application/xhtml+xml", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/xml", "application/vnd.mozilla.xul+xml", "application/zip", "video/3gpp", "video/3gpp2", "application/x-7z-compressed" };
 
-bool pathParsing(char* path, char* end, requestInfo* r) {
-#pragma region pathParsing
-	// Request path parsing and sanity checks.
+bool pathParsing(requestInfo* r, unsigned int end) {
+#pragma region r->pathParsing
+	// Request r->path parsing and sanity checks.
 	// Find query string first.
-	char* i = (char*)memchr(path, '?', end - path);
-	if (i) { r->qStr = i + 1; i[0] = '\0'; end = i; }
+	char* qs = (char*)memchr(r->path, '?', end);
+	if (qs) { r->qStr = qs + 1; qs[0] = '\0'; end = qs-r->path; }
 	// Percent decoding and level check
 	// 'i' is reused as counter.
 	int level = -1;// Level of directory client is requesting for. If they try to get above root 
-	// (which is htroot, so they will access to anything on system), deny the request.
-	i = path;
-	for (; i < end;) {// Char pointer is directly used as counter in this one, hence the i[0]s.
-		if (i[0] == '/') {// Goes into a directory, increase level.
+					// (which is htroot, so they will access to anything on system), deny the request.
+	
+	for (int i=0; i < end;) {// Char pointer is directly used as counter in this one, hence the r->path[0]s.
+		if (r->path[0] == '/') {// Goes into a directory, increase level.
 			level++;
-			while (i[0] == '/' && i < end) i++; // Ignore multiple slashes, level should be only increased once per directory, 
+			while (r->path[0] == '/' && i < end) i++; // Ignore multiple slashes, level should be only increased once per directory, 
 			//allowing multiple /'es will be a vulnerability. Same will apply to below ones too.
 		}
-		else if (i[0] == '.') {
-			i++; if (i[0] == '/') while (i[0] == '/' && i < end) i++; // Same directory, no increase.
-			else if (i[0] == '.') { // May be parent directory, check for a slash for making sure
-				i++; if (i[0] == '/') { // Parent directory. Decrease level by 1.
+		else if (r->path[0] == '.') {
+			i++; if (r->path[0] == '/') while (r->path[0] == '/' && i < end) i++; // Same directory, no increase.
+			else if (r->path[0] == '.') { // May be parent directory, check for a slash for making sure
+				i++; if (r->path[0] == '/') { // Parent directory. Decrease level by 1.
 					level--; if (level < 0) { r->flags |= FLAG_INVALID | FLAG_DENIED; return 1; }
-					while (i[0] == '/' && i < end) i++;
+					while (r->path[0] == '/' && i < end) i++;
 				}
 				else i++; // Something else, ignore it.
 			}
-			else if (i[0] == 'a' || i[0] == 'A') {// Some extension with .a, may be .alyssa
-				char buff[8] = { 0 }; *(size_t*)&buff[0] = *(size_t*)&i[0];
+			else if (r->path[0] == 'a' || r->path[0] == 'A') {// Some extension with .a, may be .alyssa
+				char buff[8] = { 0 }; *(size_t*)&buff[0] = *(size_t*)&r->path[0];
 				for (int j = 0; j < 6; j++) {
 					buff[j] = tolower(buff[j]);
 				}
 				if (!memcmp(buff, "alyssa", 6)) { r->flags |= FLAG_INVALID | FLAG_DENIED; return 1; }
 			}
 		}
-		else if (i[0] == '%') {// Percent encoded, decode it.
-			if (i[1] & 64) {// Letter
-				if (i[1] & 32) {// Lowercase letter
-					i[1] ^= (64 | 32);
-					if (i[1] & 128 || i[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-					i[0] = (i[1] + 9) * 16;
+		else if (r->path[0] == '%') {// Percent encoded, decode it.
+			if (r->path[1] & 64) {// Letter
+				if (r->path[1] & 32) {// Lowercase letter
+					r->path[1] ^= (64 | 32);
+					if (r->path[1] & 128 || r->path[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+					r->path[0] = (r->path[1] + 9) * 16;
 				}
 				else {// Uppercase letter
-					i[1] ^= 64;
-					if (i[1] & 128 || i[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-					i[0] = (i[1] + 9) * 16;
+					r->path[1] ^= 64;
+					if (r->path[1] & 128 || r->path[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+					r->path[0] = (r->path[1] + 9) * 16;
 				}
 			}
 			else {// Number
-				i[1] ^= (32 | 16);
-				if (i[1] & 128 || i[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-				i[0] = i[1] * 16;
+				r->path[1] ^= (32 | 16);
+				if (r->path[1] & 128 || r->path[1] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+				r->path[0] = r->path[1] * 16;
 			}
-			if (i[2] & 64) {// Letter
-				if (i[2] & 32) {// Lowercase letter
-					i[2] ^= (64 | 32);
-					if (i[2] & 128 || i[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-					i[0] += i[2] + 9;
+			if (r->path[2] & 64) {// Letter
+				if (r->path[2] & 32) {// Lowercase letter
+					r->path[2] ^= (64 | 32);
+					if (r->path[2] & 128 || r->path[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+					r->path[0] += r->path[2] + 9;
 				}
 				else {// Uppercase letter
-					i[2] ^= 64;
-					if (i[2] & 128 || i[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-					i[0] += i[2] + 9;
+					r->path[2] ^= 64;
+					if (r->path[2] & 128 || r->path[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+					r->path[0] += r->path[2] + 9;
 				}
 			}
 			else {// Number
-				i[2] ^= (32 | 16);
-				if (i[2] & 128 || i[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
-				i[0] += i[2];
+				r->path[2] ^= (32 | 16);
+				if (r->path[2] & 128 || r->path[2] > 9) { r->flags |= FLAG_INVALID; return 1; } // Invalid hex format.
+				r->path[0] += r->path[2];
 			}
-			memcpy(i + 1, i + 3, end - i);// Shift array back for eliminating hex. Percent itself already got replaced with real value.
+			memcpy(&r->path[i + 1], &r->path[i + 3], end - i);// Shift array back for eliminating hex. Percent itself already got replaced with real value.
 			i++; end -= 2;
 		}
 		else i++; //Something else.

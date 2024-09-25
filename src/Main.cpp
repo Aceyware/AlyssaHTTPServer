@@ -1,8 +1,6 @@
 // Alyssa HTTP Server Project
 // Copyright (C) 2025 Aceyware - GPLv3 licensed.
 
-// Prototype
-
 #include "Alyssa.h",
 
 // These are used for making file descriptors monotonic.
@@ -18,7 +16,6 @@ bool tLk[threadCount] = { 0 };
 struct epoll_event tShared[threadCount] = { 0 };
 char* tBuf[threadCount] = { 0 };
 struct clientInfo* clients = NULL;
-char* clientPaths = NULL;
 
 #define clientIndex(num) tShared[num].data.fd/rate
 #define clientIndex2(fd) fd/rate
@@ -36,14 +33,6 @@ int epollCtl(SOCKET s, int e) {
 }
 int epollRemove(SOCKET s) {
 	return epoll_ctl(ep, EPOLL_CTL_DEL, s, NULL);
-}
-int Send(clientInfo* c, const char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, 0);
-	else return send(c->s, buf, sz, 0);
-}
-int Recv(clientInfo* c, char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, 0);
-	else return recv(c->s, buf, sz, 0);
 }
 
 int threadMain(int num) {
@@ -70,10 +59,10 @@ int threadMain(int num) {
 			}
 			else {
 				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
-					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0); break;
+					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
 					case 666: break;
-					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0); break;
+					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 				}
 			}
 		}
@@ -252,10 +241,8 @@ int main() {
 
 	// Allocate space for clients (and for listening sockets)
 	clients = new clientInfo[maxclient];
-	clientPaths = new char[maxclient * maxpath];
 	// Zero the memory
 	memset(clients, 0, maxclient * sizeof(struct clientInfo));
-	memset(clientPaths, 0, maxclient * maxpath);
 	// Set data for listening sockets.
 	clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
 #ifdef COMPILE_WOLFSSL

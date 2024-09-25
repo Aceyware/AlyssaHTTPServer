@@ -98,10 +98,10 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			if (!end) { r->method = -1; }// Ending space not found, invalid request.
 			else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
 			else {// All is well, keep parsing.
-				memcpy(&clientPaths[c->off * maxpath], &buf[pos], end - &buf[pos]);// Copy request path
-				clientPaths[c->off * maxpath + end - &buf[pos]] = '\0';// Add null terminator
-				end = &clientPaths[c->off * maxpath + end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
-				pos += end - &clientPaths[c->off * maxpath] + 1;
+				memcpy(&r->path, &buf[pos], end - &buf[pos]);// Copy request path
+				r->path[end - &buf[pos]] = '\0';// Add null terminator
+				end = &r->path[end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
+				pos += end - r->path + 1;
 				if (!strncmp(&buf[pos], "HTTP/1", 6)) {
 					pos += 7; if (buf[pos] == '0') {
 						c->flags ^= FLAG_CLOSE;
@@ -113,7 +113,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			}
 			// Mark first-line parsing as complete.
 			r->flags |= FLAG_FIRSTLINE;
-			pathParsing(&clientPaths[c->off * maxpath], end, r);
+			pathParsing(r, end-r->path);
 			if (r->flags & FLAG_INCOMPLETE) { // Clear the incomplete-line space, set the buf and pos back
 				buf = oldbuf; pos=oldpos;
 				// Check for line demiliter (was ignored while copying to incomplete line buffer.
@@ -250,17 +250,21 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	// Add terminating newline and send.
 	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
 	Send(c, buf, pos);
+	// Reset request flags.
+	c->stream[0].flags = 0;
 }
 
-void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags) {// Same one but without headerParameters type argument.
+void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
 	// Set up the error page to send if there is an error
 	if (statusCode > 400 && errorPagesEnabled) { 
 		conLength = errorPages(tBuf[c->cT], statusCode, c->vhost, c->stream[0]); c->stream[0].fs = conLength;
 	}
 
-	char buf[256] = "HTTP/1.1 "; short pos = 9;
+	char buf[512] = "HTTP/1.1 "; short pos = 9;
 	switch (statusCode) {
 		case 200: memcpy(&buf[pos], "200 OK",					  6); pos += 6;  break;
+		case 302: memcpy(&buf[pos], "302 Found\r\nLocation: ",   21); pos += 21; 
+				  memcpy(&buf[pos], arg, strlen(arg));       pos += strlen(arg); break;
 		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
 		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
 		case 401: memcpy(&buf[pos], "401 Unauthorized\r\nWWW-Authenticate: Basic", 41); pos += 41; break;
@@ -287,6 +291,8 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 	Send(c, buf, pos);
 	// Send the error page to user agent.
 	if (errorPagesEnabled) errorPagesSender(c);
+	// Reset request flags.
+	c->stream[0].flags = 0;
 }
 
 void getInit(clientInfo* c) {
@@ -310,7 +316,7 @@ void getInit(clientInfo* c) {
 		switch (virtualHosts[c->vhost].type) {
 			case 0: // Standard virtual host.
 				memcpy(tBuf[c->cT], virtualHosts[c->vhost].target, strlen(virtualHosts[c->vhost].target));
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), &clientPaths[c->off * maxpath], strlen(&clientPaths[c->off * maxpath]) + 1);
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), r->path, strlen(r->path) + 1);
 				break;
 			case 1: // Redirecting virtual host.
 				h.conType = virtualHosts[c->vhost].target; // Reusing content-type variable for redirection path.
@@ -327,28 +333,35 @@ void getInit(clientInfo* c) {
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(tBuf[c->cT], htroot, sizeof(htroot) - 1);
-		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, &clientPaths[c->off * maxpath], strlen(&clientPaths[c->off * maxpath]) + 1);
+		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, r->path, strlen(r->path) + 1);
 	}
 
+	if (customactions) caMain(*c, *r);
+
 openFilePoint:
+#if __cplusplus < 201700L // C++17 not supported, use old stat
 	r->f = fopen(tBuf[c->cT], "rb");
+	struct stat attr; 
 	if (!r->f) {
-		struct stat attr; stat(tBuf[c->cT], &attr);
-		if (attr.st_mode & S_IFDIR) { strcat(tBuf[c->cT], "/index.html"); goto openFilePoint; }// It is a directory, check for index.html inside it.
-		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c); 
+		stat(tBuf[c->cT], &attr);
+		if (attr.st_mode & S_IFDIR) { 
+			strcat(tBuf[c->cT], "/index.html");
+			goto openFilePoint;
+		}// It is a directory, check for index.html inside it.
+		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled) errorPagesSender(c);
 		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
 	else {
-		struct stat attr; stat(tBuf[c->cT], &attr); 
+		stat(tBuf[c->cT], &attr);
 		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(tBuf[c->cT], "/index.html"); goto openFilePoint; }// It is a directory, check for index.html inside it.
-																											 // Yes, it exists on both cases because fopen'ing directories is not defined on standard
-																											 // and its behavior differs.
+		// Yes, it exists on both cases because fopen'ing directories is not defined on standard
+		// and its behavior differs.
 		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs;
 		h.conType = fileMime(tBuf[c->cT]);
 		if (r->rstart || r->rend) {
-			if(r->rstart==-1) { // read last rend bytes 
+			if (r->rstart == -1) { // read last rend bytes 
 				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
 			}
 			else if (r->rend == -1) { // read thru end
@@ -362,4 +375,62 @@ openFilePoint:
 		}
 		return;
 	}
+#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
+	if (std::filesystem::exists(tBuf[c->cT])) {// Something exists on such path.
+		if (std::filesystem::is_directory(tBuf[c->cT])) { // It is a directory.
+			// Check for index.html
+			int pos = strlen(tBuf[c->cT]);
+			memcpy(&tBuf[c->cT][pos], "/index.html", 12);
+			if (std::filesystem::exists(tBuf[c->cT])) goto openFile17;
+#ifdef COMPILE_DIRINDEX
+			// Send directory index if enabled.
+			else if (dirIndexEnabled) {
+				tBuf[c->cT][pos] = '\0';
+				std::string payload = diMain(tBuf[c->cT], r->path);
+				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
+				serverHeaders(&h, c); Send(c, payload.data(), h.conLength);
+				epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+				return;
+			}
+#endif // COMPILE_DIRINDEX
+			h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
+			if (errorPagesEnabled) errorPagesSender(c);
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
+		}
+		else { // It is a file. Open and go.
+openFile17:
+			r->f = fopen(tBuf[c->cT], "rb");
+			if (r->f) {
+				h.conType = fileMime(tBuf[c->cT]);
+				if (r->rstart || r->rend) {
+					if (r->rstart == -1) { // read last rend bytes 
+						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+					}
+					else if (r->rend == -1) { // read thru end
+						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+					}
+					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
+					h.statusCode = 206; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
+				}
+				else {
+					h.statusCode = 200; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+				}
+				// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
+			}
+			else { // Open failed, 404
+				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
+				if (errorPagesEnabled) errorPagesSender(c);
+				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+				return;
+			}
+		}
+	}
+	else { // Requested path does not exists at all.
+		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
+		if (errorPagesEnabled) errorPagesSender(c);
+		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		return;
+	}
+#endif
 }

@@ -292,11 +292,11 @@ streamFound:
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
 							memcpy(c->stream[streamIndex].path, huffstr.data(), huffstr.size());
-							pathParsing(c->stream[streamIndex].path, c->stream[streamIndex].path + huffstr.size(), &c->stream[streamIndex]);
+							pathParsing(&c->stream[streamIndex], huffstr.size());
 						}
 						else {
 							memcpy(c->stream[streamIndex].path, &buf[pos], size);
-							pathParsing(c->stream[streamIndex].path, c->stream[streamIndex].path + size, &c->stream[streamIndex]);
+							pathParsing(&c->stream[streamIndex], size);
 						}
 						
 						break;
