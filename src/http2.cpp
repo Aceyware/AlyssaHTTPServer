@@ -3,7 +3,7 @@
 #include "Alyssa.h"
 // #ifdef COMPILE_HTTP2
 
-void h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz);
+char h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz);
 
 const char h2PingResponse[] =	  "\0\0\x08\6\1\0\0\0\0Aceyware";
 const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
@@ -18,6 +18,7 @@ unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2Predefine
 #define H2SETTINGS 4
 #define H2PING 6
 #define H2GOAWAY 7
+#define H2WINDOW_UPDATE 8
 #define H2CONTINUATION 9
 
 #define END_STREAM 1
@@ -172,12 +173,28 @@ void h2SetPredefinedHeaders() {
 		h2PredefinedHeaders[h2PredefinedHeadersSize + ((hsts) ? 2 : 1)] = 128 | ((hsts) ? 64 : 63);
 	}
 }
+
+void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz) {
+	char header[9] = { 0 };
+	header[1] = 0x40; // Frame size: 16384
+	*(unsigned int*)&header[5] = htonl(s);
+	while (sz>16375) {
+		wolfSSL_send(c->ssl, header, 9, 0);
+		wolfSSL_send(c->ssl, buf, 16375, 0);
+		buf += 16375; sz -= 16375;
+	}
+	*(unsigned short*)&header[1] = htons(sz); header[4] = END_STREAM; // Size and flags.
+	wolfSSL_send(c->ssl, header, 9, MSG_PARTIAL);
+	wolfSSL_send(c->ssl, buf, sz, 0); return;
+}
+
 static void resetStream(clientInfo* c, unsigned int stream, char statusCode) {
 	char buf[13] = "\4\0\0\3\0\0\0\0\0\0\0\0";
 	*(unsigned int*)&buf[9] = htonl(stream);
 	wolfSSL_send(c->ssl, buf, 13, 0);
 }
 void goAway(clientInfo* c, char code) {
+	__debugbreak();
 	// Craft and send the GOAWAY frame.
 	char frame[17] = { 0 };
 	frame[2] = 8; // Size:8 (big endian)
@@ -204,7 +221,8 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 		// Search for an empty space in frames buffer and allocate it to this stream.
 		for (char i = 0; i < MAXSTREAMS; i++) {
 			if (!c->stream[i].id) {
-				streamIndex = i; c->stream[i].id = s;
+				streamIndex = i; c->stream[i] = requestInfo();
+				c->stream[i].id = s;
 				goto streamFound;
 			}
 		}
@@ -330,11 +348,15 @@ void parseFrames(clientInfo* c, int sz) {
 	// but if you handle a single stream or request multiple times, you'll get fucked. 
 	// (speaking of experience happened on pre 3.0 Alyssa HTTP Server)
 
-	int fsz = 0; char type = 0; char flags = 0; int str = 0; // Size, type, flags, stream identifier.
+	unsigned int fsz = 0; char type = 0; char flags = 0; int str = 0; // Size, type, flags, stream identifier.
 	char* buf = tBuf[c->cT];
 	for (int i = 0; i < sz;) {// Iterator until end of received data.
 		// Parse the header of frame.
 		fsz = h2size((unsigned char*)&buf[i]); memcpy(&str, buf + i + 5, 4); str = ntohl(str); type = buf[i + 3]; flags = buf[i + 4];
+#ifdef _DEBUG
+		c->frameSzLog.emplace_back(fsz, str, type);
+#endif // _DEBUG
+
 		switch (type) {
 			case H2DATA: break;
 			case H2HEADERS: 
@@ -345,6 +367,7 @@ void parseFrames(clientInfo* c, int sz) {
 					default:				   break;
 				}
 				if (flags & END_STREAM) h2getInit(c, str);
+				else __debugbreak();
 				break;
 			case H2RST_STREAM: 
 				// Search for the stream
@@ -360,7 +383,7 @@ void parseFrames(clientInfo* c, int sz) {
 				break;
 			case H2SETTINGS: 
 				if (flags & 1) { // ACK flag set, nothing to do.
-					if (fsz > 0) goAway(c, 9); return;
+					if (fsz > 0) { goAway(c, 9);  return; }
 				}
 				else {
 					wolfSSL_send(c->ssl, h2SettingsResponse, 9, 0);
@@ -368,6 +391,7 @@ void parseFrames(clientInfo* c, int sz) {
 				break;
 			case H2PING:	wolfSSL_send(c->ssl, h2PingResponse, 17, 0); break;
 			case H2GOAWAY:  
+				__debugbreak();
 				// Close the connection.
 				wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
 				wolfSSL_free(c->ssl); epollRemove(c->s); closesocket(c->s);
@@ -380,11 +404,16 @@ void parseFrames(clientInfo* c, int sz) {
 					}
 				}
 				return; break;
-			default: break;
+			case H2WINDOW_UPDATE: // Ignored
+				break;
+			default: 
+				__debugbreak();
+				break;
 		}
 		i += fsz + 9;
 	}
 	if (!c->activeStreams) epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+	else epollCtl(c->s, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
 }
 
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
@@ -467,12 +496,15 @@ void h2getInit(clientInfo* c, int s) {
 		if (errorPagesEnabled) {
 			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
 			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-			h2ErrorPagesSender(c, s, buff, eSz);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+			//  ^^^ Mark the stream space on memory free. ^^^
+			// if return is not 2. 2 means there's a custom page
+			// that got opened as a file and server will mark it free itself.
+			// This comment also applies to ones below.
 		}
-		else {// Reset polling.
+		else {
 			h.conLength = 0; h2serverHeaders(c, &h, s);
-			if (c->activeStreams) epollCtl(c->s, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
 		}
 		return;
 	}
@@ -487,6 +519,7 @@ void h2getInit(clientInfo* c, int s) {
 			case 1: // Redirecting virtual host.
 				h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
 				h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+				c->stream[streamIndex].id = 0;
 				return; break;
 			case 2: // Black hole (disconnects the client immediately, without even sending anything back
 				epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
@@ -507,6 +540,8 @@ void h2getInit(clientInfo* c, int s) {
 		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
 	}
 openFilePoint2:
+//#if __cplusplus < 201700L // C++17 not supported, use old stat
+#if false
 	r->f = fopen(buff, "rb");
 	if (!r->f) {
 		struct stat attr; stat(buff, &attr);
@@ -515,12 +550,11 @@ openFilePoint2:
 		if (errorPagesEnabled) {
 			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
 			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-			h2ErrorPagesSender(c, s, buff, eSz);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
 		}
 		else {// Reset polling.
 			h.conLength = 0; h2serverHeaders(c, &h, s);
-			if (c->activeStreams) epollCtl(c->s, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
 		}
 		return;
 	}
@@ -539,11 +573,91 @@ openFilePoint2:
 				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
 			}
 			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-			h.statusCode = 206; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLOUT | EPOLLIN | EPOLLONESHOT);
-		}
+			h.statusCode = 206; h2serverHeaders(c, &h, s); 
 		else {
-			h.statusCode = 200; h2serverHeaders(c,&h,s); epollCtl(c->s, EPOLLOUT | EPOLLIN | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+			h.statusCode = 200; h2serverHeaders(c, &h, s); 
 		}
 		return;
 	}
+#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
+	if (std::filesystem::exists(buff)) {// Something exists on such path.
+		if (std::filesystem::is_directory(buff)) { // It is a directory.
+			// Check for index.html
+			int pos = strlen(buff);
+			memcpy(&buff[pos], "/index.html", 12);
+			if (std::filesystem::exists(buff)) goto openFile17;
+#ifdef COMPILE_DIRINDEX
+			// Send directory index if enabled.
+			else if (dirIndexEnabled) {
+				buff[pos] = '\0';
+				std::string payload = diMain(buff, r->path);
+				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
+				h2serverHeaders(c, &h, s); h2SendData(c, s, payload.data(), h.conLength);
+				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+				return;
+			}
+#endif // COMPILE_DIRINDEX
+			h.statusCode = 404;
+			if (errorPagesEnabled) {
+				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+				h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+				//  ^^^ Mark the stream space on memory free. ^^^
+				// if return is not 2. 2 means there's a custom page
+				// that got opened as a file and server will mark it free itself.
+				// This comment also applies to ones below.
+			}
+			else {
+				h.conLength = 0; h2serverHeaders(c, &h, s);
+				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+			}
+		}
+		else { // It is a file. Open and go.
+		openFile17:
+			r->f = fopen(buff, "rb");
+			if (r->f) {
+				h.conType = fileMime(buff); r->fs = std::filesystem::file_size(buff); h.conLength = r->fs;
+				if (r->rstart || r->rend) {
+					if (r->rstart == -1) { // read last rend bytes 
+						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+					}
+					else if (r->rend == -1) { // read thru end
+						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+					}
+					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
+					h.statusCode = 206; h2serverHeaders(c, &h, s);
+				}
+				else {
+					h.statusCode = 200; h2serverHeaders(c, &h, s);
+				}
+				c->activeStreams++;
+				return;
+			}
+			else { // Open failed, 404
+				h.statusCode = 404;
+				if (errorPagesEnabled) {
+					unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+					h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+				}
+				else {// Reset polling.
+					h.conLength = 0; h2serverHeaders(c, &h, s);
+					c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+				}
+			}
+		}
+	}
+	else { // Requested path does not exists at all.
+		h.statusCode = 404;
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0; 
+		}
+		else {// Reset polling.
+			h.conLength = 0; h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0; ; // Mark the stream space on memory free.
+		}
+	}
+#endif
 }

@@ -36,7 +36,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2"
+#define version "3.0-prerelease2.1"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
@@ -54,6 +54,14 @@
 
 extern struct clientInfo* clients;
 extern char* tBuf[threadCount];
+
+#ifdef _DEBUG
+struct h2DebugShit {
+	int sz; int sid, type;
+	h2DebugShit(int sz,int sid, int type) : sz(sz), sid(sid), type(type) {}
+};
+#endif // _DEBUG
+
 
 typedef struct requestInfo {
 	unsigned int id; // Stream identifier.
@@ -78,6 +86,9 @@ typedef struct clientInfo {
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
 	unsigned short vhost; // Virtual host number
+#ifdef _DEBUG
+	std::deque<h2DebugShit> frameSzLog;
+#endif // _DEBUG
 #ifdef COMPILE_WOLFSSL
 	WOLFSSL* ssl;
 #endif // COMPILE_WOLFSSL
@@ -196,6 +207,7 @@ void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent se
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream); // Sends response headers.
 void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
 void h2SetPredefinedHeaders();
+void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz);
 inline unsigned int h2size(unsigned char* Source) {
 	return (
 		(Source[0] << 24)
@@ -219,6 +231,11 @@ bool pathParsing(requestInfo* r, unsigned int end);
 #endif // COMPILE_DIRINDEX
 #ifdef COMPILE_CUSTOMACTIONS
 	int caMain(const clientInfo& c, const requestInfo& r);
+	#define CA_NO_ACTION 0
+	#define CA_KEEP_GOING 1
+	#define CA_REQUESTEND 2
+	#define CA_CONNECTIONEND 3
+	#define CA_ERR_SERV -1
 #endif // COMPILE_CUSTOMACTIONS
 
 

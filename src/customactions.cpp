@@ -3,11 +3,6 @@
 
 #include "Alyssa.h"
 #ifdef COMPILE_CUSTOMACTIONS
-#define CA_NO_ACTION 0
-#define CA_KEEP_GOING 1
-#define CA_REQUESTEND 2
-#define CA_CONNECTIONEND 3
-#define CA_ERR_SERV -1
 
 #define CA_A_REDIRECT 1
 
@@ -144,13 +139,7 @@ static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
 			case 'r': // Recursive
 			case 'R':
 				if (customactions == 2) { // Recursive enabled.
-					{ while (buf[i] != '{' && i < sz) i++; 
-					if (buf[i] != '{') return -2; 
-					char* begin = &buf[i+1]; 
-					while (buf[i] != '}' && i < sz) i++; 
-					if (buf[i] != '}') return -2;
-					else return caExec(c, r, begin, &buf[i] - begin); 
-					}
+					checkAndExec()
 				}
 				else checkNoExec()
 				break;

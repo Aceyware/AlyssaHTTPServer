@@ -336,7 +336,22 @@ void getInit(clientInfo* c) {
 		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, r->path, strlen(r->path) + 1);
 	}
 
-	if (customactions) caMain(*c, *r);
+	if (customactions) switch (caMain(*c, *r)) {
+		case CA_NO_ACTION:
+		case CA_KEEP_GOING:
+			break;
+		case CA_REQUESTEND:
+			return;
+		case CA_CONNECTIONEND:
+			shutdown(c->s, 2); return;
+		case CA_ERR_SERV:
+			h.statusCode = 500; h.conLength = 0; 
+			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
+		default:
+			std::terminate(); break;
+	}
 
 openFilePoint:
 #if __cplusplus < 201700L // C++17 not supported, use old stat
@@ -414,9 +429,14 @@ openFile17:
 					h.statusCode = 206; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
 				}
 				else {
-					h.statusCode = 200; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+					h.statusCode = 200; serverHeaders(&h, c); 
+					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
+					if (r->fs < bufsize) {
+						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
+						fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT); 
+					}
+					else epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
 				}
-				// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
 			}
 			else { // Open failed, 404
 				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);

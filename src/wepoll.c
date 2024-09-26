@@ -29,6 +29,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _WIN32 // Do not compile if not Windows.
+
 #ifndef WEPOLL_EXPORT
 #define WEPOLL_EXPORT
 #endif
@@ -2251,3 +2253,5 @@ SOCKET ws_get_base_socket(SOCKET socket) {
       return_set_error(INVALID_SOCKET, error);
   }
 }
+
+#endif

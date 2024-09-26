@@ -67,7 +67,7 @@ void errorPagesSender(clientInfo* c) {
 }
 
 #ifdef COMPILE_WOLFSSL
-void h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz) {
+char h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz) {
 	switch (errorPagesEnabled) {
 		case 1:
 		{
@@ -80,11 +80,12 @@ void h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz) {
 			buf[507] = 1; // Flags: END_STREAM
 			int iamk = htonl(s); memcpy(&buf[508], &iamk, 4); // Stream identifier (converted to big endian)
 			wolfSSL_send(c->ssl, &buf[503], sz + 9, 0);
+			return 1;
 			break;
 		}
-		case 2:	c->activeStreams++;	epollCtl(c->s, EPOLLOUT | EPOLLIN | EPOLLONESHOT); break; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
+		case 2:	c->activeStreams++;	epollCtl(c->s, EPOLLOUT | EPOLLIN | EPOLLONESHOT); return 2; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
 		default: break;
 	}
-	return;
+	return 0;
 }
 #endif // COMPILE_WOLFSSL
