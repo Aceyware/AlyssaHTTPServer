@@ -27,7 +27,6 @@
 #endif
 #endif // COMPILE_DIRINDEX
 
-
 // Do testing.
 //#define AlyssaTesting
 
@@ -37,3 +36,7 @@
 // Compile with zlib for gz encoding support.
 #define Compile_zlib
 
+#define LIB_B64CPP 1
+#define LIB_WOLFSSL 2
+#define B64_LIB LIB_WOLFSSL
+#define SHA_LIB LIB_WOLFSSL

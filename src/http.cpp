@@ -311,7 +311,7 @@ void getInit(clientInfo* c) {
 		}
 		return;
 	}
-
+getRestart:
 	if (numVhosts) {// Handle the virtual host.
 		switch (virtualHosts[c->vhost].type) {
 			case 0: // Standard virtual host.
@@ -349,6 +349,8 @@ void getInit(clientInfo* c) {
 			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
 			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
+		case CA_RESTART:
+			goto getRestart;
 		default:
 			std::terminate(); break;
 	}

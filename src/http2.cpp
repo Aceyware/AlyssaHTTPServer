@@ -444,7 +444,11 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	i += buf[i]+1;
 	// Content type
 	if (h->conType) {
-		buf[i] = 15; buf[i + 1] = 16; i += 2; // Static not indexed 31: content-type
+		switch (h->statusCode) {
+			buf[i] = 15; buf[i + 1] = 16; i += 2; break; // Static not indexed 31: content-type
+		default:
+			buf[i] = 15; buf[i + 1] = 31; i += 2; break; // Static not indexed 46: location
+		}
 		buf[i] = sprintf(&buf[i + 1], "%s", h->conType); i += buf[i] + 1;
 	}
 	// Last modified and ETag
@@ -489,7 +493,8 @@ void h2getInit(clientInfo* c, int s) {
 		if (c->stream[i].id == s) { streamIndex = i; break; }
 	}
 	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
-	char buff[1024] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
+	char buff[10240] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
+h2getRestart:
 	if (c->stream[streamIndex].flags & FLAG_INVALID) {
 		if (c->stream[streamIndex].flags & FLAG_DENIED) h.statusCode = 403;
 		else h.statusCode = 400;
@@ -539,6 +544,34 @@ void h2getInit(clientInfo* c, int s) {
 		memcpy(buff, htroot, sizeof(htroot) - 1);
 		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
 	}
+
+	if (customactions) switch (caMain(*c, *r, buff)) {
+		case CA_NO_ACTION:
+		case CA_KEEP_GOING:
+			break;
+		case CA_REQUESTEND:
+			return;
+		case CA_CONNECTIONEND:
+			shutdown(c->s, 2); return;
+		case CA_ERR_SERV:
+			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
+			serverHeaders(&h, c); 
+			if (errorPagesEnabled) {
+				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+				h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+			}
+			else {
+				h2serverHeaders(c, &h, s);
+				c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+			}
+			return;
+		case CA_RESTART:
+			goto h2getRestart;
+		default:
+			std::terminate(); break;
+	}
+
 openFilePoint2:
 //#if __cplusplus < 201700L // C++17 not supported, use old stat
 #if false

@@ -10,6 +10,7 @@ short rate = 4;
 #else 
 short rate = 1;
 #endif
+
 HANDLE hThreads[threadCount] = { 0 };
 HANDLE tSemp[threadCount] = { 0 };
 bool tLk[threadCount] = { 0 };
@@ -173,9 +174,9 @@ int main() {
 	// Create threads
 	for (int i = 0; i < threadCount; i++) {
 #ifdef _WIN32
-		hThreads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadMain, (LPVOID)i, 0, NULL);
-		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
 		tBuf[i] = new char[bufsize]; memset(tBuf[i], 0, bufsize);
+		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
+		hThreads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadMain, (LPVOID)i, 0, NULL);
 #endif
 	}
 

@@ -36,7 +36,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2.1"
+#define version "3.0-prerelease2.2"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
@@ -230,11 +230,12 @@ bool pathParsing(requestInfo* r, unsigned int end);
 	std::string diMain(const std::filesystem::path& p, const std::string& RelPath);
 #endif // COMPILE_DIRINDEX
 #ifdef COMPILE_CUSTOMACTIONS
-	int caMain(const clientInfo& c, const requestInfo& r);
+	int caMain(const clientInfo& c, const requestInfo& r, char* h2path = NULL);
 	#define CA_NO_ACTION 0
 	#define CA_KEEP_GOING 1
 	#define CA_REQUESTEND 2
 	#define CA_CONNECTIONEND 3
+	#define CA_RESTART 4
 	#define CA_ERR_SERV -1
 #endif // COMPILE_CUSTOMACTIONS
 
