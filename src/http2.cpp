@@ -336,6 +336,215 @@ streamFound:
 	return 0;
 }
 
+static void h2getInit(clientInfo* c, int s) {
+	char streamIndex;
+	for (char i = 0; i < 8; i++) {
+		if (c->stream[i].id == s) { streamIndex = i; break; }
+	}
+	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
+	char buff[10240] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
+h2getRestart:
+	if (c->stream[streamIndex].flags & FLAG_INVALID) {
+		if (c->stream[streamIndex].flags & FLAG_DENIED) h.statusCode = 403;
+		else h.statusCode = 400;
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+			//  ^^^ Mark the stream space on memory free. ^^^
+			// if return is not 2. 2 means there's a custom page
+			// that got opened as a file and server will mark it free itself.
+			// This comment also applies to ones below.
+		}
+		else {
+			h.conLength = 0; h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+		}
+		return;
+	}
+	// Rest of the code is pretty much same as HTTP/1.1
+
+	if (numVhosts) {// Handle the virtual host.
+		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
+		case 0: // Standard virtual host.
+			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
+			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+			break;
+		case 1: // Redirecting virtual host.
+			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
+			h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			c->stream[streamIndex].id = 0;
+			return; break;
+		case 2: // Black hole (disconnects the client immediately, without even sending anything back
+			epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
+			// Close and delete stream datas.
+			for (int j = 0; j < 8; j++) {
+				c->stream[j].fs = 0;
+				if (c->stream[j].f) {
+					fclose(c->stream[j].f); c->stream[j].f = NULL;
+					c->activeStreams--; if (!c->activeStreams) break;
+				}
+			}
+			return; break;
+		default: break;
+		}
+	}
+	else {// Virtual hosts are not enabled. Use the htroot path from config.
+		memcpy(buff, htroot, sizeof(htroot) - 1);
+		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+	}
+
+	if (customactions) switch (caMain(*c, *r, buff)) {
+	case CA_NO_ACTION:
+	case CA_KEEP_GOING:
+		break;
+	case CA_REQUESTEND:
+		return;
+	case CA_CONNECTIONEND:
+		shutdown(c->s, 2); return;
+	case CA_ERR_SERV:
+		h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
+		serverHeaders(&h, c);
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+		}
+		else {
+			h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+		}
+		return;
+	case CA_RESTART:
+		goto h2getRestart;
+	default:
+		std::terminate(); break;
+	}
+
+openFilePoint2:
+	//#if __cplusplus < 201700L // C++17 not supported, use old stat
+#if false
+	r->f = fopen(buff, "rb");
+	if (!r->f) {
+		struct stat attr; stat(buff, &attr);
+		if (attr.st_mode & S_IFDIR) { strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
+		h.statusCode = 404;
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+		}
+		else {// Reset polling.
+			h.conLength = 0; h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+		}
+		return;
+	}
+	else {
+		struct stat attr; stat(buff, &attr);
+		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
+		// Yes, it exists on both cases because fopen'ing directories is not defined on standard
+		// and its behavior differs.
+		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs; c->activeStreams++;
+		//h.conType = fileMime(buff);
+		if (r->rstart || r->rend) {
+			if (r->rstart == -1) { // read last rend bytes 
+				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+			}
+			else if (r->rend == -1) { // read thru end
+				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+			}
+			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
+			h.statusCode = 206; h2serverHeaders(c, &h, s);
+		else {
+			h.statusCode = 200; h2serverHeaders(c, &h, s);
+		}
+		return;
+		}
+#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
+	if (std::filesystem::exists(buff)) {// Something exists on such path.
+		if (std::filesystem::is_directory(buff)) { // It is a directory.
+			// Check for index.html
+			int pos = strlen(buff);
+			memcpy(&buff[pos], "/index.html", 12);
+			if (std::filesystem::exists(buff)) goto openFile17;
+#ifdef COMPILE_DIRINDEX
+			// Send directory index if enabled.
+			else if (dirIndexEnabled) {
+				buff[pos] = '\0';
+				std::string payload = diMain(buff, r->path);
+				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
+				h2serverHeaders(c, &h, s); h2SendData(c, s, payload.data(), h.conLength);
+				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+				return;
+			}
+#endif // COMPILE_DIRINDEX
+			h.statusCode = 404;
+			if (errorPagesEnabled) {
+				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+				h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+				//  ^^^ Mark the stream space on memory free. ^^^
+				// if return is not 2. 2 means there's a custom page
+				// that got opened as a file and server will mark it free itself.
+				// This comment also applies to ones below.
+			}
+			else {
+				h.conLength = 0; h2serverHeaders(c, &h, s);
+				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
+			}
+		}
+		else { // It is a file. Open and go.
+		openFile17:
+			r->f = fopen(buff, "rb");
+			if (r->f) {
+				h.conType = fileMime(buff); r->fs = std::filesystem::file_size(buff); h.conLength = r->fs;
+				if (r->rstart || r->rend) {
+					if (r->rstart == -1) { // read last rend bytes 
+						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+					}
+					else if (r->rend == -1) { // read thru end
+						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+					}
+					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
+					h.statusCode = 206; h2serverHeaders(c, &h, s);
+				}
+				else {
+					h.statusCode = 200; h2serverHeaders(c, &h, s);
+				}
+				c->activeStreams++;
+				return;
+			}
+			else { // Open failed, 404
+				h.statusCode = 404;
+				if (errorPagesEnabled) {
+					unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+					h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+				}
+				else {// Reset polling.
+					h.conLength = 0; h2serverHeaders(c, &h, s);
+					c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+				}
+			}
+		}
+	}
+	else { // Requested path does not exists at all.
+		h.statusCode = 404;
+		if (errorPagesEnabled) {
+			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
+			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
+			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
+		}
+		else {// Reset polling.
+			h.conLength = 0; h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0; ; // Mark the stream space on memory free.
+		}
+	}
+#endif
+	}
+
+
 void parseFrames(clientInfo* c, int sz) {
 	// This function parses all HTTP/2 frames sent by user agent
 	// and takes action depending on them. 
@@ -487,210 +696,3 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
 
-void h2getInit(clientInfo* c, int s) {
-	char streamIndex;
-	for (char i = 0; i < 8; i++) {
-		if (c->stream[i].id == s) { streamIndex = i; break; }
-	}
-	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
-	char buff[10240] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
-h2getRestart:
-	if (c->stream[streamIndex].flags & FLAG_INVALID) {
-		if (c->stream[streamIndex].flags & FLAG_DENIED) h.statusCode = 403;
-		else h.statusCode = 400;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-			//  ^^^ Mark the stream space on memory free. ^^^
-			// if return is not 2. 2 means there's a custom page
-			// that got opened as a file and server will mark it free itself.
-			// This comment also applies to ones below.
-		}
-		else {
-			h.conLength = 0; h2serverHeaders(c, &h, s);
-			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
-		}
-		return;
-	}
-	// Rest of the code is pretty much same as HTTP/1.1
-	
-	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
-			case 0: // Standard virtual host.
-				memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
-				memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
-				break;
-			case 1: // Redirecting virtual host.
-				h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
-				h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
-				c->stream[streamIndex].id = 0;
-				return; break;
-			case 2: // Black hole (disconnects the client immediately, without even sending anything back
-				epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
-				// Close and delete stream datas.
-				for (int j = 0; j < 8; j++) {
-					c->stream[j].fs = 0;
-					if (c->stream[j].f) {
-						fclose(c->stream[j].f); c->stream[j].f = NULL;
-						c->activeStreams--; if (!c->activeStreams) break;
-					}
-				}
-				return; break;
-			default: break;
-		}
-	}
-	else {// Virtual hosts are not enabled. Use the htroot path from config.
-		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
-	}
-
-	if (customactions) switch (caMain(*c, *r, buff)) {
-		case CA_NO_ACTION:
-		case CA_KEEP_GOING:
-			break;
-		case CA_REQUESTEND:
-			return;
-		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); return;
-		case CA_ERR_SERV:
-			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
-			serverHeaders(&h, c); 
-			if (errorPagesEnabled) {
-				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-				h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-			}
-			else {
-				h2serverHeaders(c, &h, s);
-				c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-			}
-			return;
-		case CA_RESTART:
-			goto h2getRestart;
-		default:
-			std::terminate(); break;
-	}
-
-openFilePoint2:
-//#if __cplusplus < 201700L // C++17 not supported, use old stat
-#if false
-	r->f = fopen(buff, "rb");
-	if (!r->f) {
-		struct stat attr; stat(buff, &attr);
-		if (attr.st_mode & S_IFDIR) { strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
-		h.statusCode = 404;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-		}
-		else {// Reset polling.
-			h.conLength = 0; h2serverHeaders(c, &h, s);
-			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
-		}
-		return;
-	}
-	else {
-		struct stat attr; stat(buff, &attr);
-		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
-		// Yes, it exists on both cases because fopen'ing directories is not defined on standard
-		// and its behavior differs.
-		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs; c->activeStreams++;
-		//h.conType = fileMime(buff);
-		if (r->rstart || r->rend) {
-			if (r->rstart == -1) { // read last rend bytes 
-				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
-			}
-			else if (r->rend == -1) { // read thru end
-				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
-			}
-			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-			h.statusCode = 206; h2serverHeaders(c, &h, s); 
-		else {
-			h.statusCode = 200; h2serverHeaders(c, &h, s); 
-		}
-		return;
-	}
-#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
-	if (std::filesystem::exists(buff)) {// Something exists on such path.
-		if (std::filesystem::is_directory(buff)) { // It is a directory.
-			// Check for index.html
-			int pos = strlen(buff);
-			memcpy(&buff[pos], "/index.html", 12);
-			if (std::filesystem::exists(buff)) goto openFile17;
-#ifdef COMPILE_DIRINDEX
-			// Send directory index if enabled.
-			else if (dirIndexEnabled) {
-				buff[pos] = '\0';
-				std::string payload = diMain(buff, r->path);
-				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
-				h2serverHeaders(c, &h, s); h2SendData(c, s, payload.data(), h.conLength);
-				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
-				return;
-			}
-#endif // COMPILE_DIRINDEX
-			h.statusCode = 404;
-			if (errorPagesEnabled) {
-				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-				h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-				//  ^^^ Mark the stream space on memory free. ^^^
-				// if return is not 2. 2 means there's a custom page
-				// that got opened as a file and server will mark it free itself.
-				// This comment also applies to ones below.
-			}
-			else {
-				h.conLength = 0; h2serverHeaders(c, &h, s);
-				c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
-			}
-		}
-		else { // It is a file. Open and go.
-		openFile17:
-			r->f = fopen(buff, "rb");
-			if (r->f) {
-				h.conType = fileMime(buff); r->fs = std::filesystem::file_size(buff); h.conLength = r->fs;
-				if (r->rstart || r->rend) {
-					if (r->rstart == -1) { // read last rend bytes 
-						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
-					}
-					else if (r->rend == -1) { // read thru end
-						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
-					}
-					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-					h.statusCode = 206; h2serverHeaders(c, &h, s);
-				}
-				else {
-					h.statusCode = 200; h2serverHeaders(c, &h, s);
-				}
-				c->activeStreams++;
-				return;
-			}
-			else { // Open failed, 404
-				h.statusCode = 404;
-				if (errorPagesEnabled) {
-					unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-					h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-				}
-				else {// Reset polling.
-					h.conLength = 0; h2serverHeaders(c, &h, s);
-					c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-				}
-			}
-		}
-	}
-	else { // Requested path does not exists at all.
-		h.statusCode = 404;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, s);
-			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0; 
-		}
-		else {// Reset polling.
-			h.conLength = 0; h2serverHeaders(c, &h, s);
-			c->stream[streamIndex].id = 0; ; // Mark the stream space on memory free.
-		}
-	}
-#endif
-}

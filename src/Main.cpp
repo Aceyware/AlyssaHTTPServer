@@ -53,9 +53,8 @@ int threadMain(int num) {
 				if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
 #endif // COMPILE_WOLFSSL // Delete SSL object.
 				epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, NULL);
-				break;
 			}
-			if (shit->flags & FLAG_HTTP2) {
+			else if (shit->flags & FLAG_HTTP2) {
 				parseFrames(&clients[clientIndex(num)], received);
 			}
 			else {
@@ -160,6 +159,7 @@ handleOut:
 #endif // _DEBUG
 
 	}
+	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
 
 
@@ -327,7 +327,7 @@ int main() {
 					printf("IN : %d\r\n", ee[i].data.sock);
 
 #endif // _DEBUG
-
+					bool threadFound = 0;
 					for (int k = 0; k < threadCount; k++) {
 						if (!tLk[k]) {
 							tShared[k] = ee[i]; ReleaseSemaphore(tSemp[k], 1, NULL); 
@@ -336,9 +336,16 @@ int main() {
 							printf("Thread %d: locked\r\n", k);
 
 #endif // _DEBUG
-
+							threadFound = 1;
 							break;
 						}
+					}
+					if (!threadFound) {
+#ifdef _DEBUG
+						printf("NO threads found for %d\r\n", ee[i].data.sock);
+#endif // _DEBUG
+						ee[i].events = EPOLLIN | EPOLLONESHOT;
+						epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.sock, &ee[i]);
 					}
 				}
 			}
@@ -346,6 +353,7 @@ int main() {
 #ifdef _DEBUG
 				printf("OUT: %d\r\n", ee[i].data.sock);
 #endif // _DEBUG
+				bool threadFound = 0;
 				for (int k = 0; k < threadCount; k++) {
 					if (!tLk[k]) {
 						tShared[k] = ee[i]; ReleaseSemaphore(tSemp[k], 1, NULL);
@@ -357,10 +365,15 @@ int main() {
 						break;
 					}
 				}
+				if (!threadFound) {
+#ifdef _DEBUG
+					printf("NO threads found for %d\r\n", ee[i].data.sock);
+#endif // _DEBUG
+					ee[i].events = EPOLLOUT | EPOLLONESHOT;
+					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.sock, &ee[i]);
+				}
+
 			}
 		}
 	}
 }
-
-
-

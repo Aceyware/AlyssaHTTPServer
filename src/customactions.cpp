@@ -14,18 +14,29 @@ struct customAction {
 	char action; unsigned short args; // Offset of arguments in the buffer.
 };
 
-static bool caAuth(char* auth, char* path) {
+static int8_t caAuth(const char* auth, char* path) {
+	if (!auth[0]) return -2; // Check if user agent has given any credentials
+	unsigned short pws = 0; // Password start
 	int sz = std::filesystem::file_size(path);
 	char* buf = (char*)alloca(sz);
 	FILE* f = fopen(path, "rb"); fread(buf, sz, 1, f); fclose(f);
 	int i = 0; // Counter variable.
 	int8_t ht = 0; // Hash type. 0: plain 1: sha256 2: sha512 3: sha3-256 4: sha3-512
 	int asz = strlen(auth);
+
+	// Find where password starts.
+	for (; i < asz; i++) {
+		if (auth[i]==':') {
+			pws = i; break;
+		}
+	}
+	if (!pws) return -3;
+
 	if ((buf[0] == 'H' || buf[0] == 'h') &&
 		(buf[3] == 'H' || buf[3] == 'h') &&
 		buf[4] == ' ') { // Hash is stated on file.
 		if ((buf[5] == 'S' || buf[5] == 's') &&
-			(buf[7] == 'A' || buf[5] == 'A')) { // hash type is SHA-something
+			(buf[7] == 'A' || buf[7] == 'a')) { // hash type is SHA-something
 			if (buf[8]=='3') { // SHA3-xxx
 				if (buf[12] == '2') ht = 4; // SHA3-512
 				else if (buf[12] == '6') ht = 3; // SHA3-256
@@ -47,12 +58,80 @@ static bool caAuth(char* auth, char* path) {
 			while (i < sz && buf[i] > 31) i++;
 			continue;
 		}
-		else if (sz-i>asz && buf[i] == auth[0] && buf[i+1] == auth[1]) {// First two letters are same, may be what are we looking for.
-			if (!memcmp(auth,&buf[i],asz)) return 1;
+		else if (sz - i > asz && buf[i] == auth[0] && buf[i + 1] == auth[1]) {// First two letters are same, may be what are we looking for.
+			if (!memcmp(auth, &buf[i], pws)) { // User is found, check for password.
+				switch (ht) {
+				case 0: // Plain
+					if (!memcmp(&auth[pws + 1], &buf[i + pws + 1], asz - pws - 1)) return 1;
+					else return 0;
+#ifdef COMPILE_WOLFSSL
+				case 1: // SHA-256
+					unsigned char hash[32] = { 0 };
+					wc_Sha256Hash((unsigned char*)&auth[pws + 1], asz - pws - 1, hash);
+					if (buf[i + pws + 65] > 31) return -1;
+					for (int8_t j = 0; j < 32; j++) { // This code is same as the one on PathParsing. What it does is it reads textual hex and parses it to actual hex.
+						unsigned char result = 0;
+						// Read and convert hex
+						if (buf[i + pws + 1] & 64) {// Letter
+							if (buf[i + pws + 1] & 32) {// Lowercase letter
+								buf[i + pws + 1] ^= (64 | 32);
+								if (buf[i + pws + 1] & 128 || buf[i + pws + 1] > 9) return -1; // Invalid hex format.
+								result = (buf[i + pws + 1] + 9) * 16;
+							}
+							else {// Uppercase letter
+								buf[i + pws + 1] ^= 64;
+								if (buf[i + pws + 1] & 128 || buf[i + pws + 1] > 9) return -1; // Invalid hex format.
+								result = (buf[i + pws + 1] + 9) * 16;
+							}
+						}
+						else {// Number
+							buf[i + pws + 1] ^= (32 | 16);
+							if (buf[i + pws + 1] & 128 || buf[i + pws + 1] > 9) return -1; // Invalid hex format.
+							result = buf[i + pws + 1] * 16;
+						}
+						if (buf[i + pws + 2] & 64) {// Letter
+							if (buf[i + pws + 2] & 32) {// Lowercase letter
+								buf[i + pws + 2] ^= (64 | 32);
+								if (buf[i + pws + 2] & 128 || buf[i + pws + 2] > 9) return -1; // Invalid hex format.
+								result += buf[i + pws + 2] + 9;
+							}
+							else {// Uppercase letter
+								buf[i + pws + 2] ^= 64;
+								if (buf[i + pws + 2] & 128 || buf[i + pws + 2] > 9) return -1; // Invalid hex format.
+								result += buf[i + pws + 2] + 9;
+							}
+						}
+						else {// Number
+							buf[i + pws + 2] ^= (32 | 16);
+							if (buf[i + pws + 2] & 128 || buf[i + pws + 2] > 9) return -1; // Invalid hex format.
+							result += buf[i + pws + 2];
+						}
+						// Compare it, if not same its 403
+						if (result != hash[j]) return 0;
+						i += 2;
+					}
+					return 1;
+#else
+#endif
+				}
+
+			}
+			else while (i < sz && buf[i]>31) i++;
 		}
+		else while (i < sz && buf[i]>31) i++;
 	}
 	return 0;
 }
+
+#define caSendHeaders()\
+	if (c.flags & FLAG_HTTP2) {\
+			h2serverHeaders((clientInfo*)&c, &h, r.id); \
+	}\
+	else {\
+		serverHeaders(&h, (clientInfo*)&c); \
+		if (errorPagesEnabled) errorPagesSender((clientInfo*)&c); \
+		else epollCtl(c.s, EPOLLIN | EPOLLONESHOT);\
+	}\
 
 static int caExec(const clientInfo& c, const requestInfo& r, char* buf, int sz) {
 	customAction actions[3] = { 0 }; // Actions by their priority order.
@@ -122,17 +201,25 @@ caExecLoop:
 	// Execute the actions by order.
 	switch (actions[0].action) {
 		case CA_A_FORBID:
-			h.statusCode = 403; h.conLength = 0; h.conType = &buf[actions[1].args];
-			if (c.flags & FLAG_HTTP2) {
-				h2serverHeaders((clientInfo*)&c, &h, r.id);
-			}
-			else  {
-				serverHeaders(&h, (clientInfo*)&c);
-				if (errorPagesEnabled) errorPagesSender((clientInfo*)&c);
-				else epollCtl(c.s, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			}
+			h.statusCode = 403; h.conLength = 0;
+			caSendHeaders()
 			return CA_REQUESTEND;
 		case CA_A_AUTH:
+			switch (caAuth(r.auth,&buf[actions[0].args])) {
+				case 0:
+					h.statusCode = 403; h.conLength = 0;
+					caSendHeaders() return CA_REQUESTEND;
+				case 1:
+					break;
+				case CA_ERR_SERV:
+					return CA_ERR_SERV;
+				case -2:
+					h.statusCode = 401; h.conLength = 0;
+					caSendHeaders() return CA_REQUESTEND;
+				default:
+					h.statusCode = 400; h.conLength = 0;
+					caSendHeaders() return CA_REQUESTEND;
+			}
 			break;
 		default:
 			break;
@@ -140,9 +227,7 @@ caExecLoop:
 	switch (actions[1].action) {
 		case CA_A_REDIRECT:
 			h.statusCode = 302; h.conLength = 0; h.conType = &buf[actions[1].args];
-			if (c.flags & FLAG_HTTP2) h2serverHeaders((clientInfo*)&c, &h, r.id);
-			else serverHeaders(&h, (clientInfo*)&c);
-			return CA_REQUESTEND;
+			caSendHeaders() return CA_REQUESTEND;
 		case CA_A_SOFTREDIR:
 		{
 			int sz = strlen(&buf[actions[1].args]);
@@ -306,6 +391,7 @@ RecursiveSearch:
 																  // If recursion is enabled this will also search for parent directories.
 			}
 		}
+		*(unsigned short*)&Buf[BufSz - as] = 0;
 		// This should never get executed anyway (all paths start with /) but still
 		// return CA_NO_ACTION;
 	}

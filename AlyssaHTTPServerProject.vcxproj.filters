@@ -75,7 +75,7 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="src\wepoll.h">
-      <Filter>Header</Filter>
+      <Filter>Header\External</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

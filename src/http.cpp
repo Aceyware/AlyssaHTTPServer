@@ -14,50 +14,58 @@ void setPredefinedHeaders() {
 }
 
 // TODO: convert this shit to a macro. Function call is a wasted overhead.
-static void parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos) {
-	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Rest headers are parsed only if request is not bad.
+static void parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
+	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Other headers are parsed only if request is not bad.
 		if (!strncmp(&buf[bpos], "ontent-", 7)) { 
 			bpos += 7; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
-				bpos += 6; char* end = NULL;																													
-				r->contentLength = strtol(&buf[bpos], &end, 10);																								
-			}																																					
-		}																																						
-	}																																						
-	else if (r->flags ^ FLAG_INVALID) {																														
-		switch (buf[bpos]) {																																
-		case 'a':																																			
-		case 'A': // Content negotiation (Accept-*) headers.																								
-			break;																																			
-		case 'c':																																			
-		case 'C':																																			
-			if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {																								
-				bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;										
-			}																																				
-			break;																																			
-		case 'h':																																			
-		case 'H':																																			
-			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																										
-				bpos += 5;																																	
-				if (numVhosts) {																															
-					for (int i = 1; i < numVhosts; i++) {																									
-						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {												
-							c->vhost = i; break;																											
-						}																																	
-					}																																		
-				}																																			
-			}																																				
-			break;																																			
-		case 'i':																																			
-		case 'I': // Conditional headers.																													
-			break;																																			
-		case 'r':																																			
-		case 'R':																																			
-			if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {																									
-				bpos += 6; if (!strncmp(&buf[bpos], "bytes=", 6)) {																							
-					bpos += 6; if (buf[bpos] == '-') r->rstart = -1; // Read last n bytes.																	
-					else {																																	
-						char* end = NULL;																													
-						r->rstart = strtoll(&buf[bpos], &end, 10);																							
+				bpos += 6; char* end = NULL;																			
+				r->contentLength = strtol(&buf[bpos], &end, 10);														
+			}																											
+		}																												
+	}																													
+	else if (r->flags ^ FLAG_INVALID) {										
+		switch (buf[bpos]) {												
+		case 'a':
+		case 'A': // Content negotiation (Accept-*) headers and Authorisation
+			if (!strncmp(&buf[bpos + 1], "uthorization: ", 14)) {
+				bpos += 15; 
+				if (!strncmp(&buf[bpos], "Basic", 5)) {
+					unsigned int _len = 128; int _ret = Base64_Decode((const byte*)&buf[bpos + 6], epos - bpos, (byte*)r->auth, &_len);
+					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = -8; }
+					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = -1; }
+				}
+			}
+			break;
+		case 'c':
+		case 'C':
+			if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
+				bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
+			}																											
+			break;																										
+		case 'h':																										
+		case 'H':																										
+			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
+				bpos += 5;																								
+				if (numVhosts) {																						
+					for (int i = 1; i < numVhosts; i++) {																
+						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {			
+							c->vhost = i; break;																		
+						}																								
+					}																									
+				}																										
+			}																											
+			break;																										
+		case 'i':																										
+		case 'I': // Conditional headers.																				
+			break;																										
+		case 'r':																										
+		case 'R':																										
+			if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {																
+				bpos += 6; if (!strncmp(&buf[bpos], "bytes=", 6)) {														
+					bpos += 6; if (buf[bpos] == '-') r->rstart = -1; // Read last n bytes.								
+					else {																								
+						char* end = NULL;																				
+						r->rstart = strtoll(&buf[bpos], &end, 10);														
 						if ((int)&end < 32) r->rend = -1;																									
 					}																																		
 				}																																			
@@ -150,7 +158,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 					if (pos < sz) {// Line is completed.
 						// Parse the resulting line.
 						// int oldpos = pos;
-						parseLine(c, r, buf, 2);
+						parseLine(c, r, buf, 2, pos);
 						*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
 					}
 					else { // Line being incomplete should mean end of buffer.
@@ -167,7 +175,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->flags |= FLAG_HEADERSEND; return r->method; 
 			}
 			// Parse the line
-			parseLine(c, r, buf, bpos);
+			parseLine(c, r, buf, bpos, pos);
 			//while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
 			pos++; if (buf[pos] < 32) pos++; // Itarete from line demiliters to beginning.
 			bpos = pos;
@@ -208,7 +216,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 				  pos += snprintf(&buf[pos], 512-pos, "%llu-%llu/%llu", c->stream[0].rstart, c->stream[0].rend, h->conLength); 
 				  break;
 		case 302: memcpy(&buf[pos], "302 Found\r\nLocation: ",	 21); pos += 21;
-				  memcpy(&buf[pos], h->conType, strlen(h->conType)); pos += strlen(h->conType);// Content type is reused as redirect target.
+				  memcpy(&buf[pos], h->conType, strlen(h->conType) ); pos += strlen(h->conType);// Content type is reused as redirect target.
 				  break;
 		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
 		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
@@ -218,7 +226,8 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 416: memcpy(&buf[pos], "416 Range Not Satisfiable", 25); pos += 25; break;
-		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
+		case 418: memcpy(&buf[pos], "418 I'm a teapot", 16);		  pos += 16; break;
+		case 431: memcpy(&buf[pos], "431 Request Header Fields Too Large",  35); pos += 35; break;
 		case 500: memcpy(&buf[pos], "500 Internal Server Error", 25); pos += 25; break;
 		case 501:
 		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
@@ -273,6 +282,7 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
+		case 431: memcpy(&buf[pos], "431 Request Header Fields Too Large",  35); pos += 35; break;
 		case 500: memcpy(&buf[pos], "500 Internal Server Error", 25); pos += 25; break;
 		case 501:
 		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;

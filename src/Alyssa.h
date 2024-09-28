@@ -36,10 +36,11 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2.2"
+#define version "3.0-prerelease2.3"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
+#define maxauth 128
 #define maxclient 256
 #define MAXSTREAMS 8
 #define threadCount 8
@@ -72,6 +73,7 @@ typedef struct requestInfo {
 	unsigned short contentLength; // client payload content length.
 	char* qStr; // Query string location.
 	char path[maxpath] = { 0 };
+	char auth[maxauth] = { 0 };
 	unsigned short vhost; // Virtual host number
 
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
@@ -205,8 +207,8 @@ void goAway(clientInfo* c, char code); // This one sends GOAWAY packet to user a
 short h2parseHeader(clientInfo* c, char* buf, int sz, int s); // Parses the HPACK headers.
 void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent sent.
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream); // Sends response headers.
-void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
 void h2SetPredefinedHeaders();
+//void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
 void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz);
 inline unsigned int h2size(unsigned char* Source) {
 	return (

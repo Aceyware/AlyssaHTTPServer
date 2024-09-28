@@ -38,6 +38,7 @@ user_settings.h
 # Secret files
 *.pem
 *.key
+*.p7*
 
 # Config files
 *.cfg
@@ -53,6 +54,8 @@ Release
 # Alyssa HTTP Server specific stuff
 htroot
 Alyssa.log
+Alyssa.cfg
+*.alyssa
 
 # macOS persistent storage(?) stuff
 ._*
