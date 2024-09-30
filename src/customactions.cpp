@@ -10,6 +10,8 @@
 #define CA_A_FORBID 4
 #define CA_A_SOFTREDIR 5
 
+extern int8_t cgiMain(const clientInfo& c, int8_t type, char* cmd);
+
 struct customAction {
 	char action; unsigned short args; // Offset of arguments in the buffer.
 };
@@ -236,6 +238,8 @@ caExecLoop:
 			return CA_RESTART;
 		}
 		case CA_A_CGI:
+			cgiMain(c, 0, &buf[actions[1].args]);
+			return CA_REQUESTEND;
 			break;
 		default:
 			break;

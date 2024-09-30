@@ -64,3 +64,6 @@ Alyssa.cfg
 # Compiled resources
 *.res
 *.aps
+
+# CGI test apps
+*.bat

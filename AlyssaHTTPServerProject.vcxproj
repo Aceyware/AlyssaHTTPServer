@@ -171,6 +171,7 @@
   <ItemGroup>
     <None Include="src/external/base64.cpp" />
     <None Include="src/external/Crc32.cpp" />
+    <ClCompile Include="src\cgi.cpp" />
     <ClCompile Include="src\customactions.cpp" />
     <ClCompile Include="src\dirindex.cpp" />
     <ClCompile Include="src\misc.cpp" />

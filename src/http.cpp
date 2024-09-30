@@ -351,6 +351,7 @@ getRestart:
 		case CA_KEEP_GOING:
 			break;
 		case CA_REQUESTEND:
+			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_CONNECTIONEND:
 			shutdown(c->s, 2); return;

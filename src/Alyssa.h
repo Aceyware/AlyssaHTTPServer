@@ -36,7 +36,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2.3"
+#define version "3.0-prerelease2.4"
 #define htroot ".\\htroot\\"
 #define htrespath ".\\res\\"
 #define maxpath 256
