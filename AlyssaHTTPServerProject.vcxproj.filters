@@ -56,9 +56,6 @@
     <ClInclude Include="src/AlyssaHuffman.h">
       <Filter>Header</Filter>
     </ClInclude>
-    <ClInclude Include="src/external/Crc32.h">
-      <Filter>Header\External</Filter>
-    </ClInclude>
     <ClInclude Include="src/external/base64.h">
       <Filter>Header\External</Filter>
     </ClInclude>
@@ -77,9 +74,6 @@
     <ClInclude Include="src\wepoll.h">
       <Filter>Header\External</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h">
-      <Filter>Header</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">
@@ -87,9 +81,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="src/external/Crc32.cpp">
-      <Filter>Source\External</Filter>
-    </None>
     <None Include="src/external/base64.cpp">
       <Filter>Source\External</Filter>
     </None>

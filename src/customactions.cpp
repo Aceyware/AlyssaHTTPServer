@@ -10,7 +10,7 @@
 #define CA_A_FORBID 4
 #define CA_A_SOFTREDIR 5
 
-extern int8_t cgiMain(const clientInfo& c, int8_t type, char* cmd);
+extern int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd);
 
 struct customAction {
 	char action; unsigned short args; // Offset of arguments in the buffer.
@@ -238,7 +238,7 @@ caExecLoop:
 			return CA_RESTART;
 		}
 		case CA_A_CGI:
-			cgiMain(c, 0, &buf[actions[1].args]);
+			cgiMain(c, r, 0, &buf[actions[1].args]);
 			return CA_REQUESTEND;
 			break;
 		default:
@@ -348,8 +348,8 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 	int sz = strnlen(Buf, BufSz); // Size of unmodified absolute path
 	int rsz = strlen(r.path); // Size of relative path, used for not searching on .alyssa files outside of htroot.
 	if (sz > BufSz / 2) std::terminate(); //temp
-	int i = 2 * sz; // Counter variable used on for loops.
-	int as = BufSz - 2 * sz - 9; // Available space.
+	int i = 2 * sz + 1; // Counter variable used on for loops.
+	int as = BufSz - 2 * sz - 10; // Available space.
 
 	// Make a copy of original path for modifying.
 	memcpy(&Buf[sz + 1], Buf, sz); 
@@ -367,9 +367,9 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 				return caParse(c, r, &Buf[sz+1]);
 			}
 			else { // add it to list of files that will checked.
-				*(unsigned short*)&Buf[BufSz - as] = sz + 9; as -= 2;
-				memcpy(&Buf[BufSz - as], &Buf[sz], sz + 8); as -= sz + 9;
-				Buf[BufSz - as - 2] = '\0';
+				*(unsigned short*)&Buf[BufSz - as] = sz + 10; as -= 2;
+				memcpy(&Buf[BufSz - as - 1], &Buf[sz], sz + 10); as -= sz + 10;
+				Buf[BufSz - as] = '\0';
 			}
 		}
 		else if (customactions == 1) return CA_NO_ACTION; // File is not found and recursion is disabled, nothing left to do.
@@ -387,7 +387,7 @@ RecursiveSearch:
 					}
 					else { // add it to list of files that will checked.
 						*(unsigned short*)&Buf[BufSz - as] = i - sz + 9; as -= 2;
-						memcpy(&Buf[BufSz - as - 1], &Buf[sz], i - sz + 8); as -= i - sz + 9;
+						memcpy(&Buf[BufSz - as - 1], &Buf[sz], i - sz + 9); as -= i - sz + 9;
 						Buf[BufSz - as - 2] = '\0';
 					}
 				}
@@ -400,13 +400,13 @@ RecursiveSearch:
 		// return CA_NO_ACTION;
 	}
 	// Parse all found files while searching the parent. (only executed when recursion is enabled)
-	i = 2 * sz + 9; while (i < BufSz) {
+	i = 2 * sz + 10; while (i < BufSz) {
 		if (*(unsigned short*)&Buf[i]) {
 			char ret = caParse(c, r, &Buf[i + 2]);
 			if (ret) return ret;
 		}
 		else return CA_NO_ACTION;
-		i += *(unsigned short*)&Buf[i] + 2;
+		i += *(unsigned short*)&Buf[i] + 3;
 	}
 #endif
 }

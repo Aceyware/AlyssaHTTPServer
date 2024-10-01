@@ -65,14 +65,14 @@ std::string diMain(const std::filesystem::path& p, const std::string& RelPath) {
 		// Columns are ordered as: "entry name | last modify date | size"
 		// Directories have no size so it's '-' instead.
 		if (Array[i].isDirectory) {
-			ret += "<th><img src=\"" htrespath "/directory.png\"><a href=\"" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a></th>"
+			ret += "<th><img src=\"" htrespath "/directory.png\"><a href=\"./" + Array[i].FileName + "/\">" + Array[i].FileName + "/</a></th>"
 				"<th>" + Array[i].ModifyDate + "</th>"
 				"<th>-</th>"
 				"</tr>";
 			DirCnt++;
 		}
 		else {
-			ret += "<th><img src=\"" htrespath "/file.png\"><a href=\"" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
+			ret += "<th><img src=\"" htrespath "/file.png\"><a href=\"./" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
 				"<th>" + Array[i].ModifyDate + "</th>"
 				"<th>[" + std::to_string(Array[i].FileSize) + "]</th>"
 				"</tr>";

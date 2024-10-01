@@ -442,7 +442,8 @@ openFile17:
 					h.statusCode = 206; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
 				}
 				else {
-					h.statusCode = 200; serverHeaders(&h, c); 
+					h.statusCode = 200;  r->fs = std::filesystem::file_size(tBuf[c->cT]); h.conLength = r->fs;
+					serverHeaders(&h, c); 
 					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
 					if (r->fs < bufsize) {
 						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);

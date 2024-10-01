@@ -6,10 +6,10 @@ static int Send(const clientInfo& c, const char* buf, int sz) {
 	else return send(c.s, buf, sz, 0);
 }
 static void serverHeadersMinimal(const clientInfo& c) {
-	char buf[300] = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n"; short pos = 45;
+	char buf[300] = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nDate: "; short pos = 51;
 	// Current time
 	time_t currentDate = time(NULL);
-	memcpy(&buf[pos], "Date: ", 6); pos += 6; pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
+	pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
 	// Predefined headers
 	memcpy(&buf[pos], predefinedHeaders, predefinedSize); pos += predefinedSize;
 	// Send the headers.
@@ -19,12 +19,13 @@ static void serverHeadersMinimal(const clientInfo& c) {
 extern char* h2PredefinedHeaders; extern unsigned short h2PredefinedHeadersSize;
 extern unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
 
-void h2serverHeadersMinimal(clientInfo* c, unsigned short stream) {
+void h2serverHeadersMinimal(clientInfo* c, unsigned short stream, bool endHeaders) {
 	char buf[200] = { 0 };  unsigned short i = 10;
 	// Stream identifier is big endian so we need to write it swapped.
 	buf[5] = stream >> 24; buf[6] = stream >> 16; buf[7] = stream >> 8; buf[8] = stream >> 0;
 	buf[3] = 1; // Type: HEADERS
-	buf[9] = 128 | 8; i++; ; // Static indexed 8
+	if (endHeaders) buf[4] = 4;
+	buf[9] = 128 | 8; // Static indexed 8: 200 OK
 	// Date
 	buf[i] = 15; buf[i + 1] = 18; i += 2; // Static not indexed 33: date
 	buf[i] = 29; // Date is always 29 bytes.
@@ -44,15 +45,47 @@ void h2serverHeadersMinimal(clientInfo* c, unsigned short stream) {
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
 
-int8_t cgiMain(const clientInfo& c, int8_t type, char* cmd) {
+void h2Continuation(clientInfo* c, unsigned short stream, char* headers, unsigned short szHeaders, bool endHeaders) {
+	char buf[200] = { 0 };  unsigned short i = 9;
+	buf[5] = stream >> 24; buf[6] = stream >> 16; buf[7] = stream >> 8; buf[8] = stream >> 0;
+	buf[3] = 9; // Type: CONTINUATION
+	if (endHeaders) buf[4] = 4;
+	// I'm so bored of that cgi shit that won't even bother to write more/better/cleaner than this poorman's code.
+	short endline, colon, beginline = 0;
+	if(headers!=NULL) {
+		for (short j = 0; j < szHeaders; j++) {
+			if (buf[j] == ':') { colon = j; continue; } // Colon of header found, indicates end of header name
+			else if (buf[j] < 32) {
+				endline = j;
+				buf[i + 1] = colon - beginline; memcpy(&buf[i + 2], &headers[beginline], colon - beginline); // set size of name and copy
+				i += buf[i + 1] + 1; buf[i] = endline - colon - 2; // iterate and set size of value
+				memcpy(&buf[i + 1], &headers[beginline], colon - beginline); i += buf[i] + 1; // copy value and iterate. 
+				if (headers[endline + 1] < 32) endline++;
+				beginline = endline + 1; j = beginline;
+			}
+		}
+	}
+	// Copy size and send it to user agent. Remember that size is in big endian so we need to convert it.
+	i -= 9; buf[1] = i >> 8; buf[2] = i >> 0;
+	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
+}
+
+int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd) {
 	char* commandline[] = { cmd,NULL };	subprocess_s subprocess;
 	int ret = subprocess_create(commandline, subprocess_option_inherit_environment, &subprocess);
 	if (ret) return -1;
-	serverHeadersMinimal(c);
 	char buf[1024] = { 0 }; int read = 0; buf[7] = '\r', buf[8] = '\n';
-	bool onHeaders = 1; // Header status. 1: we are on headers still, 0: done or no headers
+	char onHeaders = 1; // Header status. 1: we are on headers still, 0: done or no headers. 2: Headers are ongoing (HTTP/2 specific)
 	short colonOff = 0, lineOff = 0; // Offsets of ':' and "\r\n" 
 	short lineBeginOff = 0; // Line beginning
+
+	// Send the initial headers with 200 OK
+	if (c.flags & FLAG_HTTP2) {
+		//h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
+		// Set DATA frame headers for later use.
+		buf[5] = r.id >> 24; buf[6] = r.id >> 16; buf[7] = r.id >> 8; buf[8] = r.id >> 0;
+	}
+	else serverHeadersMinimal(c);
 
 	// I hate this cgi parsing shit.
 	// And I don't know how this works but I'll try my best to comment it.
@@ -69,20 +102,30 @@ int8_t cgiMain(const clientInfo& c, int8_t type, char* cmd) {
 						// Check if what we encounterewd is a blank line, if not pretend as there never was headers but data
 						if (i - lineBeginOff < 2) {// Blank line
 							if (buf[i + 1] == '\n') i++; // \r\n
-							Send(c, &buf[9], i-8); // Send the headers
+							// vvv Send the headers vvv
+							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 8, 1);
+							else Send(c, &buf[9], i - 8);
+
 							if (read - (i - 9) > 1) { // There also is some data, send it too.
-								char hexsize = sprintf(buf, "%X", read - (i - 9)); // Write the length of data in hex
-								memcpy(&buf[i - hexsize], buf, hexsize);// Place the chunk length before the newline
-								//buf[i - hexsize - 1] = '\r', buf[i - hexsize] = '\n';
-								Send(c, &buf[i - hexsize], read + hexsize + 4); // Send the data
+								if (c.flags & FLAG_HTTP2) {// On HTTP/2 we will send it as DATA frame. set frame headers and then send the header, and data after that.
+									buf[1] = read - (i - 9) >> 8; buf[2] = read - (i - 9) >> 0; // size of frame
+									wolfSSL_send(c.ssl, buf, 9, 0); wolfSSL_send(c.ssl, &buf[i], read, 0);
+								}
+								else {
+									char hexsize = sprintf(buf, "%X", read - (i - 9)); // Write the length of data in hex
+									memcpy(&buf[i - hexsize], buf, hexsize);// Place the chunk length before the newline
+									//buf[i - hexsize - 1] = '\r', buf[i - hexsize] = '\n';
+									Send(c, &buf[i - hexsize], read + hexsize + 4); // Send the data
+								}
 							}
 							else {
-								Send(c, "\r\n", 2); // If no data send the empty line indicating end of headers.
+								if (!(c.flags & FLAG_HTTP2)) Send(c, "\r\n", 2); // If no data send the empty line indicating end of headers.
 							}
 							break;
 						}
 						else { // Headers were done way before or there never was headers. Send empty line to indicate end of line and send the data as normal.
-							Send(c, "\r\n", 2);
+							if (c.flags & FLAG_HTTP2) h2serverHeadersMinimal((clientInfo*)&c, r.id, 1);
+							else Send(c, "\r\n", 2);
 							goto cgiDataSend;
 						}
 						
@@ -91,16 +134,36 @@ int8_t cgiMain(const clientInfo& c, int8_t type, char* cmd) {
 				}
 			}
 			if (onHeaders) {// If this is still true send shit as is 
-				Send(c, &buf[9], read);
+				if (c.flags & FLAG_HTTP2) {
+					if (onHeaders == 1) {
+						h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); onHeaders = 2;
+					}
+					h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0);
+				}
+				else Send(c, &buf[9], read);
 			}
 		}
 		else {
 cgiDataSend:
-			buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline before the chunk length
-			char hexsize = sprintf(buf, "%x", read); //// Write the length of data in hex
-			memcpy(&buf[7 - hexsize], buf, hexsize);// Place the chunk length before the newline
-			Send(c, &buf[7 - hexsize], read + hexsize + 4); // Send data + chunk beginning + ending
+			if (c.flags & FLAG_HTTP2) {
+				buf[1] = read >> 8; buf[2] = read >> 0; // size of frame
+				wolfSSL_send(c.ssl, buf, read + 9, 0);
+			}
+			else {
+				buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline before the chunk length
+				char hexsize = sprintf(buf, "%x", read); //// Write the length of data in hex
+				memcpy(&buf[7 - hexsize], buf, hexsize);// Place the chunk length before the newline
+				Send(c, &buf[7 - hexsize], read + hexsize + 4); // Send data + chunk beginning + ending
+			}
 		}
 	}
-	Send(c, "0\r\n\r\n", 5); subprocess_destroy(&subprocess); // Send empty chunk indicating end of data and exit.
+
+	if (c.flags & FLAG_HTTP2) {
+		buf[1] = 0, buf[2] = 0, buf[4] = 1; // Set size to 0 and flags to END_STREAM
+		wolfSSL_send(c.ssl, buf, 9, 0);
+	}
+	else {
+		Send(c, "0\r\n\r\n", 5); // Send empty chunk indicating end of data and exit. 
+	}
+	subprocess_destroy(&subprocess); 
 }

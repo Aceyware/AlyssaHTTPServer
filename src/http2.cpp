@@ -510,7 +510,8 @@ openFilePoint2:
 					h.statusCode = 206; h2serverHeaders(c, &h, s);
 				}
 				else {
-					h.statusCode = 200; h2serverHeaders(c, &h, s);
+					h.statusCode = 200; r->fs = std::filesystem::file_size(buff); h.conLength = r->fs;
+					h2serverHeaders(c, &h, s);
 				}
 				c->activeStreams++;
 				return;
