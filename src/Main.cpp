@@ -61,6 +61,13 @@ int threadMain(int num) {
 				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
 					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
+#ifdef COMPILE_CUSTOMACTIONS
+					case  2:
+					case  3:
+						postInit(&clients[clientIndex(num)]); break;
+#endif // COMPILE_CUSTOMACTIONS
+					case  4: serverHeadersInline(200, 0, &clients[clientIndex(num)], 0, NULL); break;
+					case  5: getInit(&clients[clientIndex(num)]); break;
 					case 666: break;
 					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 				}

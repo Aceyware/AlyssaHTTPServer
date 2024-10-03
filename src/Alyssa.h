@@ -23,24 +23,29 @@
 	#define S_IFDIR _S_IFDIR
 #else
 	#include <unistd.h>
+	#include <sys/socket.h>
+	#include <sys/types.h>
 	#include <arpa/inet.h>
 	#error ğ
 #endif // _WIN32
 
 #ifdef COMPILE_WOLFSSL
-	#include "user_settings.h"
+	#ifdef _WIN32
+		#include "user_settings.h"
+		#pragma comment(lib,"wolfssl.lib")
+	#endif // _WIN32
 	#include <wolfssl/ssl.h>
-	#pragma comment(lib,"wolfssl.lib")
 	#define sslCertPath "./crt.pem"
 	#define sslKeyPath "./key.key"
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2.5"
+#define version "3.0-prerelease2.6"
 #define htroot ".\\htroot\\"
 #define htrespath "/res/"
 #define maxpath 256
 #define maxauth 128
+#define maxpayload 256
 #define maxclient 256
 #define MAXSTREAMS 8
 #define threadCount 8
@@ -74,6 +79,7 @@ typedef struct requestInfo {
 	char* qStr; // Query string location.
 	char path[maxpath] = { 0 };
 	char auth[maxauth] = { 0 };
+	char payload[maxpayload] = { 0 };
 	unsigned short vhost; // Virtual host number
 
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
@@ -142,15 +148,22 @@ enum clientFlags {
 	FLAG_CLOSE = 32,
 	// Other RequestInfo flags
 	FLAG_CHUNKED = 64,
+	FLAG_EXPECT = 128,
 	// Server headers
 	FLAG_ERRORPAGE = 1,
 	FLAG_HASRANGE = 2,
+	FLAG_NOCACHE = 4,
+	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
 	// Client Info Flags
 	FLAG_LISTENING = 1,
 	FLAG_SSL = 2,
 	FLAG_HTTP2 = 4,
 	FLAG_DELETE = 8,
 	FLAG_HEADERS_INDEXED = 16
+};
+
+enum methods {
+	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
 };
 
 extern char* predefinedHeaders; extern int predefinedSize;
@@ -182,6 +195,9 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 void serverHeaders(respHeaders* h, clientInfo* c);
 void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg);
 void getInit(clientInfo* c);
+#ifdef COMPILE_CUSTOMACTIONS
+void postInit(clientInfo* c);
+#endif
 
 // Error pages functions (common)
 int errorPages(char* buf, unsigned short statusCode, unsigned short vhost, requestInfo& stream);

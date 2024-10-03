@@ -87,6 +87,8 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 	}
 	else serverHeadersMinimal(c);
 
+	if (r.payload[1]) fputs(&r.payload[2], subprocess_stdin(&subprocess));
+
 	// I hate this cgi parsing shit.
 	// And I don't know how this works but I'll try my best to comment it.
 	while ((read=subprocess_read_stdout(&subprocess,&buf[9],1013))) { // Read the output of application

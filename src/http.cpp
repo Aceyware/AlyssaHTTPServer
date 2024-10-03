@@ -172,11 +172,18 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		for (; pos < sz;) {
 			if (buf[pos] > 31) { pos++; continue; }// Increase counter until end of line.
 			if (bpos == pos) { // End of headers.
-				r->flags |= FLAG_HEADERSEND; return r->method; 
+				r->flags |= FLAG_HEADERSEND; 
+				if(r->contentLength) {
+					if (buf[bpos + 1] == '\n') bpos += 2; // \r\n
+					memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
+						&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
+					r->contentLength-= sz - pos;
+					if (!r->contentLength) return r->method;
+				}
+				return r->method;
 			}
 			// Parse the line
 			parseLine(c, r, buf, bpos, pos);
-			//while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
 			pos++; if (buf[pos] < 32) pos++; // Itarete from line demiliters to beginning.
 			bpos = pos;
 		}
@@ -198,7 +205,10 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		return 666;
 	}
 	else {// Received remainder of payload, append it.
-
+		memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
+			&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
+		r->contentLength -= sz - pos;
+		if (!r->contentLength) return r->method;
 	}
 }
 
@@ -280,6 +290,8 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 		case 402: memcpy(&buf[pos], "402 Precondition Failed",	 23); pos += 23; break;
 		case 403: memcpy(&buf[pos], "403 Forbidden",			 13); pos += 13; break;
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
+		case 405: memcpy(&buf[pos], "405 Method Not Allowed\r\nAllow: GET, HEAD, OPTIONS\r\n", 51); 
+																	  pos += 51; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
 		case 431: memcpy(&buf[pos], "431 Request Header Fields Too Large",  35); pos += 35; break;
@@ -288,12 +300,29 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
 	}
 	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	// Allow on OPTIONS requets
+	if (c->stream[0].method == 4) {
+#ifdef COMPILE_CUSTOMACTIONS
+		if (customactions) {
+			memcpy(&buf[pos], "Allow: GET, POST, PUT, HEAD, OPTIONS\r\n", 38); pos += 38;
+		}
+		else {
+			memcpy(&buf[pos], "Allow: GET, HEAD, OPTIONS\r\n", 27); pos += 27;
+		}
+#else
+		memcpy(&buf[pos], "Allow: GET, HEAD, OPTIONS\r\n", 27); pos += 27;
+#endif // COMPILE_CUSTOMACTIONS
+	}
 	// Content length
 	memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
 	pos += snprintf(&buf[pos], 512 - pos, "%d\r\n", conLength);
 	// Current time
 	time_t currentDate = time(NULL);
 	memcpy(&buf[pos], "Date: ", 6); pos += 6; pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
+	// Additionals
+	if (flags & FLAG_NOCACHE) {
+		memcpy(&buf[pos], "Cache-Control: no-cache\r\n", 25); pos += 25;
+	}
 	// Predefined headers
 	memcpy(&buf[pos], predefinedHeaders, predefinedSize); pos += predefinedSize;
 	// Add terminating newline and send.
@@ -357,7 +386,7 @@ getRestart:
 			shutdown(c->s, 2); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; 
-			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
+			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_RESTART:
@@ -377,7 +406,7 @@ openFilePoint:
 			goto openFilePoint;
 		}// It is a directory, check for index.html inside it.
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-		if (errorPagesEnabled) errorPagesSender(c);
+		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
@@ -416,13 +445,13 @@ openFilePoint:
 				tBuf[c->cT][pos] = '\0';
 				std::string payload = diMain(tBuf[c->cT], r->path);
 				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
-				serverHeaders(&h, c); Send(c, payload.data(), h.conLength);
+				serverHeaders(&h, c); if(r->method!=METHOD_HEAD) Send(c, payload.data(), h.conLength);
 				epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
 #endif // COMPILE_DIRINDEX
 			h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-			if (errorPagesEnabled) errorPagesSender(c);
+			if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		}
@@ -439,13 +468,16 @@ openFile17:
 						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
 					}
 					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-					h.statusCode = 206; serverHeaders(&h, c); //epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
+					h.statusCode = 206; serverHeaders(&h, c); 
+					if(r->method!=METHOD_HEAD) epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
+					else { fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT);}
 				}
 				else {
 					h.statusCode = 200;  r->fs = std::filesystem::file_size(tBuf[c->cT]); h.conLength = r->fs;
 					serverHeaders(&h, c); 
+					if(r->method==METHOD_HEAD) { fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT); }
 					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
-					if (r->fs < bufsize) {
+					else if (r->fs < bufsize) {
 						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
 						fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT); 
 					}
@@ -454,7 +486,7 @@ openFile17:
 			}
 			else { // Open failed, 404
 				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-				if (errorPagesEnabled) errorPagesSender(c);
+				if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
@@ -462,9 +494,64 @@ openFile17:
 	}
 	else { // Requested path does not exists at all.
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-		if (errorPagesEnabled) errorPagesSender(c);
+		if (errorPagesEnabled && r->method!=METHOD_HEAD) errorPagesSender(c);
 		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
 #endif
 }
+
+#ifdef COMPILE_CUSTOMACTIONS
+void postInit(clientInfo* c) {
+	if (!customactions) {
+		return serverHeadersInline(405, 0, c, 1, NULL);
+	}
+	respHeaders h;
+	if (numVhosts) {// Handle the virtual host.
+		switch (virtualHosts[c->vhost].type) {
+		case 0: // Standard virtual host.
+			memcpy(tBuf[c->cT], virtualHosts[c->vhost].target, strlen(virtualHosts[c->vhost].target));
+			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), c->stream[0].path, strlen(c->stream[0].path) + 1);
+			break;
+		case 1: // Redirecting virtual host.
+			h.conType = virtualHosts[c->vhost].target; // Reusing content-type variable for redirection path.
+			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			return; break;
+		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
+			epollRemove(c->s); closesocket(c->s);
+#ifdef COMPILE_WOLFSSL
+			if (c->ssl) wolfSSL_free(c->ssl);
+#endif // COMPILE_WOLFSSL
+			return; break;
+		default: break;
+		}
+	}
+	else {// Virtual hosts are not enabled. Use the htroot path from config.
+		memcpy(tBuf[c->cT], htroot, sizeof(htroot) - 1);
+		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, c->stream[0].path, strlen(c->stream[0].path) + 1);
+	}
+postRestart:
+	switch (caMain(*c, c->stream[0])) {
+		case CA_NO_ACTION:
+		case CA_KEEP_GOING:
+			h.statusCode = 404; h.conLength = 0;
+			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
+		case CA_REQUESTEND:
+			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
+		case CA_CONNECTIONEND:
+			shutdown(c->s, 2); return;
+		case CA_ERR_SERV:
+			h.statusCode = 500; h.conLength = 0;
+			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
+		case CA_RESTART:
+			goto postRestart;
+		default:
+			std::terminate(); break;
+	}
+}
+#endif // COMPILE_CUSTOMACTIONS
