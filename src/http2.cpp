@@ -1,5 +1,3 @@
-// Here we fucking go again.
-
 #include "Alyssa.h"
 // #ifdef COMPILE_HTTP2
 
@@ -11,25 +9,30 @@ const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
 char* h2PredefinedHeaders;	unsigned short h2PredefinedHeadersSize;
 unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
 
-#define H2DATA 0
-#define H2HEADERS 1
-#define H2PRIORITY 2
-#define H2RST_STREAM 3
-#define H2SETTINGS 4
-#define H2PING 6
-#define H2GOAWAY 7
-#define H2WINDOW_UPDATE 8
-#define H2CONTINUATION 9
-
-#define END_STREAM 1
-#define END_HEADERS 4
-#define PADDED 8
-#define PRIORITY 32
-#define H2_ACK 1
-#define H2CONNECTION_ERROR 1
-#define H2COMPRESSION_ERROR 9
-#define H2REFUSED_STREAM 7
-
+enum h2FrameTypes {
+	H2DATA,
+	H2HEADERS,
+	H2PRIORITY,
+	H2RST_STREAM,
+	H2SETTINGS,
+	H2PING = 6,
+	H2GOAWAY,
+	H2WINDOW_UPDATE,
+	H2CONTINUATION,
+};
+enum h2FrameFlags {
+	END_STREAM = 1,
+	END_HEADERS = 4,
+	PADDED = 8,
+	PRIORITY = 32,
+	H2_ACK = 1
+};
+enum h2Errors {
+	H2CONNECTION_ERROR = 1,
+	H2REFUSED_STREAM = 7,
+	H2CANCEL = 8,
+	H2COMPRESSION_ERROR = 9
+};
 static short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads integer representations in headers and converts them to normal integer.
 	if (buf[0] == fullValue) {// Index is bigger than byte, add next bit to it too.
 		short ret;
@@ -135,6 +138,9 @@ static std::string decodeHuffman(char* huffstr, int16_t sz) {// How the fuck is 
 	return out;
 }
 
+/// <summary>
+/// Sets predefined headers such as server version, CSP etc. that is set through config and will never change in servers timeline.
+/// </summary>
 void h2SetPredefinedHeaders() {
 	// Set the nonindexed ones first.
 	h2PredefinedHeadersSize = sizeof("Alyssa/") + sizeof(version); // Normally we need two more bytes for index and size
@@ -174,6 +180,13 @@ void h2SetPredefinedHeaders() {
 	}
 }
 
+/// <summary>
+/// Helper function for sending data in DATA frames to server
+/// </summary>
+/// <param name="c">clientInfo struct</param>
+/// <param name="s">Stream identifier</param>
+/// <param name="buf">Buffer of data to send</param>
+/// <param name="sz">Size of data</param>
 void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz) {
 	char header[9] = { 0 };
 	header[1] = 0x40; // Frame size: 16384
@@ -188,11 +201,23 @@ void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz) {
 	wolfSSL_send(c->ssl, buf, sz, 0); return;
 }
 
+/// <summary>
+/// Helper function for sending RST_STREAM frames to server
+/// </summary>
+/// <param name="c">clientInfo struct</param>
+/// <param name="stream">Stream identifier</param>
+/// <param name="statusCode">Error code for resetting</param>
 static void resetStream(clientInfo* c, unsigned int stream, char statusCode) {
 	char buf[13] = "\4\0\0\3\0\0\0\0\0\0\0\0";
 	*(unsigned int*)&buf[9] = htonl(stream);
 	wolfSSL_send(c->ssl, buf, 13, 0);
 }
+
+/// <summary>
+/// Sends GOAWAY frame to server, disconnects and cleans up the client data.
+/// </summary>
+/// <param name="c">clientInfo struct</param>
+/// <param name="code">Error code for GOAWAY.</param>
 void goAway(clientInfo* c, char code) {
 	__debugbreak();
 	// Craft and send the GOAWAY frame.
@@ -215,6 +240,14 @@ void goAway(clientInfo* c, char code) {
 	}
 }
 
+/// <summary>
+/// Parses HEADERS and CONTINUATION frames.
+/// </summary>
+/// <param name="c">clientInfo struct</param>
+/// <param name="buf">Frame data</param>
+/// <param name="sz">Size of frame</param>
+/// <param name="s">Stream identifier.</param>
+/// <returns></returns>
 short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 	unsigned char streamIndex;
 	if (buf[3] == H2HEADERS) {
@@ -319,6 +352,20 @@ streamFound:
 						
 						break;
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
+					case 28: // content-length.
+						if (isHuffman) {
+							std::string huffstr = decodeHuffman(&buf[pos], size);
+							c->stream[streamIndex].contentLength = strtol(huffstr.data(), NULL, 10);
+							if (!c->stream[streamIndex].contentLength) c->stream[streamIndex].flags |= FLAG_INVALID;
+						}
+						else {
+							c->stream[streamIndex].contentLength = strtol(&buf[pos], NULL, 10);
+							if (!c->stream[streamIndex].contentLength) c->stream[streamIndex].flags |= FLAG_INVALID;
+						}
+						if (c->stream[streamIndex].contentLength > maxpayload - 2) {
+							return -10;
+						}
+						break;
 					default: break;
 				}
 			}
@@ -336,6 +383,9 @@ streamFound:
 	return 0;
 }
 
+/// <summary>
+/// Initializes GET request to respond to server.
+/// </summary>
 static void h2getInit(clientInfo* c, int s) {
 	char streamIndex;
 	for (char i = 0; i < 8; i++) {
@@ -404,7 +454,6 @@ h2getRestart:
 			shutdown(c->s, 2); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
-			serverHeaders(&h, c);
 			if (errorPagesEnabled) {
 				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
 				h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
@@ -420,6 +469,11 @@ h2getRestart:
 			return;
 		case CA_RESTART:
 			goto h2getRestart;
+		case -2:
+			h.statusCode = 405; h.conLength = 0; c->stream[streamIndex].id = 0;
+			h2serverHeaders(c, &h, s);
+			c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+			return;
 		default:
 			std::terminate(); break;
 	}
@@ -585,7 +639,10 @@ static void h2postInit(clientInfo* c, int s) {
 		if (c->stream[i].id == s) { streamIndex = i; break; }
 	}
 	respHeaders h;
-	if (!customactions) {
+	if (c->stream[streamIndex].flags & FLAG_INVALID) {
+		h.statusCode = 400; h2serverHeaders(c, &h, s); c->stream[streamIndex].id = 0;
+	}
+	else if (!customactions) {
 		h.statusCode = 405; h2serverHeaders(c, &h, s); c->stream[streamIndex].id = 0;
 	}
 	requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
@@ -686,16 +743,21 @@ h2postRestart:
 }
 #endif
 
-	// This function parses all HTTP/2 frames sent by user agent
-	// and takes action depending on them. 
-	//
-	// All frames has a header of 9 bytes: Size(3)|Type(1)|Flags(1)|Stream identifier(4)
-	// Some frames has additional headers after those depending on their type and flags etc.
-	// There is several types of frames such as HEADERS, DATA, SETTINGS, RST_STREAM etc. 
-	// with all of them having their own roles for stuff. Refer to RFC 9113 for detailed info.
-	// Last note: HTTP/2 is multiplexed, so there's multiple things exchanging at the same time
-	// but if you handle a single stream or request multiple times, you'll get fucked. 
-	// (speaking of experience happened on pre 3.0 Alyssa HTTP Server)
+/// <summary>
+/// This function parses all HTTP/2 frames sent by user agent
+/// and takes action depending on them. 
+/// </summary>
+/// <remarks>
+/// All frames has a header of 9 bytes: Size(3)|Type(1)|Flags(1)|Stream identifier(4)
+/// Some frames has additional headers after those depending on their type and flags etc.
+/// There is several types of frames such as HEADERS, DATA, SETTINGS, RST_STREAM etc. 
+/// with all of them having their own roles for stuff. Refer to RFC 9113 for detailed info.
+/// Last note: HTTP/2 is multiplexed, so there's multiple things exchanging at the same time
+/// but if you handle a single stream or request multiple times, you'll get fucked. 
+/// (speaking of experience happened on pre 3.0 Alyssa HTTP Server)
+/// </remarks>
+/// <param name="c">The clientInfo structure belonging to user agent</param>
+/// <param name="sz">Size of total received data.</param>
 void parseFrames(clientInfo* c, int sz) {
 	unsigned int fsz = 0; char type = 0; char flags = 0; int str = 0; // Size, type, flags, stream identifier.
 	char* buf = tBuf[c->cT];
@@ -709,8 +771,14 @@ void parseFrames(clientInfo* c, int sz) {
 			case H2DATA:
 				for (char i = 0; i < 8; i++) {
 					if (c->stream[i].id == str) {
-						memcpy(&c->stream[i].payload[1 + *(unsigned short*)&c->stream[i].payload[0]],
-							&buf[i + 9], fsz); *(unsigned short*)&c->stream[i].payload[0] += fsz;
+						c->stream[i].contentLength -= fsz;
+						if (*(unsigned short*)&c->stream[i].payload[0] + fsz > maxpayload - 2) { // Buffer overflow.
+							c->stream[i].flags |= FLAG_INVALID;
+						}
+						else if (!(c->stream[i].flags & FLAG_INVALID)) {
+							memcpy(&c->stream[i].payload[1 + *(unsigned short*)&c->stream[i].payload[0]],
+								&buf[i + 9], fsz); *(unsigned short*)&c->stream[i].payload[0] += fsz;
+						}
 						if (flags & END_STREAM) h2postInit(c, str);
 					}
 				}
@@ -720,6 +788,12 @@ void parseFrames(clientInfo* c, int sz) {
 				switch (h2parseHeader(c, &buf[i], fsz, str)) {
 					case -7: goAway(c, H2COMPRESSION_ERROR); return; break;
 					case -9: goAway(c, H2CONNECTION_ERROR ); return; break;
+					case -10: {
+						// I'm really lazy
+						respHeaders h; h.statusCode = 413; h.conLength = 0;
+						h2serverHeaders(c, &h, str); resetStream(c, str, H2CANCEL);
+					}
+					break;
 					default:				   break;
 				}
 				if (flags & END_STREAM) h2getInit(c, str);
@@ -772,6 +846,12 @@ void parseFrames(clientInfo* c, int sz) {
 	else epollCtl(c->s, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
 }
 
+/// <summary>
+/// Sends server response HEADERS frame to user agent.
+/// </summary>
+/// <param name="c">clientInfo</param>
+/// <param name="h">respHeaders structure, parameters for headers.</param>
+/// <param name="stream">Stream identifier.</param>
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	char buf[384] = { 0 };  unsigned short i = 9; // We can't use the thread buffer like we did on 1.1 because there may be headers unprocessed still.
 	// Stream identifier is big endian so we need to write it swapped.

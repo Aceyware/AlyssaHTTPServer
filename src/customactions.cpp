@@ -238,6 +238,7 @@ caExecLoop:
 			return CA_RESTART;
 		}
 		case CA_A_CGI:
+			if (r.method == METHOD_HEAD) return -2;
 			cgiMain(c, r, 0, &buf[actions[1].args]);
 			return CA_REQUESTEND;
 			break;

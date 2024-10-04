@@ -126,7 +126,7 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 							if (read - (i - 9) > 1) { // There also is some data, send it too.
 								if (c.flags & FLAG_HTTP2) {// On HTTP/2 we will send it as DATA frame. set frame headers and then send the header, and data after that.
 									buf[1] = read - (i - 9) >> 8; buf[2] = read - (i - 9) >> 0; // size of frame
-									wolfSSL_send(c.ssl, buf, 9, 0); wolfSSL_send(c.ssl, &buf[i], read, 0);
+									wolfSSL_send(c.ssl, buf, 9, 0); wolfSSL_send(c.ssl, &buf[i], read - (i - 9), 0);
 								}
 								else {
 									char hexsize = sprintf(buf, "%X\r\n", read - (i - 9)); // Write the length of data in hex

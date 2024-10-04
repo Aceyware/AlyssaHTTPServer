@@ -14,12 +14,13 @@ void setPredefinedHeaders() {
 }
 
 // TODO: convert this shit to a macro. Function call is a wasted overhead.
-static void parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
+static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
 	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Other headers are parsed only if request is not bad.
 		if (!strncmp(&buf[bpos+1], "ontent-", 7)) { 
 			bpos += 8; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
-				bpos += 8; char* end = NULL;																			
-				r->contentLength = strtol(&buf[bpos], &end, 10);														
+				bpos += 8; r->contentLength = strtol(&buf[bpos], NULL, 10);
+				if (!r->contentLength) r->flags |= FLAG_INVALID;
+				else if (r->contentLength > maxpayload - 2) return -2;
 			}																											
 		}																												
 	}																													
@@ -158,7 +159,12 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 					if (pos < sz) {// Line is completed.
 						// Parse the resulting line.
 						// int oldpos = pos;
-						parseLine(c, r, buf, 2, pos);
+						switch (parseLine(c, r, buf, 2, pos)) {
+							case -2:
+								return -10;
+							default:
+								break;
+						}
 						*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
 					}
 					else { // Line being incomplete should mean end of buffer.
@@ -175,15 +181,27 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->flags |= FLAG_HEADERSEND; 
 				if(r->contentLength) {
 					if (buf[bpos + 1] == '\n') bpos += 2; // \r\n
-					memcpy(&r->payload[2 + *(unsigned short*)&r->payload[0]],
-						&buf[bpos], sz - bpos); *(unsigned short*)&r->payload[0] += sz - bpos;
-					r->contentLength-= sz - bpos;
-					if (!r->contentLength) return r->method;
+					r->contentLength -= sz - bpos;
+					if (*(unsigned short*)&r->payload[0] + sz - bpos > maxpayload - 2) {// Buffer overflow.
+						r->flags |= FLAG_INVALID; r->contentLength -= sz - pos;
+						if (!r->contentLength) return -6;
+					}
+					else if (!(r->flags & FLAG_INVALID)) {
+						memcpy(&r->payload[2 + *(unsigned short*)&r->payload[0]],
+							&buf[bpos], sz - bpos); *(unsigned short*)&r->payload[0] += sz - bpos;
+						if (!r->contentLength) return r->method;
+					}
+					else if (!r->contentLength) return -6;
 				}
 				return r->method;
 			}
 			// Parse the line
-			parseLine(c, r, buf, bpos, pos);
+			switch (parseLine(c, r, buf, bpos, pos)) {
+			case -2:
+				return -10;
+			default:
+				break;
+			}
 			pos++; if (buf[pos] < 32) pos++; // Itarete from line demiliters to beginning.
 			bpos = pos;
 		}
@@ -205,10 +223,17 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		return 666;
 	}
 	else {// Received remainder of payload, append it.
-		memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
-			&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
 		r->contentLength -= sz - pos;
-		if (!r->contentLength) return r->method;
+		if (*(unsigned short*)&r->payload[0] + sz - pos > maxpayload - 2) { // Buffer overflow.
+			r->flags |= FLAG_INVALID; 
+			if (!r->contentLength) return -6;
+		}
+		else if(!(r->flags & FLAG_INVALID)) {
+			memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
+				&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
+			if (!r->contentLength) return r->method;
+		}
+		else if (!r->contentLength) return -6;
 	}
 }
 
@@ -234,6 +259,9 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 		case 402: memcpy(&buf[pos], "402 Precondition Failed",	 23); pos += 23; break;
 		case 403: memcpy(&buf[pos], "403 Forbidden",			 13); pos += 13; break;
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
+		case 405: memcpy(&buf[pos], "405 Method Not Allowed\r\nAllow: GET, HEAD, OPTIONS\r\n", 51); 
+																	  pos += 51; break;
+		case 413: memcpy(&buf[pos], "413 Content Too Large",	 21); pos += 21; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 416: memcpy(&buf[pos], "416 Range Not Satisfiable", 25); pos += 25; break;
 		case 418: memcpy(&buf[pos], "418 I'm a teapot", 16);		  pos += 16; break;
@@ -292,6 +320,7 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
 		case 405: memcpy(&buf[pos], "405 Method Not Allowed\r\nAllow: GET, HEAD, OPTIONS\r\n", 51); 
 																	  pos += 51; break;
+		case 413: memcpy(&buf[pos], "413 Content Too Large",	 21); pos += 21; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
 		case 431: memcpy(&buf[pos], "431 Request Header Fields Too Large",  35); pos += 35; break;
@@ -391,6 +420,10 @@ getRestart:
 			return;
 		case CA_RESTART:
 			goto getRestart;
+		case -2:
+			h.statusCode = 405; h.conLength = 0;
+			serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			return;
 		default:
 			std::terminate(); break;
 	}
@@ -456,7 +489,7 @@ openFilePoint:
 			return;
 		}
 		else { // It is a file. Open and go.
-openFile17:
+		openFile17:
 			r->f = fopen(tBuf[c->cT], "rb");
 			if (r->f) {
 				h.conType = fileMime(tBuf[c->cT]);

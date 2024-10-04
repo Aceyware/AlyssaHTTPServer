@@ -59,6 +59,13 @@ int threadMain(int num) {
 			}
 			else {
 				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
+					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL); 
+						closesocket(tShared[num].data.fd);
+#ifdef COMPILE_WOLFSSL // Delete SSL object.
+						if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
+#endif // COMPILE_WOLFSSL // Delete SSL object.
+						epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, NULL);
+						break;
 					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
 #ifdef COMPILE_CUSTOMACTIONS
