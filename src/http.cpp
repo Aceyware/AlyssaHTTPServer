@@ -16,9 +16,9 @@ void setPredefinedHeaders() {
 // TODO: convert this shit to a macro. Function call is a wasted overhead.
 static void parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
 	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Other headers are parsed only if request is not bad.
-		if (!strncmp(&buf[bpos], "ontent-", 7)) { 
-			bpos += 7; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
-				bpos += 6; char* end = NULL;																			
+		if (!strncmp(&buf[bpos+1], "ontent-", 7)) { 
+			bpos += 8; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
+				bpos += 8; char* end = NULL;																			
 				r->contentLength = strtol(&buf[bpos], &end, 10);														
 			}																											
 		}																												
@@ -175,9 +175,9 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->flags |= FLAG_HEADERSEND; 
 				if(r->contentLength) {
 					if (buf[bpos + 1] == '\n') bpos += 2; // \r\n
-					memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
-						&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
-					r->contentLength-= sz - pos;
+					memcpy(&r->payload[2 + *(unsigned short*)&r->payload[0]],
+						&buf[bpos], sz - bpos); *(unsigned short*)&r->payload[0] += sz - bpos;
+					r->contentLength-= sz - bpos;
 					if (!r->contentLength) return r->method;
 				}
 				return r->method;

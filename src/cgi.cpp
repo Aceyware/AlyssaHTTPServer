@@ -87,11 +87,19 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 	}
 	else serverHeadersMinimal(c);
 
-	if (r.payload[1]) fputs(&r.payload[2], subprocess_stdin(&subprocess));
+	if (r.payload[0])  {
+		fputs(&r.payload[2], subprocess_stdin(&subprocess));
+		fflush(subprocess_stdin(&subprocess));
+		*(unsigned short*)&r.payload[0] = 0;
+	}
 
 	// I hate this cgi parsing shit.
 	// And I don't know how this works but I'll try my best to comment it.
 	while ((read=subprocess_read_stdout(&subprocess,&buf[9],1013))) { // Read the output of application
+#ifdef _DEBUG
+		printf("read: %d: %.*s\r\n", read, read, &buf[9]);
+#endif // _DEBUG
+
 		if (onHeaders) {
 			short i = 9; // Counter
 			for (; i < read+9; i++) {// Iterate through the read data for finding colon of headers and endlines
@@ -99,14 +107,21 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 				else if (buf[i] < 32) {// Probably end of line
 					if (buf[i + 1] == '\n') i++; // \r\n
 					lineOff = i;
+#ifdef _DEBUG
+					printf("lbo: %d, co: %d, i: %d\r\n", lineBeginOff, colonOff, i);
+#endif // _DEBUG
 					if (lineBeginOff>=colonOff) { // Headers are done, as colon is left behind of this line
 						onHeaders = 0;
 						// Check if what we encounterewd is a blank line, if not pretend as there never was headers but data
 						if (i - lineBeginOff < 2) {// Blank line
-							if (buf[i + 1] == '\n') i++; // \r\n
+							if (buf[i + 1] == '\n') i += 2; // \r\n
+							else i++;
 							// vvv Send the headers vvv
-							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 8, 1);
-							else Send(c, &buf[9], i - 8);
+							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 9, 1);
+							else Send(c, &buf[9], i - 9);
+#ifdef _DEBUG
+							printf("i-lineBeginOff<2: %d: %.*s\r\n", i - 9, i - 9, &buf[9]);
+#endif // _DEBUG
 
 							if (read - (i - 9) > 1) { // There also is some data, send it too.
 								if (c.flags & FLAG_HTTP2) {// On HTTP/2 we will send it as DATA frame. set frame headers and then send the header, and data after that.
@@ -114,20 +129,23 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 									wolfSSL_send(c.ssl, buf, 9, 0); wolfSSL_send(c.ssl, &buf[i], read, 0);
 								}
 								else {
-									char hexsize = sprintf(buf, "%X", read - (i - 9)); // Write the length of data in hex
+									char hexsize = sprintf(buf, "%X\r\n", read - (i - 9)); // Write the length of data in hex
 									memcpy(&buf[i - hexsize], buf, hexsize);// Place the chunk length before the newline
-									//buf[i - hexsize - 1] = '\r', buf[i - hexsize] = '\n';
-									Send(c, &buf[i - hexsize], read + hexsize + 4); // Send the data
+									buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
+									Send(c, &buf[i - hexsize], read - i + hexsize + 2); // Send the data
+#ifdef _DEBUG
+									printf("read-i>1: %d: %.*s\r\n", read - i + hexsize + 2, read - i + hexsize + 2, &buf[i - hexsize]);
+#endif // _DEBUG
 								}
-							}
-							else {
-								if (!(c.flags & FLAG_HTTP2)) Send(c, "\r\n", 2); // If no data send the empty line indicating end of headers.
 							}
 							break;
 						}
 						else { // Headers were done way before or there never was headers. Send empty line to indicate end of line and send the data as normal.
 							if (c.flags & FLAG_HTTP2) h2serverHeadersMinimal((clientInfo*)&c, r.id, 1);
 							else Send(c, "\r\n", 2);
+#ifdef _DEBUG
+							printf("hwd: ");
+#endif // _DEBUG
 							goto cgiDataSend;
 						}
 						
@@ -143,6 +161,10 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 					h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0);
 				}
 				else Send(c, &buf[9], read);
+#ifdef _DEBUG
+				printf("stillOnHeaders: %d: %.*s\r\n", read, read, &buf[9]);
+#endif // _DEBUG
+
 			}
 		}
 		else {
@@ -152,12 +174,16 @@ cgiDataSend:
 				wolfSSL_send(c.ssl, buf, read + 9, 0);
 			}
 			else {
-				buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline before the chunk length
-				char hexsize = sprintf(buf, "%x", read); //// Write the length of data in hex
+				buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
+				char hexsize = sprintf(buf, "%x", read); // Write the length of data in hex
 				memcpy(&buf[7 - hexsize], buf, hexsize);// Place the chunk length before the newline
 				Send(c, &buf[7 - hexsize], read + hexsize + 4); // Send data + chunk beginning + ending
+#ifdef _DEBUG
+				printf("direct: %d: %.*s\r\n", read + hexsize + 4, read + hexsize + 4, &buf[7 - hexsize]);
+#endif // _DEBUG
 			}
 		}
+		lineBeginOff = 9; lineOff = 9, colonOff = 9; // Reset the counters.
 	}
 
 	if (c.flags & FLAG_HTTP2) {

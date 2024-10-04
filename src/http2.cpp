@@ -588,7 +588,7 @@ static void h2postInit(clientInfo* c, int s) {
 	if (!customactions) {
 		h.statusCode = 405; h2serverHeaders(c, &h, s); c->stream[streamIndex].id = 0;
 	}
-	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
+	requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
 	char buff[10240] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
 
 h2postRestart:
