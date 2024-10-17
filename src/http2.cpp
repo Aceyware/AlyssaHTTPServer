@@ -289,7 +289,7 @@ streamFound:
 					case 3: c->stream[streamIndex].method = 2;	break; // :method: POST
 					case 4: c->stream[streamIndex].path[0] = '/';
 						c->stream[streamIndex].path[1] = 0;		break; // :path: /
-					case 5: memcpy(c->stream[streamIndex].path, "/index.html", 12);
+					case 5: memcpy(c->stream[streamIndex].path.data(), "/index.html", 12);
 														break; // :path: /index.html
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
 					default: break;
@@ -342,11 +342,11 @@ streamFound:
 					case 4: // :path
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							memcpy(c->stream[streamIndex].path, huffstr.data(), huffstr.size());
+							memcpy(c->stream[streamIndex].path.data(), huffstr.data(), huffstr.size());
 							pathParsing(&c->stream[streamIndex], huffstr.size());
 						}
 						else {
-							memcpy(c->stream[streamIndex].path, &buf[pos], size);
+							memcpy(c->stream[streamIndex].path.data(), &buf[pos], size);
 							pathParsing(&c->stream[streamIndex], size);
 						}
 						
@@ -418,7 +418,7 @@ h2getRestart:
 		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 		case 0: // Standard virtual host.
 			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
-			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
@@ -441,7 +441,7 @@ h2getRestart:
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 	}
 
 	if (customactions) switch (caMain(*c, *r, buff)) {
@@ -673,7 +673,7 @@ h2postRestart:
 		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 		case 0: // Standard virtual host.
 			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
-			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
@@ -696,7 +696,7 @@ h2postRestart:
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path, strlen(c->stream[streamIndex].path) + 1);
+		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 	}
 
 	if (customactions) switch (caMain(*c, *r, buff)) {

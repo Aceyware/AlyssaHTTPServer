@@ -31,7 +31,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 			if (!strncmp(&buf[bpos + 1], "uthorization: ", 14)) {
 				bpos += 15; 
 				if (!strncmp(&buf[bpos], "Basic", 5)) {
-					unsigned int _len = 128; int _ret = Base64_Decode((const byte*)&buf[bpos + 6], epos - bpos, (byte*)r->auth, &_len);
+					unsigned int _len = 128; int _ret = Base64_Decode((const byte*)&buf[bpos + 6], epos - bpos, (byte*)r->auth.data(), &_len);
 					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = -8; }
 					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = -1; }
 				}
@@ -50,7 +50,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 				if (numVhosts) {																						
 					for (int i = 1; i < numVhosts; i++) {																
 						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {			
-							c->vhost = i; break;																		
+							r->vhost = i; break;																		
 						}																								
 					}																									
 				}																										
@@ -107,10 +107,10 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			if (!end) { r->method = -1; }// Ending space not found, invalid request.
 			else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
 			else {// All is well, keep parsing.
-				memcpy(&r->path, &buf[pos], end - &buf[pos]);// Copy request path
+				memcpy(r->path.data(), &buf[pos], end - &buf[pos]);// Copy request path
 				r->path[end - &buf[pos]] = '\0';// Add null terminator
 				end = &r->path[end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
-				pos += end - r->path + 1;
+				pos += end - &r->path[0] + 1;
 				if (!strncmp(&buf[pos], "HTTP/1", 6)) {
 					pos += 7; if (buf[pos] == '0') {
 						c->flags ^= FLAG_CLOSE;
@@ -122,7 +122,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			}
 			// Mark first-line parsing as complete.
 			r->flags |= FLAG_FIRSTLINE;
-			pathParsing(r, end-r->path);
+			pathParsing(r, end-&r->path[0]);
 			if (r->flags & FLAG_INCOMPLETE) { // Clear the incomplete-line space, set the buf and pos back
 				buf = oldbuf; pos=oldpos;
 				// Check for line demiliter (was ignored while copying to incomplete line buffer.
@@ -240,7 +240,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 void serverHeaders(respHeaders* h, clientInfo* c) {
 	// Set up the error page to send if there is an error
 	if (h->statusCode >= 400 && errorPagesEnabled) { 
-		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->vhost, c->stream[0]); c->stream[0].fs = h->conLength;
+		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = h->conLength;
 		if (h->conLength) h->conType = "text/html";
 	}
 
@@ -304,7 +304,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
 	// Set up the error page to send if there is an error
 	if (statusCode > 400 && errorPagesEnabled) { 
-		conLength = errorPages(tBuf[c->cT], statusCode, c->vhost, c->stream[0]); c->stream[0].fs = conLength;
+		conLength = errorPages(tBuf[c->cT], statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = conLength;
 	}
 
 	char buf[512] = "HTTP/1.1 "; short pos = 9;
@@ -383,13 +383,13 @@ void getInit(clientInfo* c) {
 	}
 getRestart:
 	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->vhost].type) {
+		switch (virtualHosts[r->vhost].type) {
 			case 0: // Standard virtual host.
-				memcpy(tBuf[c->cT], virtualHosts[c->vhost].target, strlen(virtualHosts[c->vhost].target));
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), r->path, strlen(r->path) + 1);
+				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
 				break;
 			case 1: // Redirecting virtual host.
-				h.conType = virtualHosts[c->vhost].target; // Reusing content-type variable for redirection path.
+				h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
 				h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
 				return; break;
 			case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
@@ -399,7 +399,7 @@ getRestart:
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(tBuf[c->cT], htroot, sizeof(htroot) - 1);
-		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, r->path, strlen(r->path) + 1);
+		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, r->path.data(), strlen(r->path.data()) + 1);
 	}
 
 	if (customactions) switch (caMain(*c, *r)) {
@@ -548,13 +548,13 @@ void postInit(clientInfo* c) {
 	}
 	respHeaders h;
 	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->vhost].type) {
+		switch (virtualHosts[c->stream[0].vhost].type) {
 		case 0: // Standard virtual host.
-			memcpy(tBuf[c->cT], virtualHosts[c->vhost].target, strlen(virtualHosts[c->vhost].target));
-			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->vhost].target), c->stream[0].path, strlen(c->stream[0].path) + 1);
+			memcpy(tBuf[c->cT], virtualHosts[c->stream[0].vhost].target, strlen(virtualHosts[c->stream[0].vhost].target));
+			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->stream[0].vhost].target), c->stream[0].path.data(), strlen(c->stream[0].path.data()) + 1);
 			break;
 		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[c->vhost].target; // Reusing content-type variable for redirection path.
+			h.conType = virtualHosts[c->stream[0].vhost].target; // Reusing content-type variable for redirection path.
 			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
@@ -568,7 +568,7 @@ void postInit(clientInfo* c) {
 	}
 	else {// Virtual hosts are not enabled. Use the htroot path from config.
 		memcpy(tBuf[c->cT], htroot, sizeof(htroot) - 1);
-		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, c->stream[0].path, strlen(c->stream[0].path) + 1);
+		memcpy(tBuf[c->cT] + sizeof(htroot) - 1, c->stream[0].path.data(), strlen(c->stream[0].path.data()) + 1);
 	}
 postRestart:
 	switch (caMain(*c, c->stream[0])) {

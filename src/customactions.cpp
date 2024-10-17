@@ -207,7 +207,7 @@ caExecLoop:
 			caSendHeaders()
 			return CA_REQUESTEND;
 		case CA_A_AUTH:
-			switch (caAuth(r.auth,&buf[actions[0].args])) {
+			switch (caAuth(r.auth.data(), &buf[actions[0].args])) {
 				case 0:
 					h.statusCode = 403; h.conLength = 0;
 					caSendHeaders() return CA_REQUESTEND;
@@ -234,7 +234,7 @@ caExecLoop:
 		{
 			int sz = strlen(&buf[actions[1].args]);
 			if (sz > maxpath) return CA_ERR_SERV;
-			memcpy((char*)r.path, &buf[actions[1].args], sz+1);
+			memcpy((char*)r.path.data(), &buf[actions[1].args], sz + 1);
 			return CA_RESTART;
 		}
 		case CA_A_CGI:
@@ -288,8 +288,8 @@ static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
 				if (sz - i < 4) break;
 				else if (buf[i + 3] == 'e' || buf[i + 3] == 'E') {
 					// Check for file name
-					if (sz - i > strlen(r.path)) {
-						if (!strncmp(&buf[i], r.path, strlen(r.path))) {
+					if (sz - i > strlen(r.path.data())) {
+						if (!strncmp(&buf[i], r.path.data(), strlen(r.path.data()))) {
 							// Correct file, exec it.
 							checkAndExec()
 						}
@@ -347,7 +347,7 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 	}
 
 	int sz = strnlen(Buf, BufSz); // Size of unmodified absolute path
-	int rsz = strlen(r.path); // Size of relative path, used for not searching on .alyssa files outside of htroot.
+	int rsz = strlen(r.path.data()); // Size of relative path, used for not searching on .alyssa files outside of htroot.
 	if (sz > BufSz / 2) std::terminate(); //temp
 	int i = 2 * sz + 1; // Counter variable used on for loops.
 	int as = BufSz - 2 * sz - 10; // Available space.

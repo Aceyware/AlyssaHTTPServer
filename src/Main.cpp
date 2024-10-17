@@ -1,7 +1,7 @@
 // Alyssa HTTP Server Project
 // Copyright (C) 2025 Aceyware - GPLv3 licensed.
 
-#include "Alyssa.h",
+#include "Alyssa.h"
 
 // These are used for making file descriptors monotonic.
 // The base value of FDs and their increment rate is platform-dependent.
@@ -257,7 +257,7 @@ int main() {
 	// Allocate space for clients (and for listening sockets)
 	clients = new clientInfo[maxclient];
 	// Zero the memory
-	memset(clients, 0, maxclient * sizeof(struct clientInfo));
+	//memset(clients, 0, maxclient * sizeof(struct clientInfo));
 	// Set data for listening sockets.
 	clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
 #ifdef COMPILE_WOLFSSL
@@ -304,8 +304,9 @@ int main() {
 						printf("Error: socket exceeds allocated space.\n");	
 						closesocket(cSock); continue;
 					}
-					clients[clientIndex2(cSock)] = clientInfo(); 
-					memset(&clients[clientIndex2(cSock)].stream[0], 0, 8 * sizeof(requestInfo));
+					//clients[clientIndex2(cSock)] = clientInfo(); 
+					//memset(&clients[clientIndex2(cSock)].stream[0], 0, 8 * sizeof(requestInfo));
+					clients[clientIndex2(cSock)].clean();
 					clientInfo* watch = &clients[clientIndex2(cSock)];
 #ifdef COMPILE_WOLFSSL
 					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_SSL) {// SSL 

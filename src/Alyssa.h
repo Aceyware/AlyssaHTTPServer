@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <iostream>
+#include <string>
 
 #if __cplusplus > 201700L
 	#include <filesystem>
@@ -68,7 +69,6 @@ struct h2DebugShit {
 };
 #endif // _DEBUG
 
-
 typedef struct requestInfo {
 	unsigned int id; // Stream identifier.
 	char method; // HTTP method (GET, POST, etc.)
@@ -77,15 +77,23 @@ typedef struct requestInfo {
 	size_t rstart; size_t rend; // Range start and end.
 	unsigned short contentLength; // client payload content length.
 	char* qStr; // Query string location.
-	char path[maxpath] = { 0 };
-	char auth[maxauth] = { 0 };
-	char payload[maxpayload] = { 0 };
+	//char path[maxpath] = { 0 };
+	//char auth[maxauth] = { 0 };
+	//char payload[maxpayload] = { 0 };
+	std::string path = std::string(maxpath,'\0');
+	std::string auth = std::string(maxauth, '\0');
+	std::string payload = std::string(maxpayload, '\0');
 	unsigned short vhost; // Virtual host number
 
+	void clean() {
+		id = 0, method = 0, flags = 0, rstart = 0, rend = 0, contentLength = 0, qStr = NULL, vhost = 0,
+		path[0] = '\0', auth[0] = '\0', payload[0] = '\0';
+	}
+
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
-		unsigned short contentLength, char* qStr, unsigned short vhost):
-	method(method), f(f), fs(fs), flags(flags), rstart(rstart), rend(rend), contentLength(contentLength), qStr(qStr), vhost(vhost) {}
-	requestInfo(): method(0), f(NULL), fs(0), flags(0), rstart(0), rend(0), contentLength(0), qStr(0), vhost(0) {}
+		unsigned short contentLength, char* qStr, unsigned short vhost, unsigned int id):
+	method(method), f(f), fs(fs), flags(flags), rstart(rstart), rend(rend), contentLength(contentLength), qStr(qStr), vhost(vhost), id(id) {}
+	requestInfo(): method(0), f(NULL), fs(0), flags(0), rstart(0), rend(0), contentLength(0), qStr(0), vhost(0), id(0) {}
 } requestInfo;
 
 typedef struct clientInfo {
@@ -93,24 +101,29 @@ typedef struct clientInfo {
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
-	unsigned short vhost; // Virtual host number
 #ifdef _DEBUG
 	std::deque<h2DebugShit> frameSzLog;
 #endif // _DEBUG
 #ifdef COMPILE_WOLFSSL
 	WOLFSSL* ssl;
 #endif // COMPILE_WOLFSSL
+	void clean() {
+		flags = 0;
+		for (int i = 0; i < MAXSTREAMS; i++) {
+			stream[i].clean();
+		}
+	}
 
 	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost
 #ifdef COMPILE_WOLFSSL
 		, WOLFSSL* ssl
 #endif
-		): s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off), vhost(vhost)  
+		): s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off) 
 #ifdef COMPILE_WOLFSSL
 		, ssl(ssl)
 #endif
 	{}
-	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0), vhost(0)
+	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0)
 #ifdef COMPILE_WOLFSSL
 		, ssl(NULL)
 #endif

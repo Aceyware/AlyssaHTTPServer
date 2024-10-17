@@ -8,8 +8,8 @@ bool pathParsing(requestInfo* r, unsigned int end) {
 #pragma region pathParsing
 	// Request r->path parsing and sanity checks.
 	// Find query string first.
-	char* qs = (char*)memchr(r->path, '?', end);
-	if (qs) { r->qStr = qs + 1; qs[0] = '\0'; end = qs-r->path; }
+	char* qs = (char*)memchr(&r->path[0], '?', end);
+	if (qs) { r->qStr = qs + 1; qs[0] = '\0'; end = qs-&r->path[0]; }
 	// Percent decoding and level check
 	// 'i' is reused as counter.
 	int level = -1;// Level of directory client is requesting for. If they try to get above root 
