@@ -56,10 +56,14 @@ seFallback:
 	return 0;
 }
 
-// This one is an helper function to send error page to client
+// This one is an helper function to send error page to HTTP/1.1 client
 void errorPagesSender(clientInfo* c) {
 	switch (errorPagesEnabled) {
-		case 1: Send(c, &tBuf[c->cT][512], c->stream[0].fs); epollCtl(c->s, EPOLLIN | EPOLLONESHOT); break;
+		case 1: 
+			Send(c, &tBuf[c->cT][512], c->stream[0].fs); 
+			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			break;
 		case 2: epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); break; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
 		default: break;
 	}

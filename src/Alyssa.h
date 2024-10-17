@@ -257,4 +257,13 @@ bool pathParsing(requestInfo* r, unsigned int end);
 	#define CA_ERR_SERV -1
 #endif // COMPILE_CUSTOMACTIONS
 
-
+// Function macros
+// Close connection macro, used for closing connection when "Connection: close" is set or vhost is black hole.
+#ifdef COMPILE_WOLFSSL
+	#define closeConnection() \
+	epollRemove(c->s); closesocket(c->s);\
+	if (c->ssl) wolfSSL_free(c->ssl);\
+	return
+#else
+	#define closeConnection() epollRemove(c->s); closesocket(c->s); return
+#endif

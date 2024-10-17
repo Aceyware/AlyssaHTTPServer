@@ -375,7 +375,9 @@ void getInit(clientInfo* c) {
 			errorPagesSender(c);
 		}
 		else {// Reset polling.
-			h.conLength = 0; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			h.conLength = 0; serverHeaders(&h, c); 
+			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		}
 		return;
 	}
@@ -391,11 +393,7 @@ getRestart:
 				h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
 				return; break;
 			case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-				epollRemove(c->s); closesocket(c->s); 
-#ifdef COMPILE_WOLFSSL
-				if (c->ssl) wolfSSL_free(c->ssl);
-#endif // COMPILE_WOLFSSL
-				return; break;
+				closeConnection(); break;
 			default: break;
 		}
 	}
@@ -409,20 +407,23 @@ getRestart:
 		case CA_KEEP_GOING:
 			break;
 		case CA_REQUESTEND:
-			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); return;
+			shutdown(c->s, 2); closeConnection(); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; 
 			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
+			else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
 			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_RESTART:
 			goto getRestart;
 		case -2:
-			h.statusCode = 405; h.conLength = 0;
-			serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			h.statusCode = 405; h.conLength = 0; serverHeaders(&h, c); 
+			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		default:
 			std::terminate(); break;
@@ -440,6 +441,7 @@ openFilePoint:
 		}// It is a directory, check for index.html inside it.
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
+		else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
 		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
@@ -479,7 +481,8 @@ openFilePoint:
 				std::string payload = diMain(tBuf[c->cT], r->path);
 				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
 				serverHeaders(&h, c); if(r->method!=METHOD_HEAD) Send(c, payload.data(), h.conLength);
-				epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+				if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
 #endif // COMPILE_DIRINDEX
@@ -512,7 +515,9 @@ openFilePoint:
 					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
 					else if (r->fs < bufsize) {
 						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
-						fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT); 
+						fclose(r->f); r->fs = 0; 
+						if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
+						else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); 
 					}
 					else epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
 				}
@@ -520,6 +525,7 @@ openFilePoint:
 			else { // Open failed, 404
 				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 				if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
+				else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
 				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
@@ -528,6 +534,7 @@ openFilePoint:
 	else { // Requested path does not exists at all.
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled && r->method!=METHOD_HEAD) errorPagesSender(c);
+		else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
 		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
