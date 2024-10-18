@@ -154,8 +154,8 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			if (r->flags ^ FLAG_INVALID) {
 				if (*(unsigned short*)&c->stream[1] + (pos - bpos) < (MAXSTREAMS - 1) * sizeof(requestInfo)) {
 					// Append the new segment 
-					memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[bpos], pos - bpos);
-					*(unsigned short*)&c->stream[1] += (pos - bpos);
+					memcpy(c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data(), &buf[bpos], pos - bpos);
+					*(unsigned short*)c->stream[1].path.data() += (pos - bpos);
 					if (pos < sz) {// Line is completed.
 						// Parse the resulting line.
 						// int oldpos = pos;
@@ -172,7 +172,10 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 						return 666;
 					}
 				}
-				else r->flags |= FLAG_INVALID; // Line is too long and exceeds the available space.
+				else { // Line is too long and exceeds the available space.
+					r->flags |= FLAG_INVALID; r->method = -7;
+					*(unsigned short*)c->stream[1].path.data() = maxpath;
+				} 
 			}
 		}
 		for (; pos < sz;) {
@@ -206,18 +209,26 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			bpos = pos;
 		}
 		if (pos > bpos) {// Last line was incomplete
+			// UPDATE: 3.0-prerelease3 and later uses path buffer of second stream rather than memory off all later streams 
 			// HTTP/1.1 does not use more than 1 stream so the unused memory caused by other MAXSTREAMS-1 structs will be used in this regard
 			// Doing efficient software is not always about being a good programmer, it often requires to be a jackass and do hacks like this.
 			// I don't care what rust faggots will say. I don't need a compiler to spoonfed me. All languages are safe as long as you know 
 			// what you're doing. Fuck off and whine on somewhere else.
 
-			// First 2 bytes of second stream is used for size, rest is used as string of incomplete line.
+			// First 2 bytes of second stream path buffer is used for size, rest is used as string of incomplete line.
 
-			memcpy((char*)&c->stream[1]+2, &buf[bpos]+*(unsigned short*)&c->stream[1], pos - bpos); 
-			*(unsigned short*)&c->stream[1] += pos - bpos;
+			// First we will check if there is available space.
+			if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos)) { // It exceeds the buffer.
+				r->flags |= FLAG_INVALID; r->method = -7;
+				*(unsigned short*)c->stream[1].path.data() = maxpath;
+			}
+			else {
+				memcpy((char*)c->stream[1].path.data() + 2, &buf[bpos] + *(unsigned short*)c->stream[1].path.data(), pos - bpos);
+				*(unsigned short*)c->stream[1].path.data() += pos - bpos;
 
-			// Set the INCOMPLETE flag too, obv.
-			r->flags |= FLAG_INCOMPLETE;
+				// Set the INCOMPLETE flag too, obv.
+				r->flags |= FLAG_INCOMPLETE;
+			}
 		}
 		epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return 666;
