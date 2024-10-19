@@ -24,7 +24,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 			}																											
 		}																												
 	}																													
-	else if (r->flags ^ FLAG_INVALID) {										
+	else if (r->flags ^ FLAG_INVALID) {
 		switch (buf[bpos]) {												
 		case 'a':
 		case 'A': // Content negotiation (Accept-*) headers and Authorisation
@@ -47,18 +47,19 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 		case 'H':																										
 			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
 				bpos += 5;																								
-				if (numVhosts) {																						
-					for (int i = 1; i < numVhosts; i++) {																
-						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {			
+				if (numVhosts) {
+					for (int i = 1; i < numVhosts; i++) {
+						//printf("i: %d ",i);
+						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {
 							r->vhost = i; break;																		
-						}																								
-					}																									
-				}																										
-			}																											
-			break;																										
-		case 'i':																										
+						}
+					}
+				}
+			}
+			break;
+		case 'i':
 		case 'I': // Conditional headers.																				
-			break;																										
+			break;
 		case 'r':																										
 		case 'R':																										
 			if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {																
@@ -67,7 +68,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					else {																								
 						char* end = NULL;																				
 						r->rstart = strtoll(&buf[bpos], &end, 10);														
-						if ((int)&end < 32) r->rend = -1;																									
+						if ((size_t)&end < 32) r->rend = -1;
 					}																																		
 				}																																			
 				else { // Bad request.																														
@@ -78,7 +79,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 		default:																																			
 			break;																																			
 		}																																					
-	}																																						
+	}																																					return 0;
 }
 
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz) {
@@ -90,9 +91,9 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			char* oldbuf = buf; int oldpos = pos;
 			if (r->flags & FLAG_INCOMPLETE) { // Incomplete line is now completed. Parse it on its buffer.
 				// Append the new segment
-				memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[0], pos);
-				*(unsigned short*)&c->stream[1] += pos;
-				buf = (char*)&c->stream[1] + 2;
+				memcpy((char*)c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data(), &buf[0], pos);
+				*(unsigned short*)c->stream[1].path.data() += pos;
+				buf = (char*)c->stream[1].path.data() + 2;
 			}
 			pos = 0;
 			switch (buf[0]) {// Method
@@ -152,7 +153,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			// Read the comment on the if statement right below the next for loop.
 			while (buf[pos] > 31 && pos<sz) pos++;
 			if (r->flags ^ FLAG_INVALID) {
-				if (*(unsigned short*)&c->stream[1] + (pos - bpos) < (MAXSTREAMS - 1) * sizeof(requestInfo)) {
+				if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos) < (MAXSTREAMS - 1) * sizeof(requestInfo)) {
 					// Append the new segment 
 					memcpy(c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data(), &buf[bpos], pos - bpos);
 					*(unsigned short*)c->stream[1].path.data() += (pos - bpos);
@@ -165,7 +166,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 							default:
 								break;
 						}
-						*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
+						*(unsigned short*)c->stream[1].path.data() = 0; r->flags ^= FLAG_INCOMPLETE;
 					}
 					else { // Line being incomplete should mean end of buffer.
 						epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
@@ -178,6 +179,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				} 
 			}
 		}
+
 		for (; pos < sz;) {
 			if (buf[pos] > 31) { pos++; continue; }// Increase counter until end of line.
 			if (bpos == pos) { // End of headers.

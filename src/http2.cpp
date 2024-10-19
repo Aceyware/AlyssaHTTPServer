@@ -59,6 +59,7 @@ static short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads 
 // Huffman decoding code. Stolen straightly out of old Alyssa (as old as from the times of 1.x). 
 // I don't want to implement huffman decoding again and this code is somehow working so it's gonna stay for some time.
 // TODO: remove this and reimplement huffman in a clean way
+#include <math.h>
 static size_t btoull(std::string str, int size) {
 	size_t out = 0;
 	for (int i = str.size(); size >= 0; i--) {
@@ -197,7 +198,7 @@ void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz) {
 		buf += 16375; sz -= 16375;
 	}
 	*(unsigned short*)&header[1] = htons(sz); header[4] = END_STREAM; // Size and flags.
-	wolfSSL_send(c->ssl, header, 9, MSG_PARTIAL);
+	wolfSSL_send(c->ssl, header, 9, 0);
 	wolfSSL_send(c->ssl, buf, sz, 0); return;
 }
 

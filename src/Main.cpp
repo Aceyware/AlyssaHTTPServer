@@ -11,8 +11,8 @@ short rate = 4;
 short rate = 1;
 #endif
 
-HANDLE hThreads[threadCount] = { 0 };
-HANDLE tSemp[threadCount] = { 0 };
+AThread hThreads[threadCount] = { 0 };
+ASemaphore tSemp[threadCount] = { 0 };
 bool tLk[threadCount] = { 0 };
 struct epoll_event tShared[threadCount] = { 0 };
 char* tBuf[threadCount] = { 0 };
@@ -36,15 +36,20 @@ int epollRemove(SOCKET s) {
 	return epoll_ctl(ep, EPOLL_CTL_DEL, s, NULL);
 }
 
-int threadMain(int num) {
+void* threadMain(int num) {
 	while (true) {
+// Wait for semaphore to be fired.
+#ifdef _WIN32
 		WaitForSingleObject(tSemp[num], INFINITE);
+#else
+		sem_wait(&tSemp[num]);
+#endif
+
 #ifdef _DEBUG
 		printf("T: %d, S: %d, E: %s\r\n", num, tShared[num].data.fd, (tShared[num].events & EPOLLOUT) ? "OUT" : "IN");
 #endif // _DEBUG
 
 		clients[clientIndex(num)].cT = num; clientInfo* shit = &clients[clientIndex(num)];
-
 		if (tShared[num].events & EPOLLIN) { // Client sent something...
 			int received = Recv(&clients[clientIndex(num)], tBuf[num], bufsize); tBuf[num][received] = '\0';
 			if (received <= 0) { // Client closed connection.
@@ -186,11 +191,14 @@ int main() {
 		<<std::endl;
 
 	// Create threads
-	for (int i = 0; i < threadCount; i++) {
-#ifdef _WIN32
+	for (size_t i = 0; i < threadCount; i++) {
 		tBuf[i] = new char[bufsize]; memset(tBuf[i], 0, bufsize);
+#ifdef _WIN32
 		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
 		hThreads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadMain, (LPVOID)i, 0, NULL);
+#else
+		if(sem_init(&tSemp[i],0,0)) std::terminate();
+		if(pthread_create(&hThreads[i],NULL,(void *(*)(void *))(threadMain),(void*)i)) std::terminate();
 #endif
 	}
 
@@ -204,7 +212,8 @@ int main() {
 
 	struct sockaddr_in hints; int hintSize = sizeof(hints);
 	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_port = htons(PORT); hints.sin_family = AF_INET;
-	bind(listening, (struct sockaddr*)&hints, hintSize); listen(listening, SOMAXCONN);
+	if(bind(listening, (struct sockaddr*)&hints, hintSize)) std::terminate();
+	if(listen(listening, SOMAXCONN)) std::terminate();
 
 	int events = 0;
 	// Set up SSL
@@ -285,10 +294,10 @@ int main() {
 		for (int i = 0; i < events; i++) {
 			if (ee[i].events & EPOLLHUP) {
 #ifdef _DEBUG
-				printf("HUP: %d\r\n", ee[i].data.sock);
+				printf("HUP: %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
 				if (ee[i].data.fd == listening) abort();
-				closesocket(ee[i].data.sock); epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
+				closesocket(ee[i].data.fd); epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
 				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
 					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
 				}
@@ -296,8 +305,8 @@ int main() {
 			else if (ee[i].events & EPOLLIN) {
 				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) {// New connection incoming
 					struct sockaddr_in client; int _len = hintSize;
-					SOCKET cSock = accept(ee[i].data.sock, (struct sockaddr*)&client, &_len);
-					element.data.fd = cSock; element.data.sock = cSock;
+					SOCKET cSock = accept(ee[i].data.fd, (struct sockaddr*)&client, (socklen_t*)&_len);
+					element.data.fd = cSock;
 					element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
 					if (cSock == INVALID_SOCKET) continue;
 					if (cSock / rate > maxclient) {
@@ -339,13 +348,18 @@ int main() {
 				else {// A client sent something.
 					// Search for a free thread.
 #ifdef _DEBUG
-					printf("IN : %d\r\n", ee[i].data.sock);
+					printf("IN : %d\r\n", ee[i].data.fd);
 
 #endif // _DEBUG
 					bool threadFound = 0;
 					for (int k = 0; k < threadCount; k++) {
 						if (!tLk[k]) {
-							tShared[k] = ee[i]; ReleaseSemaphore(tSemp[k], 1, NULL); 
+							tShared[k] = ee[i];
+#ifdef _WIN32
+							ReleaseSemaphore(tSemp[k], 1, NULL);
+#else
+							sem_post(&tSemp[k]);
+#endif
 							tLk[k] = 1; 
 #ifdef _DEBUG
 							printf("Thread %d: locked\r\n", k);
@@ -357,21 +371,26 @@ int main() {
 					}
 					if (!threadFound) {
 #ifdef _DEBUG
-						printf("NO threads found for %d\r\n", ee[i].data.sock);
+						printf("NO threads found for %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
 						ee[i].events = EPOLLIN | EPOLLONESHOT;
-						epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.sock, &ee[i]);
+						epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
 					}
 				}
 			}
 			else if (ee[i].events & EPOLLOUT) {
 #ifdef _DEBUG
-				printf("OUT: %d\r\n", ee[i].data.sock);
+				printf("OUT: %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
 				bool threadFound = 0;
 				for (int k = 0; k < threadCount; k++) {
 					if (!tLk[k]) {
-						tShared[k] = ee[i]; ReleaseSemaphore(tSemp[k], 1, NULL);
+						tShared[k] = ee[i];
+#ifdef _WIN32
+						ReleaseSemaphore(tSemp[k], 1, NULL);
+#else
+						sem_post(&tSemp[k]);
+#endif
 						tLk[k] = 1; 
 #ifdef _DEBUG
 						printf("Thread %d: locked\r\n", k);
@@ -382,10 +401,10 @@ int main() {
 				}
 				if (!threadFound) {
 #ifdef _DEBUG
-					printf("NO threads found for %d\r\n", ee[i].data.sock);
+					printf("NO threads found for %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
 					ee[i].events = EPOLLOUT | EPOLLONESHOT;
-					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.sock, &ee[i]);
+					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
 				}
 
 			}

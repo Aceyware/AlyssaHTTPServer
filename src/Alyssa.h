@@ -27,13 +27,33 @@
 	#include <sys/socket.h>
 	#include <sys/types.h>
 	#include <arpa/inet.h>
-	#error ğ
+	#include <sys/epoll.h>
+	#include <semaphore.h>
+	#include <pthread.h>
+	#define SOCKET int
+	#define HANDLE int
+	#define closesocket close
+	#define INVALID_SOCKET -1
+	#define SOCKET_ERROR -1
+	#define INVALID_HANDLE_VALUE -1
+	#define __debugbreak() std::terminate()
 #endif // _WIN32
+
+// Typedefs
+#ifdef _WIN32
+	#define ASemaphore HANDLE
+	#define AThread HANDLE
+#else
+	#define ASemaphore sem_t
+	#define AThread pthread_t
+#endif
 
 #ifdef COMPILE_WOLFSSL
 	#ifdef _WIN32
 		#include "user_settings.h"
 		#pragma comment(lib,"wolfssl.lib")
+	#else
+		#include <wolfssl/options.h>
 	#endif // _WIN32
 	#include <wolfssl/ssl.h>
 	#define sslCertPath "./crt.pem"
@@ -41,7 +61,7 @@
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease2.8"
+#define version "3.0-prerelease3"
 #define htroot ".\\htroot\\"
 #define htrespath "/res/"
 #define maxpath 256
