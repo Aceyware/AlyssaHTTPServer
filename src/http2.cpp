@@ -231,7 +231,7 @@ void goAway(clientInfo* c, char code) {
 	wolfSSL_send(c->ssl, frame, 17, 0);
 	// Close the connection.
 	wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
-	wolfSSL_free(c->ssl); epollRemove(c->s); closesocket(c->s);
+	wolfSSL_free(c->ssl); epollRemove(c); closesocket(c->s);
 	// Close and delete stream datas.
 	for (int i = 0; i < 8; i++) {
 		c->stream[i].fs = 0;
@@ -423,11 +423,11 @@ h2getRestart:
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
-			h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			c->stream[streamIndex].id = 0;
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending anything back
-			epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
+			epollRemove(c); closesocket(c->s); wolfSSL_free(c->ssl);
 			// Close and delete stream datas.
 			for (int j = 0; j < 8; j++) {
 				c->stream[j].fs = 0;
@@ -678,11 +678,11 @@ h2postRestart:
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
-			h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			h.statusCode = 302; h2serverHeaders(c, &h, s); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			c->stream[streamIndex].id = 0;
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending anything back
-			epollRemove(c->s); closesocket(c->s); wolfSSL_free(c->ssl);
+			epollRemove(c); closesocket(c->s); wolfSSL_free(c->ssl);
 			// Close and delete stream datas.
 			for (int j = 0; j < 8; j++) {
 				c->stream[j].fs = 0;
@@ -825,7 +825,7 @@ void parseFrames(clientInfo* c, int sz) {
 				__debugbreak();
 				// Close the connection.
 				wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
-				wolfSSL_free(c->ssl); epollRemove(c->s); closesocket(c->s);
+				wolfSSL_free(c->ssl); epollRemove(c); closesocket(c->s);
 				// Close and delete stream datas.
 				for (int j = 0; j < 8; j++) {
 					c->stream[j].fs = 0;
@@ -843,8 +843,8 @@ void parseFrames(clientInfo* c, int sz) {
 		}
 		i += fsz + 9;
 	}
-	if (!c->activeStreams) epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
-	else epollCtl(c->s, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
+	if (!c->activeStreams) epollCtl(c, EPOLLIN | EPOLLONESHOT);
+	else epollCtl(c, EPOLLIN | EPOLLOUT | EPOLLONESHOT);
 }
 
 /// <summary>

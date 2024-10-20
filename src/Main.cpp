@@ -13,7 +13,7 @@ short rate = 1;
 
 AThread hThreads[threadCount] = { 0 };
 ASemaphore tSemp[threadCount] = { 0 };
-bool tLk[threadCount] = { 0 };
+std::atomic_bool tLk[threadCount] = { 0 };
 struct epoll_event tShared[threadCount] = { 0 };
 char* tBuf[threadCount] = { 0 };
 struct clientInfo* clients = NULL;
@@ -26,15 +26,6 @@ HANDLE ep;
 #ifdef COMPILE_WOLFSSL
 WOLFSSL_CTX* ctx; bool enableSSL = 1;
 #endif // COMPILE_WOLFSSL
-
-
-int epollCtl(SOCKET s, int e) {
-	struct epoll_event ee; ee.data.fd = s;
-	ee.events = e; return epoll_ctl(ep, EPOLL_CTL_MOD, s, &ee);
-}
-int epollRemove(SOCKET s) {
-	return epoll_ctl(ep, EPOLL_CTL_DEL, s, NULL);
-}
 
 void* threadMain(int num) {
 	while (true) {
@@ -53,11 +44,7 @@ void* threadMain(int num) {
 		if (tShared[num].events & EPOLLIN) { // Client sent something...
 			int received = Recv(&clients[clientIndex(num)], tBuf[num], bufsize); tBuf[num][received] = '\0';
 			if (received <= 0) { // Client closed connection.
-				closesocket(tShared[num].data.fd); 
-#ifdef COMPILE_WOLFSSL // Delete SSL object.
-				if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
-#endif // COMPILE_WOLFSSL // Delete SSL object.
-				epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, NULL);
+				clients[clientIndex(num)].epollNext = 31;
 			}
 			else if (shit->flags & FLAG_HTTP2) {
 				parseFrames(&clients[clientIndex(num)], received);
@@ -65,12 +52,7 @@ void* threadMain(int num) {
 			else {
 				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
 					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL); 
-						closesocket(tShared[num].data.fd);
-#ifdef COMPILE_WOLFSSL // Delete SSL object.
-						if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
-#endif // COMPILE_WOLFSSL // Delete SSL object.
-						epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, NULL);
-						break;
+						clients[clientIndex(num)].epollNext = 31; break;
 					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
 #ifdef COMPILE_CUSTOMACTIONS
@@ -123,60 +105,60 @@ void* threadMain(int num) {
 						}
 					}
 				}
-				if (!clients[clientIndex(num)].activeStreams) { 
-					tShared[num].events = EPOLLIN | EPOLLONESHOT; }
-				else { 
-					tShared[num].events = EPOLLIN | EPOLLOUT | EPOLLONESHOT; }
-				epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num]);
+				if (!clients[clientIndex(num)].activeStreams) 
+					clients[clientIndex(num)].epollNext = EPOLLIN | EPOLLONESHOT;
+				else
+					clients[clientIndex(num)].epollNext = EPOLLIN | EPOLLOUT | EPOLLONESHOT; 
 			}
-			else {
+			else {// HTTP/1.1
 				if (clients[clientIndex(num)].stream[0].fs > 4096) {// Remaining of file is still bigger than buffer
 					fread(tBuf[num], 4096, 1, clients[clientIndex(num)].stream[0].f);
 					if (Send(&clients[clientIndex(num)], tBuf[num], 4096) <= 0) {// Connection lost
-						fclose(clients[clientIndex(num)].stream[0].f);
-						if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
-						closesocket(tShared[num].data.fd);
-	#ifdef COMPILE_WOLFSSL // Delete SSL object.
-						if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
-	#endif // COMPILE_WOLFSSL // Delete SSL object.
+						clients[clientIndex(num)].epollNext = 31;
 						goto handleOut;
 					}
-					tShared[num].events = EPOLLOUT | EPOLLHUP | EPOLLONESHOT; // Reset polling, remember that it's oneshot because
+					clients[clientIndex(num)].epollNext = EPOLLOUT | EPOLLONESHOT; // Reset polling, remember that it's oneshot because
 																			  // otherwise it is going to handle the same client multiple
 																			  // times at same time from all threads.
-					if (epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num])) abort();
 				}
 				else { // Smaller than buffer, read it till the end and close.
 					fread(tBuf[num], clients[clientIndex(num)].stream[0].fs, 1, clients[clientIndex(num)].stream[0].f);
 					if (Send(&clients[clientIndex(num)], tBuf[num], clients[clientIndex(num)].stream[0].fs) <= 0) {// Connection lost
-						if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
-						closesocket(tShared[num].data.fd);
-	#ifdef COMPILE_WOLFSSL // Delete SSL object.
-						if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
-	#endif // COMPILE_WOLFSSL // Delete SSL object.
+						clients[clientIndex(num)].epollNext = 31;
 						goto handleOut;
 					}
 					fclose(clients[clientIndex(num)].stream[0].f);
 					if (clients[clientIndex(num)].flags & FLAG_CLOSE) { // Client sent "Connection: close" header, so we will close connection after request ends.
-						if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
-						shutdown(tShared[num].data.fd, 2); closesocket(tShared[num].data.fd);
-	#ifdef COMPILE_WOLFSSL // Delete SSL object.
-						if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
-	#endif // COMPILE_WOLFSSL // Delete SSL object.
+						clients[clientIndex(num)].epollNext = 31;
 					}
 					else {
-						tShared[num].events = EPOLLIN | EPOLLHUP; // Set polling to reading back.
-						if (epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num])) abort();
+						clients[clientIndex(num)].epollNext = EPOLLIN | EPOLLONESHOT; // Set polling to reading back.
 					}
 				}
 			}
 		}
-handleOut:
-		tLk[num] = 0; clients[clientIndex(num)].cT = 0;
+	handleOut:
+		// Reset polling or disconnect.
+		clients[clientIndex(num)].cT = -1;
+		if (!clients[clientIndex(num)].epollNext) __debugbreak();
+		else if (clients[tShared[num].data.fd / rate].epollNext==31) { // Close connection.
+			if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
+#ifdef COMPILE_WOLFSSL // Delete SSL object.
+			if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
+#endif // COMPILE_WOLFSSL // Delete SSL object.
+			clients[tShared[num].data.fd / rate].epollNext = 0;
+			shutdown(tShared[num].data.fd, 2); closesocket(tShared[num].data.fd);
+			tLk[num] = 0;
+		}
+		else { // Set polling
+			tShared[num].events = clients[clientIndex(num)].epollNext; 
+			clients[tShared[num].data.fd / rate].epollNext = 0;
+			if (epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num])) abort();
+			tLk[num] = 0;
+		}
 #ifdef _DEBUG
 		printf("Thread %d: unlocked\r\n", num);
 #endif // _DEBUG
-
 	}
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
@@ -204,8 +186,8 @@ int main() {
 
 	// Set up sockets
 #ifdef _WIN32
-	WSADATA wd; int wsaver = MAKEWORD(2, 2); char buf[4096] = { 0 };
-	if (WSAStartup(wsaver, &wd)) abort();
+	WSADATA wd;
+	if (WSAStartup(MAKEWORD(2, 2), &wd)) abort();
 #endif // _WIN32
 	SOCKET listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (listening == INVALID_SOCKET) abort();
@@ -290,17 +272,22 @@ int main() {
 
 	// Start polling.
 	while (true) {
-		events = epoll_wait(ep, ee, 1, -1);
+		events = epoll_wait(ep, ee, 256, -1);
+		if(events<0) {
+			perror("epoll: "); std::terminate();
+		}
 		for (int i = 0; i < events; i++) {
 			if (ee[i].events & EPOLLHUP) {
 #ifdef _DEBUG
 				printf("HUP: %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
 				if (ee[i].data.fd == listening) abort();
-				closesocket(ee[i].data.fd); epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
+				epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
 				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
 					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
 				}
+				shutdown(ee[i].data.fd, 2); closesocket(ee[i].data.fd);
+				clients[clientIndex2(ee[i].data.fd)].epollNext = 0;
 			}
 			else if (ee[i].events & EPOLLIN) {
 				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) {// New connection incoming

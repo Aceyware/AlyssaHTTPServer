@@ -1,16 +1,17 @@
 #pragma once
 #include <stdio.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <time.h>
 
+#include <atomic>
 #include <deque>
 #include <iostream>
 #include <string>
 
 #if __cplusplus > 201700L
 	#include <filesystem>
+#else
+	#include <sys/stat.h>
 #endif
 
 #include "AlyssaBuildConfig.h"
@@ -22,6 +23,7 @@
 	#pragma comment(lib,"WS2_32.lib")
 	#define stat _stat64
 	#define S_IFDIR _S_IFDIR
+	#define SendRecvFlags 0
 #else
 	#include <unistd.h>
 	#include <sys/socket.h>
@@ -37,6 +39,7 @@
 	#define SOCKET_ERROR -1
 	#define INVALID_HANDLE_VALUE -1
 	#define __debugbreak() std::terminate()
+	#define SendRecvFlags MSG_NOSIGNAL
 #endif // _WIN32
 
 // Typedefs
@@ -67,7 +70,7 @@
 #define maxpath 256
 #define maxauth 128
 #define maxpayload 256
-#define maxclient 256
+#define maxclient 1024
 #define MAXSTREAMS 8
 #define threadCount 8
 #define PORT 9999
@@ -121,6 +124,16 @@ typedef struct clientInfo {
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
+	/* Next epoll mode to set. Normally it was set on functions itself but
+	apparently this causes a race condition. Say there's an user agent in an
+	ideal world that has 0 latencies and currently has socket number set to X.
+	In old implementation, server resets epoll or disconnects it before it's tasks end,
+	user agent does another requests, or reconnects and OS assings same socket number 'X',
+	another thread starts to handle it at the same time and BOOM!
+	In Windows this wasn't as problematic because Windows assigns same socket number 
+	less aggresive than linux does. */
+	unsigned int epollNext = 0; 
+
 #ifdef _DEBUG
 	std::deque<h2DebugShit> frameSzLog;
 #endif // _DEBUG
@@ -238,12 +251,12 @@ void errorPagesSender(clientInfo* c);
 
 #ifdef COMPILE_WOLFSSL
 inline int Send(clientInfo* c, const char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, 0);
-	else return send(c->s, buf, sz, 0);
+	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, SendRecvFlags);
+	else return send(c->s, buf, sz, SendRecvFlags);
 }
 inline int Recv(clientInfo* c, char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, 0);
-	else return recv(c->s, buf, sz, 0);
+	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, SendRecvFlags);
+	else return recv(c->s, buf, sz, SendRecvFlags);
 }
 #else
 	#define Send(a,b,c) send(a->s,b,c,0)
@@ -270,8 +283,10 @@ static char alpn[] = "h2,http/1.1,http/1.0";
 #endif // COMPILE_HTTP2
 
 // Misc. functions
-int epollCtl(SOCKET s, int e);
-int epollRemove(SOCKET s);
+//int epollCtl(SOCKET s, int e);
+//int epollRemove(SOCKET s);
+#define epollCtl(c,e) c->epollNext=e
+#define epollRemove(c) c->epollNext=31
 const char* fileMime(const char* filename);
 bool pathParsing(requestInfo* r, unsigned int end);
 
@@ -292,11 +307,3 @@ bool pathParsing(requestInfo* r, unsigned int end);
 
 // Function macros
 // Close connection macro, used for closing connection when "Connection: close" is set or vhost is black hole.
-#ifdef COMPILE_WOLFSSL
-	#define closeConnection() \
-	epollRemove(c->s); closesocket(c->s);\
-	if (c->ssl) wolfSSL_free(c->ssl);\
-	return
-#else
-	#define closeConnection() epollRemove(c->s); closesocket(c->s); return
-#endif

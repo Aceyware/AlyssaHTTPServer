@@ -61,10 +61,10 @@ void errorPagesSender(clientInfo* c) {
 	switch (errorPagesEnabled) {
 		case 1: 
 			Send(c, &tBuf[c->cT][512], c->stream[0].fs); 
-			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			break;
-		case 2: epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); break; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
+		case 2: epollCtl(c, EPOLLOUT | EPOLLONESHOT); break; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
 		default: break;
 	}
 	return;
@@ -87,7 +87,7 @@ char h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz) {
 			return 1;
 			break;
 		}
-		case 2:	c->activeStreams++;	epollCtl(c->s, EPOLLOUT | EPOLLIN | EPOLLONESHOT); return 2; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
+		case 2:	c->activeStreams++;	epollCtl(c, EPOLLOUT | EPOLLIN | EPOLLONESHOT); return 2; // In case of custom pages there's nothing other than setting polling to do. Server will handle the rest.
 		default: break;
 	}
 	return 0;

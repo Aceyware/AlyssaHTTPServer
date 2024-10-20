@@ -140,7 +140,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				*(unsigned short*)&c->stream[1] += pos;
 			}
 			else r->flags |= FLAG_INVALID; // Line is too long and exceeds the available space.
-			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return 666;
 		}
 	}
@@ -169,7 +169,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 						*(unsigned short*)c->stream[1].path.data() = 0; r->flags ^= FLAG_INCOMPLETE;
 					}
 					else { // Line being incomplete should mean end of buffer.
-						epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+						epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 						return 666;
 					}
 				}
@@ -232,7 +232,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->flags |= FLAG_INCOMPLETE;
 			}
 		}
-		epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return 666;
 	}
 	else {// Received remainder of payload, append it.
@@ -389,8 +389,8 @@ void getInit(clientInfo* c) {
 		}
 		else {// Reset polling.
 			h.conLength = 0; serverHeaders(&h, c); 
-			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		}
 		return;
 	}
@@ -403,10 +403,10 @@ getRestart:
 				break;
 			case 1: // Redirecting virtual host.
 				h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
-				h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+				h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				return; break;
 			case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-				closeConnection(); break;
+				epollRemove(c); break;
 			default: break;
 		}
 	}
@@ -420,23 +420,23 @@ getRestart:
 		case CA_KEEP_GOING:
 			break;
 		case CA_REQUESTEND:
-			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); closeConnection(); return;
+			shutdown(c->s, 2); epollRemove(c); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; 
 			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-			else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_RESTART:
 			goto getRestart;
 		case -2:
 			h.statusCode = 405; h.conLength = 0; serverHeaders(&h, c); 
-			if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		default:
 			std::terminate(); break;
@@ -455,7 +455,7 @@ openFilePoint:
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 		else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
 	else {
@@ -473,10 +473,10 @@ openFilePoint:
 				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
 			}
 			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-			h.statusCode = 206; serverHeaders(&h, c); epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
+			h.statusCode = 206; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
 		}
 		else {
-			h.statusCode = 200; serverHeaders(&h, c); epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+			h.statusCode = 200; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
 		}
 		return;
 	}
@@ -494,14 +494,14 @@ openFilePoint:
 				std::string payload = diMain(tBuf[c->cT], r->path);
 				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
 				serverHeaders(&h, c); if(r->method!=METHOD_HEAD) Send(c, payload.data(), h.conLength);
-				if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+				if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+				else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
 #endif // COMPILE_DIRINDEX
 			h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 			if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		}
 		else { // It is a file. Open and go.
@@ -518,28 +518,30 @@ openFilePoint:
 					}
 					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
 					h.statusCode = 206; serverHeaders(&h, c); 
-					if(r->method!=METHOD_HEAD) epollCtl(c->s, EPOLLOUT | EPOLLONESHOT);
-					else { fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT);}
+					if(r->method!=METHOD_HEAD) epollCtl(c, EPOLLOUT | EPOLLONESHOT);
+					else { fclose(r->f); r->fs = 0; epollCtl(c, EPOLLIN | EPOLLONESHOT);}
+					return;
 				}
 				else {
 					h.statusCode = 200;  r->fs = std::filesystem::file_size(tBuf[c->cT]); h.conLength = r->fs;
 					serverHeaders(&h, c); 
-					if(r->method==METHOD_HEAD) { fclose(r->f); r->fs = 0; epollCtl(c->s, EPOLLIN | EPOLLONESHOT); }
+					if(r->method==METHOD_HEAD) { fclose(r->f); r->fs = 0; epollCtl(c, EPOLLIN | EPOLLONESHOT); }
 					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
 					else if (r->fs < bufsize) {
 						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
 						fclose(r->f); r->fs = 0; 
-						if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-						else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); 
+						if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+						else epollCtl(c, EPOLLIN | EPOLLONESHOT); 
 					}
-					else epollCtl(c->s, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+					else epollCtl(c, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
+					return;
 				}
 			}
 			else { // Open failed, 404
 				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 				if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-				else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-				else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+				else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+				else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
 			}
 		}
@@ -547,8 +549,8 @@ openFilePoint:
 	else { // Requested path does not exists at all.
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled && r->method!=METHOD_HEAD) errorPagesSender(c);
-		else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-		else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
 #endif
@@ -568,14 +570,10 @@ void postInit(clientInfo* c) {
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[c->stream[0].vhost].target; // Reusing content-type variable for redirection path.
-			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c->s, EPOLLIN | EPOLLONESHOT);
+			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-			epollRemove(c->s); closesocket(c->s);
-#ifdef COMPILE_WOLFSSL
-			if (c->ssl) wolfSSL_free(c->ssl);
-#endif // COMPILE_WOLFSSL
-			return; break;
+			epollRemove(c); return; break;
 		default: break;
 		}
 	}
@@ -589,17 +587,18 @@ postRestart:
 		case CA_KEEP_GOING:
 			h.statusCode = 404; h.conLength = 0;
 			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_REQUESTEND:
-			epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			c->stream[0].flags = 0;
 			return;
 		case CA_CONNECTIONEND:
 			shutdown(c->s, 2); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0;
 			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
-			else epollCtl(c->s, EPOLLIN | EPOLLONESHOT); // Reset polling.
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_RESTART:
 			goto postRestart;

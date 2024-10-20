@@ -132,7 +132,7 @@ static int8_t caAuth(const char* auth, char* path) {
 	else {\
 		serverHeaders(&h, (clientInfo*)&c); \
 		if (errorPagesEnabled) errorPagesSender((clientInfo*)&c); \
-		else epollCtl(c.s, EPOLLIN | EPOLLONESHOT);\
+		else epollCtl(((clientInfo*)(&c)), EPOLLIN | EPOLLONESHOT);\
 	}\
 
 static int caExec(const clientInfo& c, const requestInfo& r, char* buf, int sz) {
