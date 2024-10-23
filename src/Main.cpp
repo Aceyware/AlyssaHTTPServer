@@ -11,11 +11,11 @@ short rate = 4;
 short rate = 1;
 #endif
 
-AThread hThreads[threadCount] = { 0 };
-ASemaphore tSemp[threadCount] = { 0 };
-std::atomic_bool tLk[threadCount] = { 0 };
-struct epoll_event tShared[threadCount] = { 0 };
-char* tBuf[threadCount] = { 0 };
+std::vector<AThread> hThreads(threadCount);
+std::vector<ASemaphore> tSemp(threadCount);
+std::vector<std::atomic_bool> tLk(threadCount);
+std::vector<struct epoll_event> tShared(threadCount);
+std::vector<char*> tBuf(threadCount,NULL);
 struct clientInfo* clients = NULL;
 
 #define clientIndex(num) tShared[num].data.fd/rate
@@ -179,10 +179,19 @@ int main() {
 		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
 		hThreads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadMain, (LPVOID)i, 0, NULL);
 #else
-		if(sem_init(&tSemp[i],0,0)) std::terminate();
-		if(pthread_create(&hThreads[i],NULL,(void *(*)(void *))(threadMain),(void*)i)) std::terminate();
+		if(sem_init(&tSemp[i],0,0)) {
+			std::cout<<"Semaphore setup failed!\n"; std::terminate();
+		}
+		if(pthread_create(&hThreads[i],NULL,(void *(*)(void *))(threadMain),(void*)i)) {
+			std::cout<<"Thread creation failed!\n"; std::terminate();
+		}
 #endif
 	}
+
+#ifndef _WIN32
+	// Disable SIGPIPE signals on *nixes
+	signal(SIGPIPE, SIG_IGN);
+#endif
 
 	// Set up sockets
 #ifdef _WIN32
@@ -190,7 +199,9 @@ int main() {
 	if (WSAStartup(MAKEWORD(2, 2), &wd)) abort();
 #endif // _WIN32
 	SOCKET listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (listening == INVALID_SOCKET) abort();
+	if (listening == INVALID_SOCKET){
+		std::cout<<"Listening socket creation failed\n"; std::terminate();
+	}
 
 	struct sockaddr_in hints; int hintSize = sizeof(hints);
 	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_port = htons(PORT); hints.sin_family = AF_INET;

@@ -7,6 +7,7 @@
 #include <deque>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #if __cplusplus > 201700L
 	#include <filesystem>
@@ -23,14 +24,20 @@
 	#pragma comment(lib,"WS2_32.lib")
 	#define stat _stat64
 	#define S_IFDIR _S_IFDIR
-	#define SendRecvFlags 0
 #else
 	#include <unistd.h>
 	#include <sys/socket.h>
 	#include <sys/types.h>
 	#include <arpa/inet.h>
 	#include <sys/epoll.h>
-	#include <semaphore.h>
+	#ifdef __APPLE__ // macOS doesn't support unnamed semaphores, https://github.com/stanislaw/posix-macos-addons implements it.
+		#include <posix-macos-semaphore.h>	
+		#define sem_init mac_sem_init
+		#define sem_wait mac_sem_wait
+		#define sem_port mac_sem_post
+	#else
+		#include <semaphore.h>
+	#endif
 	#include <pthread.h>
 	#define SOCKET int
 	#define HANDLE int
@@ -39,7 +46,6 @@
 	#define SOCKET_ERROR -1
 	#define INVALID_HANDLE_VALUE -1
 	#define __debugbreak() std::terminate()
-	#define SendRecvFlags MSG_NOSIGNAL
 #endif // _WIN32
 
 // Typedefs
@@ -66,24 +72,58 @@
 // Constants (will be removed)
 #define version "3.0-prerelease3"
 #define htroot ".\\htroot\\"
+#define _respath ".\\res\\"
 #define htrespath "/res/"
-#define maxpath 256
-#define maxauth 128
-#define maxpayload 256
-#define maxclient 1024
+extern unsigned int maxpath;
+extern unsigned int maxauth;
+extern unsigned int maxpayload;
+extern unsigned int maxclient;
 #define MAXSTREAMS 8
-#define threadCount 8
+extern unsigned short threadCount;
+//extern unsigned short PORT;
 #define PORT 9999
-#define errorPagesEnabled 1
-#define bufsize 16600
-#define hsts 1
-#define hascsp 1
+extern int8_t errorPagesEnabled;
+extern unsigned int bufsize;
+extern bool hsts;
+extern bool hascsp;
 #define csp "connect-src https://aceyware.net;"
-#define dirIndexEnabled 1
-#define customactions 2
+extern bool dirIndexEnabled;
+extern int8_t customactions;
 
 extern struct clientInfo* clients;
-extern char* tBuf[threadCount];
+extern std::vector<char*> tBuf;
+
+enum clientFlags {
+	// RequestInfo flags regarding to header parsing
+	FLAG_FIRSTLINE = 1,
+	FLAG_HEADERSEND = 2,
+	FLAG_INVALID = 4,
+	FLAG_DENIED = 8, // may be removed.
+	FLAG_INCOMPLETE = 16,
+	FLAG_CLOSE = 32,
+	// Other RequestInfo flags
+	FLAG_CHUNKED = 64,
+	FLAG_EXPECT = 128,
+	// Server headers
+	FLAG_NOERRORPAGE = 1,
+	FLAG_HASRANGE = 2,
+	FLAG_NOCACHE = 4,
+	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
+	// Client Info Flags
+	FLAG_LISTENING = 1,
+	FLAG_SSL = 2,
+	FLAG_HTTP2 = 4,
+	FLAG_DELETE = 8,
+	FLAG_HEADERS_INDEXED = 16
+};
+
+enum methods {
+	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
+};
+
+///
+/// Structs
+/// 
 
 #ifdef _DEBUG
 struct h2DebugShit {
@@ -184,34 +224,6 @@ static vhost virtualHosts[4] = {
 
 #define numVhosts 4
 
-enum clientFlags {
-	// RequestInfo flags regarding to header parsing
-	FLAG_FIRSTLINE = 1,
-	FLAG_HEADERSEND = 2,
-	FLAG_INVALID = 4,
-	FLAG_DENIED = 8, // may be removed.
-	FLAG_INCOMPLETE = 16,
-	FLAG_CLOSE = 32,
-	// Other RequestInfo flags
-	FLAG_CHUNKED = 64,
-	FLAG_EXPECT = 128,
-	// Server headers
-	FLAG_ERRORPAGE = 1,
-	FLAG_HASRANGE = 2,
-	FLAG_NOCACHE = 4,
-	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
-	// Client Info Flags
-	FLAG_LISTENING = 1,
-	FLAG_SSL = 2,
-	FLAG_HTTP2 = 4,
-	FLAG_DELETE = 8,
-	FLAG_HEADERS_INDEXED = 16
-};
-
-enum methods {
-	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
-};
-
 extern char* predefinedHeaders; extern int predefinedSize;
 
 typedef struct respHeaders {
@@ -226,14 +238,12 @@ typedef struct respHeaders {
 	respHeaders(): statusCode(0), conLength(0), conType(NULL), lastMod(0), flags(0) {}
 } respHeaders;
 
-//enum MyEnum {
-//	STATUS_200,
-//	STATUS_400,
-//	STATUS_404,
-//	STATUS_500
-//};
-//
-//const char** responseTypes
+typedef struct listeningPort {
+	unsigned short port; char flags; char owner;
+	listeningPort(unsigned short port, char flags, char owner) :port(port), flags(flags), owner(owner) {}
+	listeningPort(unsigned short port, char flags) :port(port), flags(flags), owner(0) {}
+	listeningPort():port(0),flags(0),owner(0){}
+};
 
 // HTTP/1.1 functions.
 void setPredefinedHeaders();
@@ -251,12 +261,12 @@ void errorPagesSender(clientInfo* c);
 
 #ifdef COMPILE_WOLFSSL
 inline int Send(clientInfo* c, const char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, SendRecvFlags);
-	else return send(c->s, buf, sz, SendRecvFlags);
+	if (c->flags & FLAG_SSL) return wolfSSL_send(c->ssl, buf, sz, 0);
+	else return send(c->s, buf, sz, 0);
 }
 inline int Recv(clientInfo* c, char* buf, int sz) {
-	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, SendRecvFlags);
-	else return recv(c->s, buf, sz, SendRecvFlags);
+	if (c->flags & FLAG_SSL) return wolfSSL_recv(c->ssl, buf, sz, 0);
+	else return recv(c->s, buf, sz, 0);
 }
 #else
 	#define Send(a,b,c) send(a->s,b,c,0)
@@ -304,6 +314,3 @@ bool pathParsing(requestInfo* r, unsigned int end);
 	#define CA_RESTART 4
 	#define CA_ERR_SERV -1
 #endif // COMPILE_CUSTOMACTIONS
-
-// Function macros
-// Close connection macro, used for closing connection when "Connection: close" is set or vhost is black hole.
