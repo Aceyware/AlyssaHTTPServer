@@ -193,5 +193,5 @@ cgiDataSend:
 	else {
 		Send(c, "0\r\n\r\n", 5); // Send empty chunk indicating end of data and exit. 
 	}
-	subprocess_destroy(&subprocess); 
+	subprocess_destroy(&subprocess); return 0;
 }

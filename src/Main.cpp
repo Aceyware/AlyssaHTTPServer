@@ -21,10 +21,10 @@ struct clientInfo* clients = NULL;
 #define clientIndex(num) tShared[num].data.fd/rate
 #define clientIndex2(fd) fd/rate
 
-HANDLE ep;
+HANDLE ep; // epoll handle
 
 #ifdef COMPILE_WOLFSSL
-WOLFSSL_CTX* ctx; bool enableSSL = 1;
+WOLFSSL_CTX* ctx;
 #endif // COMPILE_WOLFSSL
 
 void* threadMain(int num) {
@@ -166,11 +166,13 @@ void* threadMain(int num) {
 
 int main() {
 	// Print product info and version
-	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version " " 
+	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version
 #ifdef _DEBUG
-		"(debug) "
+		" (debug)"
 #endif
 		<<std::endl;
+	
+	readConfig("Alyssa.cfg");
 
 	// Create threads
 	for (size_t i = 0; i < threadCount; i++) {
@@ -193,78 +195,85 @@ int main() {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
+	// Set up epoll
+	ep = epoll_create1(0);
+	if (ep == INVALID_HANDLE_VALUE) abort();
+	struct epoll_event ee[256] = { 0 };
+	struct epoll_event element = { 0 }; // This one is used as surrogator to add to epoll.
+	element.events = EPOLLIN;
+	
+	// Allocate space for clients (and for listening sockets)
+	clients = new clientInfo[maxclient];
+	
 	// Set up sockets
 #ifdef _WIN32
 	WSADATA wd;
 	if (WSAStartup(MAKEWORD(2, 2), &wd)) abort();
 #endif // _WIN32
-	SOCKET listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (listening == INVALID_SOCKET){
-		std::cout<<"Listening socket creation failed\n"; std::terminate();
-	}
+	SOCKET listening;
 
 	struct sockaddr_in hints; int hintSize = sizeof(hints);
-	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_port = htons(PORT); hints.sin_family = AF_INET;
-	if(bind(listening, (struct sockaddr*)&hints, hintSize)) std::terminate();
-	if(listen(listening, SOMAXCONN)) std::terminate();
+	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_family = AF_INET;
+	for (int i = 0; i < ports.size(); i++) {
+		listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (listening == INVALID_SOCKET){
+			std::cout<<"Listening socket creation failed\n"; std::terminate();
+		}
+		hints.sin_port = htons(ports[i].port);
+		if(bind(listening, (struct sockaddr*)&hints, hintSize)) std::terminate();
+		if(listen(listening, SOMAXCONN)){
+			perror("listen failed: ");
+			std::terminate();
+		}
+		// Add listening socket to epoll
+		element.data.fd = listening;
+	#ifdef _WIN32
+		element.data.sock = listening;
+	#endif
+		epoll_ctl(ep, EPOLL_CTL_ADD, listening, &element);
+		// Set data for listening sockets.
+		clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
+	}
 
 	int events = 0;
 	// Set up SSL
 #ifdef COMPILE_WOLFSSL
 	wolfSSL_Init(); SOCKET sslListening;
-	if (enableSSL) {
+	if (sslEnabled) {
 		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
 			std::cout<<"WolfSSL: internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."<<std::endl;
-			enableSSL = 0;
+			sslEnabled = 0;
 		}
-		else if (wolfSSL_CTX_use_PrivateKey_file(ctx, sslKeyPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+		else if (wolfSSL_CTX_use_PrivateKey_file(ctx, sslKeyPath.data(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
 			std::cout<<"WolfSSL: failed to load SSL private key file, SSL is disabled."<<std::endl;
-			enableSSL = 0;
+			sslEnabled = 0;
 		}
-		else if (wolfSSL_CTX_use_certificate_file(ctx, sslCertPath, SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+		else if (wolfSSL_CTX_use_certificate_file(ctx, sslCertPath.data(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
 			std::cout<<"WolfSSL: failed to load SSL certificate file, SSL is disabled."<<std::endl;
-			enableSSL = 0;
+			sslEnabled = 0;
 		}
 		else {
-			sslListening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-			if (sslListening == INVALID_SOCKET) abort();
-			hints.sin_port = htons(4433); bind(sslListening, (struct sockaddr*)&hints, hintSize); listen(sslListening, SOMAXCONN);
+			for (int i = 0; i < ports.size(); i++) {
+				sslListening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+				if (sslListening == INVALID_SOCKET){
+					std::cout<<"Listening socket creation failed\n"; std::terminate();
+				}
+				hints.sin_port = htons(sslPorts[i].port);
+				if(bind(sslListening, (struct sockaddr*)&hints, hintSize)) std::terminate();
+				if(listen(sslListening, SOMAXCONN)) std::terminate();
+				
+				// Add SSL ports to epoll too
+				if (sslEnabled) {
+					element.data.fd = sslListening;
+					#ifdef _WIN32
+							element.data.sock = sslListening;
+					#endif
+					epoll_ctl(ep, EPOLL_CTL_ADD, sslListening, &element);
+				}
+				clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL; clients[clientIndex2(sslListening)].s = sslListening;
+			}
 		}
-	}
-#endif // COMPILE_WOLFSSL
-
-	// Set epoll
-	ep = epoll_create1(0);
-	if (ep == INVALID_HANDLE_VALUE) abort();
-	struct epoll_event ee[256] = { 0 };
-	struct epoll_event element = { 0 }; // This one is used as surrogator to add to epoll.
-	// Add listening socket to epoll
-	element.events = EPOLLIN; element.data.fd = listening;
-#ifdef _WIN32
-	element.data.sock = listening;
-#endif
-	epoll_ctl(ep, EPOLL_CTL_ADD, listening, &element);
-	// Add SSL ports to epoll too
-#ifdef COMPILE_WOLFSSL
-	if (enableSSL) {
-		element.events = EPOLLIN; element.data.fd = sslListening;
-		#ifdef _WIN32
-				element.data.sock = sslListening;
-		#endif
-		epoll_ctl(ep, EPOLL_CTL_ADD, sslListening, &element);
-	}
-#endif // COMPILE_WOLFSSL
-
-	// Allocate space for clients (and for listening sockets)
-	clients = new clientInfo[maxclient];
-	// Zero the memory
-	//memset(clients, 0, maxclient * sizeof(struct clientInfo));
-	// Set data for listening sockets.
-	clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
-#ifdef COMPILE_WOLFSSL
-	if (enableSSL) {
-		clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL; clients[clientIndex2(sslListening)].s = sslListening;
 	}
 #endif // COMPILE_WOLFSSL
 
@@ -275,9 +284,17 @@ int main() {
 #endif // COMPILE_WOLFSSL
 	
 	// If we could come this far, then server is started successfully. Print a message and ports.
-	std::cout << "I: Server started successfully. Listening on HTTP: " << PORT << " ";
+	std::cout << "I: Server started successfully. Listening on HTTP: ";
+	for (int i = 0; i<ports.size(); i++) {
+		std::cout << ports[i].port<<" ";
+	}
 #ifdef COMPILE_WOLFSSL
-	if (enableSSL) std::cout << "HTTPS: " << 4433;
+	if (sslEnabled) {
+		std::cout << "HTTPS: ";
+		for (int i = 0; i<sslPorts.size(); i++) {
+			std::cout << sslPorts[i].port<<" ";
+		}
+	}
 #endif // COMPILE_WOLFSSL
 	std::cout<<std::endl;
 
@@ -292,7 +309,7 @@ int main() {
 #ifdef _DEBUG
 				printf("HUP: %d\r\n", ee[i].data.fd);
 #endif // _DEBUG
-				if (ee[i].data.fd == listening) abort();
+				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) abort();
 				epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
 				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
 					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);

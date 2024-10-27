@@ -410,5 +410,6 @@ RecursiveSearch:
 		i += *(unsigned short*)&Buf[i] + 3;
 	}
 #endif
+	return 0;
 }
 #endif // COMPILE_CUSTOMACTIONS

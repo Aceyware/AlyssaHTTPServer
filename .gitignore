@@ -51,6 +51,10 @@ x64
 Debug
 Release
 
+# Xcode output directories
+XCBuildData
+DerivedData
+
 # Alyssa HTTP Server specific stuff
 htroot
 Alyssa.log
@@ -67,3 +71,4 @@ Alyssa.cfg
 
 # CGI test apps
 *.bat
+*.sh

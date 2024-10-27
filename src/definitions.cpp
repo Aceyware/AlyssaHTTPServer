@@ -1,12 +1,8 @@
 // Definitions of variables that is usually set from config.
 #include "Alyssa.h"
 
-// Default htroot path
-//std::string htroot			  = ".\\htroot\\";
-// Default resources path in filesystem.
-//std::string respath			  = ".\\res\\";
 // Default resources relative path in HTTP
-//std::string htrespath		  = "/res/";
+std::string htrespath		  = "/res/";
 // Max URI length that client can send
 unsigned int			maxpath			  = 256;
 // Max authentication credentials length
@@ -16,7 +12,7 @@ unsigned int			maxpayload		  = 256;
 // Max number of concurrent clients can connect.
 unsigned int			maxclient		  = 256;
 // Max number of concurrent HTTP/2 streams.
-//int			MAXSTREAMS		  = 8;
+unsigned int			maxstreams		  = 8;
 // Number of threads
 unsigned short			threadCount		  = 8;
 // Error pages enabled?
@@ -28,8 +24,19 @@ bool		hsts			  = 0;
 // Internal bool for server
 bool		hascsp			  = 0;
 // Content security policy headers.
-//std::string csp;
+std::string csp = "connect-src \"https://aceyware.net\";";
 // Directory index pages enabled?
 bool		dirIndexEnabled	  = 1;
 // Custom actions enabled? (2: recursive)
 int8_t		customactions	  = 2;
+
+std::vector<listeningPort> ports = {9999};
+
+
+// SSL stuff
+#ifdef COMPILE_WOLFSSL
+bool		sslEnabled = 0;
+std::string sslCertPath = "./crt.pem";
+std::string sslKeyPath  = "./key.key";
+std::vector<listeningPort> sslPorts = {4433};
+#endif

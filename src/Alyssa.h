@@ -26,11 +26,13 @@
 	#define S_IFDIR _S_IFDIR
 #else
 	#include <unistd.h>
+	// TODO: maybe steal libepoll-shim and provide options to either using stolen epoll-shim or linking as a library as usual.
 	#include <sys/socket.h>
 	#include <sys/types.h>
 	#include <arpa/inet.h>
 	#include <sys/epoll.h>
 	#ifdef __APPLE__ // macOS doesn't support unnamed semaphores, https://github.com/stanislaw/posix-macos-addons implements it.
+		#warning macOS support is only provided as a development target, so is in a lower priority.
 		#include <posix-macos-semaphore.h>	
 		#define sem_init mac_sem_init
 		#define sem_wait mac_sem_wait
@@ -65,30 +67,28 @@
 		#include <wolfssl/options.h>
 	#endif // _WIN32
 	#include <wolfssl/ssl.h>
-	#define sslCertPath "./crt.pem"
-	#define sslKeyPath "./key.key"
+	extern std::string sslCertPath;
+	extern std::string sslKeyPath;
 #endif // COMPILE_WOLFSSL
 
 // Constants (will be removed)
-#define version "3.0-prerelease3"
-#define htroot ".\\htroot\\"
-#define _respath ".\\res\\"
-#define htrespath "/res/"
+#define version "3.0-prerelease3.1"
+// Default resources relative path in HTTP
+extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
 extern unsigned int maxpayload;
 extern unsigned int maxclient;
-#define MAXSTREAMS 8
+extern unsigned int maxstreams;
 extern unsigned short threadCount;
-//extern unsigned short PORT;
-#define PORT 9999
 extern int8_t errorPagesEnabled;
 extern unsigned int bufsize;
 extern bool hsts;
 extern bool hascsp;
-#define csp "connect-src https://aceyware.net;"
+extern std::string csp;
 extern bool dirIndexEnabled;
 extern int8_t customactions;
+extern bool	sslEnabled;
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
@@ -140,9 +140,6 @@ typedef struct requestInfo {
 	size_t rstart; size_t rend; // Range start and end.
 	unsigned short contentLength; // client payload content length.
 	char* qStr; // Query string location.
-	//char path[maxpath] = { 0 };
-	//char auth[maxauth] = { 0 };
-	//char payload[maxpayload] = { 0 };
 	std::string path = std::string(maxpath,'\0');
 	std::string auth = std::string(maxauth, '\0');
 	std::string payload = std::string(maxpayload, '\0');
@@ -160,7 +157,8 @@ typedef struct requestInfo {
 } requestInfo;
 
 typedef struct clientInfo {
-	SOCKET s; requestInfo stream[MAXSTREAMS]; int activeStreams; int lastStream = 0;
+	SOCKET s; std::vector<requestInfo> stream = std::vector<requestInfo>(maxstreams);
+	int activeStreams; int lastStream = 0;
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
 	unsigned short off; // Offset
@@ -182,25 +180,20 @@ typedef struct clientInfo {
 #endif // COMPILE_WOLFSSL
 	void clean() {
 		flags = 0;
-		for (int i = 0; i < MAXSTREAMS; i++) {
+		for (int i = 0; i < maxstreams; i++) {
 			stream[i].clean();
 		}
 	}
 
-	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost
 #ifdef COMPILE_WOLFSSL
-		, WOLFSSL* ssl
+	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost , WOLFSSL* ssl):
+		 s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off), ssl(ssl) {}
+	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0), ssl(NULL) {}
+#else
+	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost) :
+		s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off) {}
+	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0) {}
 #endif
-		): s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off) 
-#ifdef COMPILE_WOLFSSL
-		, ssl(ssl)
-#endif
-	{}
-	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0)
-#ifdef COMPILE_WOLFSSL
-		, ssl(NULL)
-#endif
-	{}
 } clientInfo;
 
 typedef struct vhost {
@@ -216,7 +209,7 @@ typedef struct vhost {
 } vhost;
 
 static vhost virtualHosts[4] = {
-	{"",0,"./htroot",htrespath}, //first one is default.
+	{"",0,"./htroot",htrespath.c_str()}, //first one is default.
 	{"192.168.1.131",0,"./htroot2","./res2"},
 	{"redirect.local",1,"https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
 	{"forbidden.local", 2, "" }
@@ -240,10 +233,11 @@ typedef struct respHeaders {
 
 typedef struct listeningPort {
 	unsigned short port; char flags; char owner;
-	listeningPort(unsigned short port, char flags, char owner) :port(port), flags(flags), owner(owner) {}
-	listeningPort(unsigned short port, char flags) :port(port), flags(flags), owner(0) {}
+	listeningPort(unsigned short port, char flags, char owner): port(port), flags(flags), owner(owner) {}
+	listeningPort(unsigned short port, char flags): port(port), flags(flags), owner(0) {}
+	listeningPort(unsigned short port): port(port), flags(0), owner(0) {}
 	listeningPort():port(0),flags(0),owner(0){}
-};
+} listeningPort;
 
 // HTTP/1.1 functions.
 void setPredefinedHeaders();
@@ -299,6 +293,7 @@ static char alpn[] = "h2,http/1.1,http/1.0";
 #define epollRemove(c) c->epollNext=31
 const char* fileMime(const char* filename);
 bool pathParsing(requestInfo* r, unsigned int end);
+extern "C" int8_t readConfig(const char* path);
 
 // Feature functions
 // Directory index
@@ -314,3 +309,8 @@ bool pathParsing(requestInfo* r, unsigned int end);
 	#define CA_RESTART 4
 	#define CA_ERR_SERV -1
 #endif // COMPILE_CUSTOMACTIONS
+
+extern std::vector<listeningPort> ports;
+#ifdef COMPILE_WOLFSSL
+extern std::vector<listeningPort> sslPorts;
+#endif

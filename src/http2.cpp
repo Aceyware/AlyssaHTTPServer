@@ -175,7 +175,7 @@ void h2SetPredefinedHeaders() {
 		h2PredefinedHeaders[pos + 1] = sizeof("content-security-policy") - 1; // Size without null
 		memcpy(&h2PredefinedHeaders[pos + 2], "content-security-policy", 23);
 		pos += 25; h2PredefinedHeaders[pos] = sizeof(csp) - 1; // Value size
-		memcpy(&h2PredefinedHeaders[pos + 1], csp, sizeof(csp)-1);
+		memcpy(&h2PredefinedHeaders[pos + 1], csp.data(), strlen(csp.data())-1);
 		pos += sizeof(csp);
 		h2PredefinedHeaders[h2PredefinedHeadersSize + ((hsts) ? 2 : 1)] = 128 | ((hsts) ? 64 : 63);
 	}
@@ -253,7 +253,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 	unsigned char streamIndex;
 	if (buf[3] == H2HEADERS) {
 		// Search for an empty space in frames buffer and allocate it to this stream.
-		for (char i = 0; i < MAXSTREAMS; i++) {
+		for (char i = 0; i < maxstreams; i++) {
 			if (!c->stream[i].id) {
 				streamIndex = i; c->stream[i] = requestInfo();
 				c->stream[i].id = s;
@@ -266,7 +266,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 	else {
 		// This is a CONTINUATION header, so it should be a allocated stream.
 		// Find the stream or return goaway if not found.
-		for (char i = 0; i < MAXSTREAMS; i++) {
+		for (char i = 0; i < maxstreams; i++) {
 			if (c->stream[i].id==s) {
 				streamIndex = i; goto streamFound;
 			}
@@ -415,8 +415,7 @@ h2getRestart:
 	}
 	// Rest of the code is pretty much same as HTTP/1.1
 
-	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
+	switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 		case 0: // Standard virtual host.
 			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
 			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
@@ -438,11 +437,6 @@ h2getRestart:
 			}
 			return; break;
 		default: break;
-		}
-	}
-	else {// Virtual hosts are not enabled. Use the htroot path from config.
-		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 	}
 
 	if (customactions) switch (caMain(*c, *r, buff)) {
@@ -670,8 +664,7 @@ h2postRestart:
 	}
 	// Rest of the code is pretty much same as HTTP/1.1
 
-	if (numVhosts) {// Handle the virtual host.
-		switch (virtualHosts[c->stream[streamIndex].vhost].type) {
+	switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 		case 0: // Standard virtual host.
 			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
 			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
@@ -693,13 +686,8 @@ h2postRestart:
 			}
 			return; break;
 		default: break;
-		}
 	}
-	else {// Virtual hosts are not enabled. Use the htroot path from config.
-		memcpy(buff, htroot, sizeof(htroot) - 1);
-		memcpy(buff + sizeof(htroot) - 1, c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
-	}
-
+	
 	if (customactions) switch (caMain(*c, *r, buff)) {
 		case CA_NO_ACTION:
 		case CA_KEEP_GOING:
