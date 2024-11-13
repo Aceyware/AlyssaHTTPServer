@@ -35,6 +35,13 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = -8; }
 					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = -1; }
 				}
+				else if (!strncmp(&buf[bpos + 1], "ccept-", 6)) {
+					bpos += 7;
+					if (!strncmp(&buf[bpos+8], "ncoding: ", 9)) {
+						bpos += 10;
+						if(memchr(&buf[bpos], 'g', epos-bpos)) r->compressType=1;
+					}
+				}
 			}
 			break;
 		case 'c':
@@ -286,8 +293,16 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
 	}
 	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
-	memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
-	pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", h->conLength);
+	if(h->flags & FLAG_CHUNKED) {
+		memcpy(&buf[pos], "Transfer-Encoding: chunked\r\n", 28); pos += 28;
+	}
+	else {
+		memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
+		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", h->conLength);
+	}
+	if(h->flags & FLAG_ENCODED) {
+		memcpy(&buf[pos], "Content-Encoding: gzip\r\n", 24); pos += 24;
+	}
 	// Content MIME type if available.
 	if (h->conType != NULL) {
 		memcpy(&buf[pos], "Content-Type: ", 14); pos += 14;
@@ -399,8 +414,16 @@ void getInit(clientInfo* c) {
 getRestart:
 	switch (virtualHosts[r->vhost].type) {
 		case 0: // Standard virtual host.
-			memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
-			memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
+				int htrs = strlen(virtualHosts[r->vhost].respath);
+				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath, htrs);
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
+				goto openFile17;
+			}
+			else {
+				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+			}
 			break;
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
@@ -495,17 +518,14 @@ openFilePoint:
 				return;
 			}
 #endif // COMPILE_DIRINDEX
-			h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-			if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
+			goto h1send404;
 		}
 		else { // It is a file. Open and go.
 		openFile17:
 			r->f = fopen(tBuf[c->cT], "rb");
 			if (r->f) {
 				h.conType = fileMime(tBuf[c->cT]);
-				if (r->rstart || r->rend) {
+				if (r->rstart || r->rend) {// is a range request.
 					if (r->rstart == -1) { // read last rend bytes 
 						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
 					}
@@ -513,36 +533,63 @@ openFilePoint:
 						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
 					}
 					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-					h.statusCode = 206; serverHeaders(&h, c); 
-					if(r->method!=METHOD_HEAD) epollCtl(c, EPOLLOUT | EPOLLONESHOT);
-					else { fclose(r->f); r->fs = 0; epollCtl(c, EPOLLIN | EPOLLONESHOT);}
-					return;
+					h.statusCode = 206;
+				} else {
+					h.statusCode=200;
+					r->fs=std::filesystem::file_size(tBuf[c->cT]);
+				}
+				
+				if(r->method==METHOD_HEAD) {
+					h.conLength=r->fs; serverHeaders(&h, c);  fclose(r->f); r->fs = 0;
+					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+				}
+				else if (r->fs < bufsize) { // Read it on a single step without passing it to a thread.
+					if (gzEnabled && r->fs < bufsize / 2) {
+						// Read the file
+						fread(tBuf[c->cT], r->fs, 1, r->f);
+						// Init compression 
+						int8_t ret = deflateInit2(&r->zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
+						if(ret!=Z_OK) {// Error
+							
+						}
+						// Set compression up
+						r->zstrm.next_in = (Bytef*)tBuf[c->cT]; r->zstrm.avail_in = r->fs;
+						r->zstrm.next_out = (Bytef*)&tBuf[c->cT][bufsize / 2]; r->zstrm.avail_out = bufsize / 2;
+						// Do compression and send the headers & data.
+						deflate(&r->zstrm, Z_FINISH); deflateEnd(&r->zstrm);
+						if (r->zstrm.total_out < r->fs) {// Compressed data is smaller than uncompressed
+							//if(true) {
+							h.conLength = r->zstrm.total_out; h.flags |= FLAG_ENCODED;
+							serverHeaders(&h, c); Send(c, &tBuf[c->cT][bufsize / 2], r->zstrm.total_out);
+						}
+						else {// Compression made it bigger, send uncompressed data.
+							h.conLength = r->fs;
+							serverHeaders(&h, c); Send(c, tBuf[c->cT], r->fs);
+						}
+					} else {
+						h.conLength=r->fs; serverHeaders(&h, c);
+						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
+						fclose(r->f); r->fs = 0;
+						if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+						else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+					}
+					fclose(r->f); r->fs = 0;
+					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}
 				else {
-					h.statusCode = 200;  r->fs = std::filesystem::file_size(tBuf[c->cT]); h.conLength = r->fs;
-					serverHeaders(&h, c); 
-					if(r->method==METHOD_HEAD) { fclose(r->f); r->fs = 0; epollCtl(c, EPOLLIN | EPOLLONESHOT); }
-					// If file is smaller than buffer, just read it at once and close. It's not worth to pass to threads again.
-					else if (r->fs < bufsize) {
-						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
-						fclose(r->f); r->fs = 0; 
-						if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-						else epollCtl(c, EPOLLIN | EPOLLONESHOT); 
-					}
-					else epollCtl(c, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
-					return;
+					serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
 				}
+				return;
 			}
 			else { // Open failed, 404
-				h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-				if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-				else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-				else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-				return;
+				goto h1send404;
 			}
 		}
 	}
 	else { // Requested path does not exists at all.
+h1send404:
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
 		if (errorPagesEnabled && r->method!=METHOD_HEAD) errorPagesSender(c);
 		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.

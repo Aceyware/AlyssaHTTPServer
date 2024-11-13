@@ -48,6 +48,12 @@
     <ClCompile Include="src\cgi.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="src\config.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src\definitions.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/AlyssaBuildConfig.h">

@@ -50,15 +50,6 @@
 	#define __debugbreak() std::terminate()
 #endif // _WIN32
 
-// Typedefs
-#ifdef _WIN32
-	#define ASemaphore HANDLE
-	#define AThread HANDLE
-#else
-	#define ASemaphore sem_t
-	#define AThread pthread_t
-#endif
-
 #ifdef COMPILE_WOLFSSL
 	#ifdef _WIN32
 		#include "user_settings.h"
@@ -71,9 +62,25 @@
 	extern std::string sslKeyPath;
 #endif // COMPILE_WOLFSSL
 
-// Constants (will be removed)
-#define version "3.0-prerelease3.1"
-// Default resources relative path in HTTP
+#ifdef COMPILE_ZLIB
+	#include <zlib.h>
+	#pragma comment(lib, "zlib.lib")
+#endif
+
+// Typedefs
+#ifdef _WIN32
+	#define ASemaphore HANDLE
+	#define AThread HANDLE
+#else
+	#define ASemaphore sem_t
+	#define AThread pthread_t
+#endif
+
+// Constants
+#define version "3.0-prerelease3.2"
+///
+/// Variables
+///
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -89,6 +96,9 @@ extern std::string csp;
 extern bool dirIndexEnabled;
 extern int8_t customactions;
 extern bool	sslEnabled;
+extern bool ipv6Enabled;
+extern bool gzEnabled;
+extern int srvLocale;
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
@@ -109,12 +119,15 @@ enum clientFlags {
 	FLAG_HASRANGE = 2,
 	FLAG_NOCACHE = 4,
 	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
+	FLAG_ENCODED = 16,
+	//FLAG_CHUNKED = 64,
 	// Client Info Flags
 	FLAG_LISTENING = 1,
 	FLAG_SSL = 2,
 	FLAG_HTTP2 = 4,
 	FLAG_DELETE = 8,
-	FLAG_HEADERS_INDEXED = 16
+	FLAG_HEADERS_INDEXED = 16,
+	FLAG_IPV6 = 32
 };
 
 enum methods {
@@ -123,7 +136,7 @@ enum methods {
 
 ///
 /// Structs
-/// 
+///
 
 #ifdef _DEBUG
 struct h2DebugShit {
@@ -144,6 +157,10 @@ typedef struct requestInfo {
 	std::string auth = std::string(maxauth, '\0');
 	std::string payload = std::string(maxpayload, '\0');
 	unsigned short vhost; // Virtual host number
+#ifdef COMPILE_ZLIB
+	z_stream zstrm = { 0 };
+	int8_t compressType = 0;
+#endif
 
 	void clean() {
 		id = 0, method = 0, flags = 0, rstart = 0, rend = 0, contentLength = 0, qStr = NULL, vhost = 0,
@@ -209,7 +226,7 @@ typedef struct vhost {
 } vhost;
 
 static vhost virtualHosts[4] = {
-	{"",0,"./htroot",htrespath.c_str()}, //first one is default.
+	{"",0,"./htroot","./res"}, //first one is default.
 	{"192.168.1.131",0,"./htroot2","./res2"},
 	{"redirect.local",1,"https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
 	{"forbidden.local", 2, "" }
@@ -294,6 +311,8 @@ static char alpn[] = "h2,http/1.1,http/1.0";
 const char* fileMime(const char* filename);
 bool pathParsing(requestInfo* r, unsigned int end);
 extern "C" int8_t readConfig(const char* path);
+int getCoreCount();
+int getLocale();
 
 // Feature functions
 // Directory index

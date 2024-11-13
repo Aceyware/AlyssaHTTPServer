@@ -161,3 +161,19 @@ const char* fileMime(const char* filename) {//This function returns the MIME typ
     }
     return mimes[6];
 }
+
+int getCoreCount(){
+#ifdef _WIN32
+	//TODO: this is limited to single processor group (so goes only up to 32 or 64)
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	return sysinfo.dwNumberOfProcessors;
+#else
+	return sysconf(_SC_NPROCESSORS_CONF);
+#endif
+}
+
+int getLocale(){
+	//std::string loc = std::setlocale(LC_ALL, "");
+	return 0;
+}

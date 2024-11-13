@@ -14,7 +14,7 @@ unsigned int			maxclient		  = 256;
 // Max number of concurrent HTTP/2 streams.
 unsigned int			maxstreams		  = 8;
 // Number of threads
-unsigned short			threadCount		  = 8;
+unsigned short			threadCount		  = 0;
 // Error pages enabled?
 int8_t		errorPagesEnabled = 1;
 // Size of buffer per thread
@@ -29,6 +29,12 @@ std::string csp = "connect-src \"https://aceyware.net\";";
 bool		dirIndexEnabled	  = 1;
 // Custom actions enabled? (2: recursive)
 int8_t		customactions	  = 2;
+// IPv6 enabled or not?
+bool		ipv6Enabled		  = 1;
+#ifdef COMPILE_ZLIB
+bool		gzEnabled		  = 1;
+#endif
+int srvLocale = 0;
 
 std::vector<listeningPort> ports = {9999};
 

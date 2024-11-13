@@ -14,7 +14,7 @@
 #endif
 
 // CGI execution support
-//#define Compile_CGI
+#define COMPILE_CGI
 
 // Custom actions support
 #define COMPILE_CUSTOMACTIONS
@@ -34,7 +34,7 @@
 #define Compile_locales
 
 // Compile with zlib for gz encoding support.
-#define Compile_zlib
+#define COMPILE_ZLIB
 
 #define LIB_B64CPP 1
 #define LIB_WOLFSSL 2

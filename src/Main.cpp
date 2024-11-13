@@ -11,11 +11,11 @@ short rate = 4;
 short rate = 1;
 #endif
 
-std::vector<AThread> hThreads(threadCount);
-std::vector<ASemaphore> tSemp(threadCount);
-std::vector<std::atomic_bool> tLk(threadCount);
-std::vector<struct epoll_event> tShared(threadCount);
-std::vector<char*> tBuf(threadCount,NULL);
+std::vector<AThread> hThreads;
+std::vector<ASemaphore> tSemp;
+std::deque<std::atomic_bool> tLk;
+std::vector<struct epoll_event> tShared;
+std::vector<char*> tBuf;
 struct clientInfo* clients = NULL;
 
 #define clientIndex(num) tShared[num].data.fd/rate
@@ -118,8 +118,8 @@ void* threadMain(int num) {
 						goto handleOut;
 					}
 					clients[clientIndex(num)].epollNext = EPOLLOUT | EPOLLONESHOT; // Reset polling, remember that it's oneshot because
-																			  // otherwise it is going to handle the same client multiple
-																			  // times at same time from all threads.
+					// otherwise it is going to handle the same client multiple
+					// times at same time from all threads.
 				}
 				else { // Smaller than buffer, read it till the end and close.
 					fread(tBuf[num], clients[clientIndex(num)].stream[0].fs, 1, clients[clientIndex(num)].stream[0].f);
@@ -173,6 +173,12 @@ int main() {
 		<<std::endl;
 	
 	readConfig("Alyssa.cfg");
+	if (!threadCount) {
+		threadCount=getCoreCount();
+	}
+	getLocale();
+	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount);
+	hThreads.resize(threadCount); tLk.resize(threadCount);
 
 	// Create threads
 	for (size_t i = 0; i < threadCount; i++) {
@@ -214,13 +220,19 @@ int main() {
 
 	struct sockaddr_in hints; int hintSize = sizeof(hints);
 	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_family = AF_INET;
+	sockaddr_in6 hints6; int hint6Size=sizeof(hints6);
+	inet_pton(AF_INET6, "::", &hints6.sin6_addr); hints6.sin6_family=AF_INET6;
 	for (int i = 0; i < ports.size(); i++) {
 		listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listening == INVALID_SOCKET){
 			std::cout<<"Listening socket creation failed\n"; std::terminate();
 		}
 		hints.sin_port = htons(ports[i].port);
-		if(bind(listening, (struct sockaddr*)&hints, hintSize)) std::terminate();
+		if(bind(listening, (struct sockaddr*)&hints, hintSize)) {
+			perror("bind failed: ");
+			std::terminate();
+			
+		}
 		if(listen(listening, SOMAXCONN)){
 			perror("listen failed: ");
 			std::terminate();
@@ -233,7 +245,38 @@ int main() {
 		epoll_ctl(ep, EPOLL_CTL_ADD, listening, &element);
 		// Set data for listening sockets.
 		clients[clientIndex2(listening)].flags = FLAG_LISTENING; clients[clientIndex2(listening)].s = listening;
+		
+		if (ipv6Enabled) {
+			listening=socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+			if (listening == INVALID_SOCKET){
+				std::cout<<"IPv6 Listening socket creation failed\n"; std::terminate();
+			}
+			const static int on = 1;
+			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+			hints6.sin6_port = htons(ports[i].port);
+			hints6.sin6_flowinfo = 0;
+			hints6.sin6_scope_id = 0;
+			if (bind(listening, (struct sockaddr*)&hints6, hint6Size)) {
+#ifdef _WIN32
+				int error = WSAGetLastError();
+#endif
+				std::terminate();
+			}
+			if(listen(listening, SOMAXCONN)){
+				perror("listen6 failed: ");
+				std::terminate();
+			}
+			// Add listening socket to epoll
+			element.data.fd = listening;
+		#ifdef _WIN32
+			element.data.sock = listening;
+		#endif
+			epoll_ctl(ep, EPOLL_CTL_ADD, listening, &element);
+			// Set data for listening sockets.
+			clients[clientIndex2(listening)].flags = FLAG_LISTENING | FLAG_IPV6; clients[clientIndex2(listening)].s = listening;
+		}
 	}
+	
 
 	int events = 0;
 	// Set up SSL
@@ -272,6 +315,31 @@ int main() {
 					epoll_ctl(ep, EPOLL_CTL_ADD, sslListening, &element);
 				}
 				clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL; clients[clientIndex2(sslListening)].s = sslListening;
+				
+				if (ipv6Enabled) {
+					sslListening = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+					if (sslListening == INVALID_SOCKET){
+						std::cout<<"IPv6 Listening socket creation failed\n"; std::terminate();
+					}
+					const static int on = 1;
+					setsockopt(sslListening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
+					hints6.sin6_port = htons(sslPorts[i].port);
+					hints6.sin6_flowinfo = 0;
+					hints6.sin6_scope_id = 0;
+					if(bind(sslListening, (struct sockaddr*)&hints6, sizeof(hints6))) std::terminate();
+					if(listen(sslListening, SOMAXCONN)) std::terminate();
+					
+					// Add SSL ports to epoll too
+					if (sslEnabled) {
+						element.data.fd = sslListening;
+						#ifdef _WIN32
+								element.data.sock = sslListening;
+						#endif
+						epoll_ctl(ep, EPOLL_CTL_ADD, sslListening, &element);
+					}
+					clients[clientIndex2(sslListening)].flags = FLAG_LISTENING | FLAG_SSL | FLAG_IPV6;
+					clients[clientIndex2(sslListening)].s = sslListening;
+				}
 			}
 		}
 	}
@@ -328,8 +396,6 @@ int main() {
 						printf("Error: socket exceeds allocated space.\n");	
 						closesocket(cSock); continue;
 					}
-					//clients[clientIndex2(cSock)] = clientInfo(); 
-					//memset(&clients[clientIndex2(cSock)].stream[0], 0, 8 * sizeof(requestInfo));
 					clients[clientIndex2(cSock)].clean();
 					clientInfo* watch = &clients[clientIndex2(cSock)];
 #ifdef COMPILE_WOLFSSL
@@ -410,7 +476,7 @@ int main() {
 #ifdef _DEBUG
 						printf("Thread %d: locked\r\n", k);
 #endif // _DEBUG
-
+						threadFound = 1;
 						break;
 					}
 				}

@@ -1,4 +1,4 @@
-#include "AlyssaBuildConfig.h"
+#include "../AlyssaBuildConfig.h"
 #ifdef B64_LIB
 #if B64_LIB == LIB_B64CPP
 /*
