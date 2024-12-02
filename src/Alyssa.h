@@ -1,4 +1,23 @@
 #pragma once
+
+///  .d888888                                                                      
+/// d8'    88                                                                      
+/// 88aaaaa88a .d8888b. .d8888b. dP    dP dP  dP  dP .d8888b. 88d888b. .d8888b.    
+/// 88     88  88'  `"" 88ooood8 88    88 88  88  88 88'  `88 88'  `88 88ooood8    
+/// 88     88  88.  ... 88.  ... 88.  .88 88.88b.88' 88.  .88 88       88.  ...    
+/// 88     88  `88888P' `88888P' `8888P88 8888P Y8P  `88888P8 dP       `88888P'    
+///                                   .88                                          
+///                               d8888P                  
+///                         
+///                          .d888888  dP                                          
+///                         d8'    88  88                                          
+///                         88aaaaa88a 88 dP    dP .d8888b. .d8888b. .d8888b.      
+///                         88     88  88 88    88 Y8ooooo. Y8ooooo. 88'  `88      
+///                         88     88  88 88.  .88       88       88 88.  .88      
+///                         88     88  dP `8888P88 `88888P' `88888P' `88888P8      
+///                                            .88                                 
+///                                        d8888P                                  
+
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -77,10 +96,16 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.2"
-///
-/// Variables
-///
+#define version "3.0-prerelease3.3"
+
+///  dP     dP                   oo          dP       dP                   
+///  88     88                               88       88                   
+///  88    .8P .d8888b. 88d888b. dP .d8888b. 88d888b. 88 .d8888b. .d8888b. 
+///  88    d8' 88'  `88 88'  `88 88 88'  `88 88'  `88 88 88ooood8 Y8ooooo. 
+///  88  .d8P  88.  .88 88       88 88.  .88 88.  .88 88 88.  ...       88 
+///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
+///                                                                        
+
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -99,6 +124,8 @@ extern bool	sslEnabled;
 extern bool ipv6Enabled;
 extern bool gzEnabled;
 extern int srvLocale;
+extern int8_t configLoaded;
+
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
@@ -134,16 +161,13 @@ enum methods {
 	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
 };
 
-///
-/// Structs
-///
-
-#ifdef _DEBUG
-struct h2DebugShit {
-	int sz; int sid, type;
-	h2DebugShit(int sz,int sid, int type) : sz(sz), sid(sid), type(type) {}
-};
-#endif // _DEBUG
+/// .d88888b    dP                                dP            
+/// 88.    "'   88                                88            
+/// `Y88888b. d8888P 88d888b. dP    dP .d8888b. d8888P .d8888b. 
+///       `8b   88   88'  `88 88    88 88'  `""   88   Y8ooooo. 
+/// d8'   .8P   88   88       88.  .88 88.  ...   88         88 
+///  Y88888P    dP   dP       `88888P' `88888P'   dP   `88888P' 
+///                                                             
 
 typedef struct requestInfo {
 	unsigned int id; // Stream identifier.
@@ -178,20 +202,20 @@ typedef struct clientInfo {
 	int activeStreams; int lastStream = 0;
 	unsigned char flags; 
 	unsigned char cT; // Current thread that is handling client.
-	unsigned short off; // Offset
+
+	unsigned char ipAddr[16] = { 0 }; // IP address of client, in raw format used for both IPv4 (first 4 bytes) and IPv6.
+	unsigned short portAddr = 0; // Port of the client.
+
 	/* Next epoll mode to set. Normally it was set on functions itself but
 	apparently this causes a race condition. Say there's an user agent in an
 	ideal world that has 0 latencies and currently has socket number set to X.
 	In old implementation, server resets epoll or disconnects it before it's tasks end,
 	user agent does another requests, or reconnects and OS assings same socket number 'X',
 	another thread starts to handle it at the same time and BOOM!
-	In Windows this wasn't as problematic because Windows assigns same socket number 
+	In Windows this wasn't as problematic because Windows assigns same socket number
 	less aggresive than linux does. */
-	unsigned int epollNext = 0; 
+	unsigned int epollNext = 0;
 
-#ifdef _DEBUG
-	std::deque<h2DebugShit> frameSzLog;
-#endif // _DEBUG
 #ifdef COMPILE_WOLFSSL
 	WOLFSSL* ssl;
 #endif // COMPILE_WOLFSSL
@@ -203,9 +227,9 @@ typedef struct clientInfo {
 	}
 
 #ifdef COMPILE_WOLFSSL
-	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost , WOLFSSL* ssl):
-		 s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off), ssl(ssl) {}
-	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0), ssl(NULL) {}
+	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short vhost , WOLFSSL* ssl):
+		 s(s), activeStreams(activeStreams), flags(flags), cT(cT), ssl(ssl) {}
+	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), ssl(NULL) {}
 #else
 	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost) :
 		s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off) {}
@@ -255,6 +279,13 @@ typedef struct listeningPort {
 	listeningPort(unsigned short port): port(port), flags(0), owner(0) {}
 	listeningPort():port(0),flags(0),owner(0){}
 } listeningPort;
+
+///  88888888b                              dP   oo                            
+///  88                                     88                                 
+/// a88aaaa    dP    dP 88d888b. .d8888b. d8888P dP .d8888b. 88d888b. .d8888b. 
+///  88        88    88 88'  `88 88'  `""   88   88 88'  `88 88'  `88 Y8ooooo. 
+///  88        88.  .88 88    88 88.  ...   88   88 88.  .88 88    88       88 
+///  dP        `88888P' dP    dP `88888P'   dP   dP `88888P' dP    dP `88888P' 																	   
 
 // HTTP/1.1 functions.
 void setPredefinedHeaders();
@@ -313,6 +344,9 @@ bool pathParsing(requestInfo* r, unsigned int end);
 extern "C" int8_t readConfig(const char* path);
 int getCoreCount();
 int getLocale();
+int commandline(int argc, char* argv[]);
+extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
+int loggingInit(char* logName = NULL);
 
 // Feature functions
 // Directory index
@@ -321,12 +355,15 @@ int getLocale();
 #endif // COMPILE_DIRINDEX
 #ifdef COMPILE_CUSTOMACTIONS
 	int caMain(const clientInfo& c, const requestInfo& r, char* h2path = NULL);
-	#define CA_NO_ACTION 0
-	#define CA_KEEP_GOING 1
-	#define CA_REQUESTEND 2
-	#define CA_CONNECTIONEND 3
-	#define CA_RESTART 4
-	#define CA_ERR_SERV -1
+	enum caReturns {
+		CA_ERR_SERV = -1,
+		CA_NO_ACTION,
+		CA_KEEP_GOING,
+		CA_REQUESTEND,
+		CA_CONNECTIONEND,
+		CA_RESTART
+	};
+	
 #endif // COMPILE_CUSTOMACTIONS
 
 extern std::vector<listeningPort> ports;

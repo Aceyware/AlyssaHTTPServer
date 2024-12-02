@@ -57,7 +57,7 @@ DerivedData
 
 # Alyssa HTTP Server specific stuff
 htroot
-Alyssa.log
+*.log
 Alyssa.cfg
 *.alyssa
 
@@ -68,6 +68,7 @@ Alyssa.cfg
 # Compiled resources
 *.res
 *.aps
+resource.h
 
 # CGI test apps
 *.bat

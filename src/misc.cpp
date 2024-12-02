@@ -177,3 +177,23 @@ int getLocale(){
 	//std::string loc = std::setlocale(LC_ALL, "");
 	return 0;
 }
+
+int commandline(int argc, char* argv[]) {
+	for (int i = 1; i < argc; i++) {
+		switch (argv[i][1]) {
+		case 'h':
+		case '?':
+			printf("Alyssa HTTP Server command-line help\n"
+				   "Usage: %s [args]\n\n"
+				   
+				   "-h(elp) or -?             : Displays this message\n"
+				   "-c(onfig) <path\\of\\.cfg>: Loads given config file\n"
+				   "-p(port) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
+				   "-v(ersion)                : Prints version and detailed info\n"
+					,argv[0]);
+			exit(0); break;
+		default:
+			break;
+		}
+	}
+}

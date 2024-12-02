@@ -82,8 +82,9 @@ void* threadMain(int num) {
 							tBuf[num][4] = 0; // Flags: 0
 							int iamk = htonl(clients[clientIndex(num)].stream[i].id); memcpy(&tBuf[num][5], &iamk, 4);
 							// ^^^ Stream identifier (converted to big endian) ^^^ / vvv read and send file vvv
-							fread(&tBuf[num][9], clients[clientIndex(num)].stream[i].fs, 1, clients[clientIndex(num)].stream[i].f);
-							wolfSSL_send(clients[clientIndex(num)].ssl, &tBuf[num], 16384, 0);
+							fread(&tBuf[num][9], 16375, 1, clients[clientIndex(num)].stream[i].f);
+							clients[clientIndex(num)].stream[i].fs -= 16375;
+							wolfSSL_send(clients[clientIndex(num)].ssl, tBuf[num], 16384, 0);
 							streams--; if (!streams) break;
 						}
 						else {
@@ -111,12 +112,12 @@ void* threadMain(int num) {
 					clients[clientIndex(num)].epollNext = EPOLLIN | EPOLLOUT | EPOLLONESHOT; 
 			}
 			else {// HTTP/1.1
-				if (clients[clientIndex(num)].stream[0].fs > 4096) {// Remaining of file is still bigger than buffer
-					fread(tBuf[num], 4096, 1, clients[clientIndex(num)].stream[0].f);
-					if (Send(&clients[clientIndex(num)], tBuf[num], 4096) <= 0) {// Connection lost
+				if (clients[clientIndex(num)].stream[0].fs > bufsize) {// Remaining of file is still bigger than buffer
+					fread(tBuf[num], bufsize, 1, clients[clientIndex(num)].stream[0].f);
+					if (Send(&clients[clientIndex(num)], tBuf[num], bufsize) <= 0) {// Connection lost
 						clients[clientIndex(num)].epollNext = 31;
 						goto handleOut;
-					}
+					} clients[clientIndex(num)].stream[0].fs -= bufsize;
 					clients[clientIndex(num)].epollNext = EPOLLOUT | EPOLLONESHOT; // Reset polling, remember that it's oneshot because
 					// otherwise it is going to handle the same client multiple
 					// times at same time from all threads.
@@ -163,22 +164,22 @@ void* threadMain(int num) {
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
 
-
-int main() {
+int main(int argc, char* argv[]) {
 	// Print product info and version
 	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version
 #ifdef _DEBUG
 		" (debug)"
 #endif
 		<<std::endl;
-	
-	readConfig("Alyssa.cfg");
-	if (!threadCount) {
-		threadCount=getCoreCount();
-	}
+
+	commandline(argc, argv); // Parse command line arguments
+
+	if(!configLoaded) readConfig("Alyssa.cfg"); // Load default config if no config is given on command line.
+	if (!threadCount) threadCount = getCoreCount();
 	getLocale();
 	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount);
 	hThreads.resize(threadCount); tLk.resize(threadCount);
+	if (1) loggingInit(NULL);
 
 	// Create threads
 	for (size_t i = 0; i < threadCount; i++) {
@@ -387,17 +388,24 @@ int main() {
 			}
 			else if (ee[i].events & EPOLLIN) {
 				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) {// New connection incoming
-					struct sockaddr_in client; int _len = hintSize;
-					SOCKET cSock = accept(ee[i].data.fd, (struct sockaddr*)&client, (socklen_t*)&_len);
-					element.data.fd = cSock;
-					element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
+					SOCKET cSock;
+					// Accept the connection
+					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_IPV6) {
+						cSock = accept(ee[i].data.fd, (struct sockaddr*)&hints6, (socklen_t*)&hint6Size);
+					}
+					else cSock = accept(ee[i].data.fd, (struct sockaddr*)&hints, (socklen_t*)&hintSize);
 					if (cSock == INVALID_SOCKET) continue;
 					if (cSock / rate > maxclient) {
-						printf("Error: socket exceeds allocated space.\n");	
+						printf("Error: socket exceeds allocated space.\n");
 						closesocket(cSock); continue;
 					}
-					clients[clientIndex2(cSock)].clean();
+					// Set epoll data.
+					element.data.fd = cSock; element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
+					// Clear clientInfo space for use
+#ifdef _DEBUG
 					clientInfo* watch = &clients[clientIndex2(cSock)];
+#endif
+					clients[clientIndex2(cSock)].clean();
 #ifdef COMPILE_WOLFSSL
 					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_SSL) {// SSL 
 						WOLFSSL* ssl = wolfSSL_new(ctx);
@@ -420,10 +428,23 @@ int main() {
 						}
 					}
 #endif // COMPILE_WOLFSSL
-						epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);
-						clients[clientIndex2(cSock)].off = clientIndex2(cSock); clients[clientIndex2(cSock)].s = cSock;
+					// Set remaining clientInfo data.
+					clients[clientIndex2(cSock)].s = cSock;
+					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_IPV6) {
+						clients[clientIndex2(cSock)].flags |= FLAG_IPV6;
+						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr	  = *(unsigned long*)hints6.sin6_addr.u.Byte;
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[4]  = *(unsigned long*)&hints6.sin6_addr.u.Byte[4];
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[8]  = *(unsigned long*)&hints6.sin6_addr.u.Byte[8];
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[12] = *(unsigned long*)&hints6.sin6_addr.u.Byte[12];
+						clients[clientIndex2(cSock)].portAddr = ntohs(hints6.sin6_port);
+					}
+					else {
+						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)&hints.sin_addr.S_un.S_un_b.s_b1;
+						clients[clientIndex2(cSock)].portAddr = ntohs(hints.sin_port);
+					}
+					epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);
 #ifdef _DEBUG
-						printf("New incoming: %d\r\n", cSock);
+					printf("New incoming: %d\r\n", cSock);
 #endif // _DEBUG	
 				}
 				else {// A client sent something.

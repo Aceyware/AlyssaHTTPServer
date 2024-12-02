@@ -175,6 +175,7 @@
     <ClCompile Include="src\customactions.cpp" />
     <ClCompile Include="src\definitions.cpp" />
     <ClCompile Include="src\dirindex.cpp" />
+    <ClCompile Include="src\logging.cpp" />
     <ClCompile Include="src\misc.cpp" />
     <ClCompile Include="src\errorPages.cpp" />
     <ClCompile Include="src\http.cpp" />
@@ -183,6 +184,7 @@
     <ClCompile Include="src\wepoll.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="resource.h" />
     <ClInclude Include="src/AlyssaBuildConfig.h" />
     <ClInclude Include="src/AlyssaHuffman.h" />
     <ClInclude Include="src/external/base64.h" />

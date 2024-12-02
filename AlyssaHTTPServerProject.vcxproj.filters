@@ -54,6 +54,9 @@
     <ClCompile Include="src\definitions.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="src\logging.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/AlyssaBuildConfig.h">
@@ -79,6 +82,9 @@
     </ClInclude>
     <ClInclude Include="src\wepoll.h">
       <Filter>Header\External</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

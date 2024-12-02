@@ -260,6 +260,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 }
 
 void serverHeaders(respHeaders* h, clientInfo* c) {
+	logReqeust(c, 0, h);
 	// Set up the error page to send if there is an error
 	if (h->statusCode >= 400 && errorPagesEnabled) { 
 		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = h->conLength;
@@ -395,6 +396,9 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 
 void getInit(clientInfo* c) {
 	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = NULL;
+	#if __cplusplus > 201700L
+	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+	#endif
 	if (c->stream[0].flags & FLAG_INVALID) {
 		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
 		else h.statusCode = 400;
@@ -418,11 +422,12 @@ getRestart:
 				int htrs = strlen(virtualHosts[r->vhost].respath);
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath, htrs);
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
-				goto openFile17;
+				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFile17;
 			}
 			else {
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+				u8p = std::filesystem::u8path(tBuf[c->cT]);
 			}
 			break;
 		case 1: // Redirecting virtual host.
@@ -500,11 +505,12 @@ openFilePoint:
 		return;
 	}
 #else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
-	if (std::filesystem::exists(tBuf[c->cT])) {// Something exists on such path.
-		if (std::filesystem::is_directory(tBuf[c->cT])) { // It is a directory.
+	if (std::filesystem::exists(u8p)) {// Something exists on such path.
+		if (std::filesystem::is_directory(u8p)) { // It is a directory.
 			// Check for index.html
 			int pos = strlen(tBuf[c->cT]);
 			memcpy(&tBuf[c->cT][pos], "/index.html", 12);
+			u8p += "/index.html";
 			if (std::filesystem::exists(tBuf[c->cT])) goto openFile17;
 #ifdef COMPILE_DIRINDEX
 			// Send directory index if enabled.
@@ -522,7 +528,14 @@ openFilePoint:
 		}
 		else { // It is a file. Open and go.
 		openFile17:
+#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
+			int cbMultiByte = strlen(tBuf[c->cT]);
+			int ret = MultiByteToWideChar(CP_UTF8, 0, tBuf[c->cT], cbMultiByte, (LPWSTR)&tBuf[c->cT][cbMultiByte + 1], (bufsize - cbMultiByte - 1) / 2);
+			*(wchar_t*)&tBuf[c->cT][cbMultiByte + 1 + ret * 2] = 0; // Add wchar null terminator
+			r->f = _wfopen((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], L"rb");
+#else
 			r->f = fopen(tBuf[c->cT], "rb");
+#endif
 			if (r->f) {
 				h.conType = fileMime(tBuf[c->cT]);
 				if (r->rstart || r->rend) {// is a range request.
@@ -536,7 +549,7 @@ openFilePoint:
 					h.statusCode = 206;
 				} else {
 					h.statusCode=200;
-					r->fs=std::filesystem::file_size(tBuf[c->cT]);
+					r->fs=std::filesystem::file_size(u8p);
 				}
 				
 				if(r->method==METHOD_HEAD) {
@@ -579,7 +592,7 @@ openFilePoint:
 					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}
 				else {
-					serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
+					h.conLength = r->fs; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
 				}
 				return;
 			}

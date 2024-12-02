@@ -38,6 +38,8 @@ int srvLocale = 0;
 
 std::vector<listeningPort> ports = {9999};
 
+int8_t configLoaded = 0;
+time_t startupTime = time(NULL);
 
 // SSL stuff
 #ifdef COMPILE_WOLFSSL

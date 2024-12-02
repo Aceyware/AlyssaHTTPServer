@@ -19,7 +19,8 @@ extern "C" int8_t readConfig(const char* path) {
 	std::ifstream conf; conf.open(path);
 	if (!conf.is_open()) {
 		return -1;
-	} auto x = new std::codecvt_utf8<wchar_t>;
+	} configLoaded++;
+	auto x = new std::codecvt_utf8<wchar_t>;
 	conf.imbue(std::locale(std::locale(), x));
 	int sz = std::filesystem::file_size(path); char* buf = new char[sz+2];
 	conf.read(buf, sz); buf[sz-1]='\n'; buf[sz]=0; char* begin=buf; char* end;
@@ -143,7 +144,5 @@ extern "C" int8_t readConfig(const char* path) {
 		}
 		begin = end + 1;
 	}
-
-
 	delete[] buf; conf.close(); return 0;
 }
