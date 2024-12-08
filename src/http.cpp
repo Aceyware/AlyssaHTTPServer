@@ -9,6 +9,9 @@ void setPredefinedHeaders() {
 	if (hascsp) {
 		strcat(buf, "Content-Security-Policy: "); strcat(buf, csp.data()); strcat(buf, "\r\n");
 	}
+	if (acaoMode == 2) {
+		strcat(buf, "Access-Control-Allow-Origin: *\r\n");
+	}
 	predefinedSize = strlen(buf); predefinedHeaders = new char[predefinedSize];
 	memcpy(predefinedHeaders, buf, predefinedSize);
 }
@@ -47,13 +50,13 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 		case 'c':
 		case 'C':
 			if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
-				bpos += 11; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
+				bpos += 12; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
 			}																											
 			break;																										
 		case 'h':																										
 		case 'H':																										
 			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
-				bpos += 5;																								
+				bpos += 6;																								
 				if (numVhosts) {
 					for (int i = 1; i < numVhosts; i++) {
 						//printf("i: %d ",i);
@@ -65,17 +68,48 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 			}
 			break;
 		case 'i':
-		case 'I': // Conditional headers.																				
+		case 'I': // Conditional headers.					
+			if (buf[bpos + 1] == 'f' || buf[bpos + 2] == '-') {
+				if (!strncmp(&buf[bpos + 3], "None-Match: ", 12)) {
+					bpos += 15; r->condition = strtoull(&buf[bpos], NULL, 10);
+					r->conditionType = CR_IF_NONE_MATCH;
+				}
+				else if (!strncmp(&buf[bpos + 3], "Range: ", 7)) {
+					bpos += 10; r->condition = strtoull(&buf[bpos], NULL, 10);
+					r->conditionType = CR_IF_RANGE;
+				}
+				else if (!strncmp(&buf[bpos + 3], "Match: ", 7)) {
+					bpos += 10; r->condition = strtoull(&buf[bpos], NULL, 10);
+					r->conditionType = CR_IF_MATCH;
+				}
+			}
+			break;
+		case 'o':
+		case 'O':
+			if (!strncmp(&buf[bpos + 1], "rigin: ", 8)) {
+				if (acaoMode==1) {
+					bpos += 9;
+					for (int i = 1; i < numAcao; i++) {
+						if (!strncmp(acaoList[i].data(), &buf[bpos], epos-bpos)) {
+							r->acao = i; break;
+						}
+					}
+				}
+			}
 			break;
 		case 'r':																										
 		case 'R':																										
 			if (!strncmp(&buf[bpos + 1], "ange: ", 6)) {																
-				bpos += 6; if (!strncmp(&buf[bpos], "bytes=", 6)) {														
-					bpos += 6; if (buf[bpos] == '-') r->rstart = -1; // Read last n bytes.								
-					else {																								
-						char* end = NULL;																				
+				bpos += 7; 
+				if (!strncmp(&buf[bpos], "bytes=", 6)) {														
+					bpos += 6; char* end = NULL;
+					if (buf[bpos] == '-') { // Read last n bytes.								
+						r->rstart = -1; r->rend = strtoll(&buf[bpos + 1], &end, 10);
+					}
+					else {																																											
 						r->rstart = strtoll(&buf[bpos], &end, 10);														
-						if ((size_t)&end < 32) r->rend = -1;
+						if (end[1]<'0') r->rend = -1;
+						else r->rend = strtoll(end+1, &end, 10);
 					}																																		
 				}																																			
 				else { // Bad request.																														
@@ -284,6 +318,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
 		case 405: memcpy(&buf[pos], "405 Method Not Allowed\r\nAllow: GET, HEAD, OPTIONS\r\n", 51); 
 																	  pos += 51; break;
+		case 412: memcpy(&buf[pos], "412 Precondition Failed",   23); pos += 23; break;
 		case 413: memcpy(&buf[pos], "413 Content Too Large",	 21); pos += 21; break;
 		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
 		case 416: memcpy(&buf[pos], "416 Range Not Satisfiable", 25); pos += 25; break;
@@ -299,7 +334,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	}
 	else {
 		memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
-		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", h->conLength);
+		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", (h->statusCode != 206) ? h->conLength : c->stream[0].rend - c->stream[0].rstart);
 	}
 	if(h->flags & FLAG_ENCODED) {
 		memcpy(&buf[pos], "Content-Encoding: gzip\r\n", 24); pos += 24;
@@ -319,6 +354,12 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	// Add Accept-Ranges if available
 	if (h->flags & FLAG_HASRANGE) {
 		memcpy(&buf[pos], "Accept-Ranges: bytes\r\n", 22); pos += 22;
+	}
+	// Add ACAO if exists.
+	if (c->stream[0].acao) {
+		memcpy(&buf[pos], "Access-Control-Allow-Origin: ", 29); pos += 29;
+		memcpy(&buf[pos], acaoList[c->stream[0].acao].data(), acaoList[c->stream[0].acao].size()); 
+		pos += acaoList[c->stream[0].acao].size(); buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
 	}
 	// Current time
 	time_t currentDate = time(NULL);
@@ -537,23 +578,67 @@ openFilePoint:
 			r->f = fopen(tBuf[c->cT], "rb");
 #endif
 			if (r->f) {
-				h.conType = fileMime(tBuf[c->cT]);
+				h.conType = fileMime(tBuf[c->cT]); h.conLength = std::filesystem::file_size(u8p);
+				h.lastMod = to_time_t(std::filesystem::last_write_time(u8p));
 				if (r->rstart || r->rend) {// is a range request.
-					if (r->rstart == -1) { // read last rend bytes 
-						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+										   // Note that h.conLength, content length on headers is the original file size,
+										   // And r->fs will be morphed into remaining from ranges if any.
+					if (!r->conditionType || r->condition==h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
+						h.statusCode = 206;
+						if (r->rstart == -1) { // read last rend bytes 
+							fseek(r->f, r->rend * -1, SEEK_END);
+							r->rstart = r->fs - r->rend;  r->fs = r->rend;
+						}
+						else if (r->rend == -1) { // read thru 
+							fseek(r->f, r->rstart, SEEK_SET);
+							r->fs = h.conLength - r->rstart;
+							r->rend = h.conLength - 1; // Required for response headers.
+						}
+						else { // standard range req.
+							fseek(r->f, r->rstart, SEEK_SET);
+							r->fs = r->rend - r->rstart + 1;
+						}
 					}
-					else if (r->rend == -1) { // read thru end
-						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+					else { // Condition not satisfied.
+						h.statusCode = 200;
+						r->fs = h.conLength;
 					}
-					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-					h.statusCode = 206;
-				} else {
-					h.statusCode=200;
-					r->fs=std::filesystem::file_size(u8p);
+				} 
+				// Check the conditions other than if-range if any.
+				else if (r->conditionType) {
+					switch (r->conditionType) {
+						case CR_IF_NONE_MATCH:
+							if (r->condition == h.lastMod) {// ETags match, send 304.
+								h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
+								serverHeaders(&h, c); fclose(r->f); r->fs = 0;
+								if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+								else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+								return;
+							}
+							else {
+								h.statusCode = 200; r->fs = h.conLength;
+							} break;
+						case CR_IF_MATCH: // Normally not used with GET requests but here we go.
+							if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
+								h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
+								serverHeaders(&h, c); fclose(r->f); r->fs = 0;
+								if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+								else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+								return;
+							}
+							else {
+								h.statusCode = 200; r->fs = h.conLength;
+							} break;
+						default: break;
+					}
+				} else { // No range or conditions.
+					h.statusCode = 200;
+					r->fs = h.conLength;
 				}
 				
+				
 				if(r->method==METHOD_HEAD) {
-					h.conLength=r->fs; serverHeaders(&h, c);  fclose(r->f); r->fs = 0;
+					h.conLength=r->fs; serverHeaders(&h, c); fclose(r->f); r->fs = 0;
 					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}

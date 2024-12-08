@@ -96,7 +96,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.3"
+#define version "3.0-prerelease3.4"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -126,7 +126,6 @@ extern bool gzEnabled;
 extern int srvLocale;
 extern int8_t configLoaded;
 
-
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
 
@@ -147,6 +146,7 @@ enum clientFlags {
 	FLAG_NOCACHE = 4,
 	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
 	FLAG_ENCODED = 16,
+	FLAG_NOLENGTH = 32, // Do not write Content-Length header field. Used on 204, 304, 412 etc.
 	//FLAG_CHUNKED = 64,
 	// Client Info Flags
 	FLAG_LISTENING = 1,
@@ -161,6 +161,10 @@ enum methods {
 	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
 };
 
+enum conditionalRequestTypes {
+	CR_IF_MATCH, CR_IF_NONE_MATCH, CR_IF_RANGE
+};
+
 /// .d88888b    dP                                dP            
 /// 88.    "'   88                                88            
 /// `Y88888b. d8888P 88d888b. dP    dP .d8888b. d8888P .d8888b. 
@@ -172,29 +176,32 @@ enum methods {
 typedef struct requestInfo {
 	unsigned int id; // Stream identifier.
 	char method; // HTTP method (GET, POST, etc.)
-	FILE* f; unsigned long long fs; // File stream and file size.
 	unsigned char flags;
-	size_t rstart; size_t rend; // Range start and end.
 	unsigned short contentLength; // client payload content length.
+	FILE* f; unsigned long long fs; // File stream and file size.
+	size_t rstart; size_t rend; // Range start and end.
 	char* qStr; // Query string location.
 	std::string path = std::string(maxpath,'\0');
 	std::string auth = std::string(maxauth, '\0');
 	std::string payload = std::string(maxpayload, '\0');
+	size_t condition; char conditionType; // Conditional Request ETag and it's type.
 	unsigned short vhost; // Virtual host number
+	unsigned short acao; // (CORS) Access Control Allow Origin origin number.
 #ifdef COMPILE_ZLIB
-	z_stream zstrm = { 0 };
 	int8_t compressType = 0;
+	z_stream zstrm = { 0 };
 #endif
 
 	void clean() {
 		id = 0, method = 0, flags = 0, rstart = 0, rend = 0, contentLength = 0, qStr = NULL, vhost = 0,
 		path[0] = '\0', auth[0] = '\0', payload[0] = '\0';
 	}
-
+	// Constructors
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
 		unsigned short contentLength, char* qStr, unsigned short vhost, unsigned int id):
-	method(method), f(f), fs(fs), flags(flags), rstart(rstart), rend(rend), contentLength(contentLength), qStr(qStr), vhost(vhost), id(id) {}
-	requestInfo(): method(0), f(NULL), fs(0), flags(0), rstart(0), rend(0), contentLength(0), qStr(0), vhost(0), id(0) {}
+		method(method), f(f), fs(fs), flags(flags), rstart(rstart), rend(rend), contentLength(contentLength), qStr(qStr), vhost(vhost), id(id), 
+		acao(0), condition(0), conditionType(0) {}
+	requestInfo(): method(0), f(NULL), fs(0), flags(0), rstart(0), rend(0), contentLength(0), qStr(0), vhost(0), id(0), acao(0), condition(0), conditionType(0) {}
 } requestInfo;
 
 typedef struct clientInfo {
@@ -257,6 +264,10 @@ static vhost virtualHosts[4] = {
 };
 
 #define numVhosts 4
+
+extern std::vector<std::string> acaoList;
+#define numAcao 2
+#define acaoMode 2
 
 extern char* predefinedHeaders; extern int predefinedSize;
 
@@ -347,6 +358,15 @@ int getLocale();
 int commandline(int argc, char* argv[]);
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(char* logName = NULL);
+#if __cplusplus > 201700L
+template <typename TP>
+inline std::time_t to_time_t(TP tp) {
+	using namespace std::chrono;
+	auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now()
+		+ system_clock::now());
+	return system_clock::to_time_t(sctp);
+}
+#endif
 
 // Feature functions
 // Directory index

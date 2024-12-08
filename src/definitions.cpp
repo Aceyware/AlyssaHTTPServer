@@ -47,4 +47,5 @@ bool		sslEnabled = 0;
 std::string sslCertPath = "./crt.pem";
 std::string sslKeyPath  = "./key.key";
 std::vector<listeningPort> sslPorts = {4433};
+std::vector<std::string> acaoList = { "","127.0.0.1:9999" };
 #endif

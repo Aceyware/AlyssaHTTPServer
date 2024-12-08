@@ -143,7 +143,7 @@ static std::string decodeHuffman(char* huffstr, int16_t sz) {// How the fuck is 
 /// Sets predefined headers such as server version, CSP etc. that is set through config and will never change in servers timeline.
 /// </summary>
 void h2SetPredefinedHeaders() {
-	// Set the nonindexed ones first.
+	// ALlocate the space first.
 	h2PredefinedHeadersSize = sizeof("Alyssa/") + sizeof(version); // Normally we need two more bytes for index and size
 																   // but sizeof gives +1 null terminators so no need for separately adding it to this sum.
 	h2PredefinedHeadersIndexedSize = 1;
@@ -152,7 +152,12 @@ void h2SetPredefinedHeaders() {
 		h2PredefinedHeadersIndexedSize++;
 	}
 	if (hascsp) {
-		h2PredefinedHeadersSize += sizeof(csp) + sizeof("content-security-policy") + 1; h2PredefinedHeadersIndexedSize++;
+		h2PredefinedHeadersSize += sizeof(csp) + sizeof("content-security-policy") + 1; // This starts with three bytes unlike the topmost ones so there is still an +1
+		h2PredefinedHeadersIndexedSize++;
+	}
+	if (acaoMode == 2) {
+		h2PredefinedHeadersSize += sizeof("*") + 1; // This starts with three bytes unlike the topmost ones so there is still an +1
+		h2PredefinedHeadersIndexedSize++;
 	}
 	h2PredefinedHeaders = new char[h2PredefinedHeadersSize + h2PredefinedHeadersIndexedSize];
 	
@@ -161,15 +166,14 @@ void h2SetPredefinedHeaders() {
 	memcpy(&h2PredefinedHeaders[2], "Alyssa/", 7); memcpy(&h2PredefinedHeaders[9], version, sizeof(version) - 1);
 	h2PredefinedHeaders[h2PredefinedHeadersSize] = 128 | 62;
 
-	
 	unsigned short pos = sizeof("Alyssa/") + sizeof(version);
+	unsigned short pio = 1; // predefined indexed offset
 	if (hsts) {
 		h2PredefinedHeaders[pos] = 64 | 56; // Indexed new 56: strict-transport-security
 		h2PredefinedHeaders[pos + 1] = sizeof("max-age=31536000; includeSubDomains;") - 1; // Size without null
 		memcpy(&h2PredefinedHeaders[pos + 2], "max-age=31536000; includeSubDomains;", 36);
-		pos += 38; h2PredefinedHeaders[h2PredefinedHeadersSize+1] = 128 | 63;
+		pos += 38; h2PredefinedHeaders[h2PredefinedHeadersSize + pio] = 128 | (62+pio); pio++;
 	}
-
 	if (hascsp) {
 		h2PredefinedHeaders[pos] = 64 | 0; // Indexed literal new
 		h2PredefinedHeaders[pos + 1] = sizeof("content-security-policy") - 1; // Size without null
@@ -177,7 +181,13 @@ void h2SetPredefinedHeaders() {
 		pos += 25; h2PredefinedHeaders[pos] = sizeof(csp) - 1; // Value size
 		memcpy(&h2PredefinedHeaders[pos + 1], csp.data(), strlen(csp.data())-1);
 		pos += sizeof(csp);
-		h2PredefinedHeaders[h2PredefinedHeadersSize + ((hsts) ? 2 : 1)] = 128 | ((hsts) ? 64 : 63);
+		h2PredefinedHeaders[h2PredefinedHeadersSize + pio] = 128 | (62 + pio); pio++;
+	}
+	if (acaoMode == 2) {
+		h2PredefinedHeaders[pos] = 64 | 20; // Indexed new 20: access-control-allow-origin
+		h2PredefinedHeaders[pos + 1] = 1;	// Size
+		h2PredefinedHeaders[pos + 2] = '*'; // Value
+		pos += 3; h2PredefinedHeaders[h2PredefinedHeadersSize + pio] = 128 | (62 + pio);
 	}
 }
 
@@ -325,6 +335,7 @@ streamFound:
 			// Parse the header depending on the index.
 			if (index < 62) {// Index is on static table.
 				switch (index) {
+					//TODO: replace copy of codes with something less repeting
 					case 1: // :authority
 					{
 						std::string huffstr;
@@ -353,6 +364,24 @@ streamFound:
 						
 						break;
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
+					case 20: // access-control-allow-origin (CORS)
+						if (acaoMode == 1) {
+							if (isHuffman) {
+								std::string huffstr = decodeHuffman(&buf[pos], size); int _size = huffstr.size();
+								for (int i = 1; i < numAcao; i++) {
+									if (!strncmp(acaoList[i].data(), huffstr.data(), _size)) {
+										c->stream[streamIndex].acao = i; break;
+									}
+								}
+							}
+							else {
+								for (int i = 1; i < numAcao; i++) {
+									if (!strncmp(acaoList[i].data(), &buf[pos], size)) {
+										c->stream[streamIndex].acao = i; break;
+									}
+								}
+							}
+						} break;
 					case 28: // content-length.
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
@@ -365,6 +394,23 @@ streamFound:
 						}
 						if (c->stream[streamIndex].contentLength > maxpayload - 2) {
 							return -10;
+						}
+						break;
+					case 39: // if-match
+					case 41: // if-none-match
+					case 42: // if-range
+						switch (index) {
+							case 39: c->stream[streamIndex].conditionType = CR_IF_MATCH; break;
+							case 41: c->stream[streamIndex].conditionType = CR_IF_NONE_MATCH; break;
+							case 42: c->stream[streamIndex].conditionType = CR_IF_RANGE; break;
+						} if (isHuffman) {
+							std::string huffstr = decodeHuffman(&buf[pos], size);
+							c->stream[streamIndex].condition = strtoull(huffstr.data(), NULL, 10);
+							if (!c->stream[streamIndex].condition) c->stream[streamIndex].flags |= FLAG_INVALID;
+						}
+						else {
+							c->stream[streamIndex].condition = strtoull(&buf[pos], NULL, 10);
+							if (!c->stream[streamIndex].condition) c->stream[streamIndex].flags |= FLAG_INVALID;
 						}
 						break;
 					default: break;
@@ -568,21 +614,63 @@ openFilePoint2:
 #endif
 			if (r->f) {
 				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h.conType = fileMime(buff); r->fs = std::filesystem::file_size(u8p); h.conLength = r->fs;
-				if (r->rstart || r->rend) {
-					if (r->rstart == -1) { // read last rend bytes 
-						fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
+				h.conType = fileMime(buff);  h.conLength = std::filesystem::file_size(u8p);
+				h.lastMod = to_time_t(std::filesystem::last_write_time(u8p));
+				if (r->rstart || r->rend) {// is a range request.
+					// Note that h.conLength, content length on headers is the original file size,
+					// And r->fs will be morphed into remaining from ranges if any.
+					if (!r->conditionType || r->condition == h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
+						h.statusCode = 206;
+						if (r->rstart == -1) { // read last rend bytes 
+							fseek(r->f, r->rend * -1, SEEK_END);
+							r->rstart = r->fs - r->rend;  r->fs = r->rend;
+						}
+						else if (r->rend == -1) { // read thru 
+							fseek(r->f, r->rstart, SEEK_SET);
+							r->fs = h.conLength - r->rstart;
+							r->rend = h.conLength - 1; // Required for response headers.
+						}
+						else { // standard range req.
+							fseek(r->f, r->rstart, SEEK_SET);
+							r->fs = r->rend - r->rstart + 1;
+						}
 					}
-					else if (r->rend == -1) { // read thru end
-						fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
+					else { // Condition not satisfied.
+						h.statusCode = 200;
+						r->fs = h.conLength;
 					}
-					else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-					h.statusCode = 206;
 				}
-				else {
-					h.statusCode = 200; r->fs = std::filesystem::file_size(u8p); h.conLength = r->fs;
+				// Check the conditions other than if-range if any.
+				else if (r->conditionType) {
+					switch (r->conditionType) {
+					case CR_IF_NONE_MATCH:
+						if (r->condition == h.lastMod) {// ETags match, send 304.
+							h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
+							h2serverHeaders(c, &h, streamIndex);
+							r->id = 0; // Mark the stream space on memory free.
+							fclose(r->f); return;
+						}
+						else {
+							h.statusCode = 200; r->fs = h.conLength;
+						} break;
+					case CR_IF_MATCH: // Normally not used with GET requests but here we go.
+						if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
+							h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
+							h2serverHeaders(c, &h, streamIndex);
+							r->id = 0; // Mark the stream space on memory free.
+							fclose(r->f); return;
+							return;
+						}
+						else {
+							h.statusCode = 200; r->fs = h.conLength;
+						} break;
+					default: break;
+					}
 				}
-
+				else { // No range or conditions.
+					h.statusCode = 200;
+					r->fs = h.conLength;
+				}
 				if (r->method == METHOD_HEAD) {// If head request, send headers and exit.
 					h2serverHeaders(c, &h, streamIndex);
 					r->id = 0; // Mark the stream space on memory free.
@@ -929,8 +1017,7 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	if (h->lastMod) {
 		buf[i] = 15; buf[i + 1] = 29; i += 2; // Static not indexed 44: last-modified
 		buf[i] = 29; // Date is always 29 bytes.
-		time_t ldDate = time(&h->lastMod);
-		strftime(&buf[i + 1], 384 - i, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&ldDate)); i += 30;
+		strftime(&buf[i + 1], 384 - i, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&h->lastMod)); i += 30;
 
 		buf[i] = 15; buf[i + 1] = 19; i += 2; // Static not indexed 34: etag
 		buf[i] = sprintf(&buf[i + 1], "%llu", h->lastMod);
