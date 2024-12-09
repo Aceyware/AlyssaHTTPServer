@@ -1,10 +1,10 @@
 #include "Alyssa.h"
 FILE* logfile = NULL; extern time_t startupTime;
 
-int loggingInit(char* logName) {
+int loggingInit(std::string logName) {
 	// Open the log file
-	if (logName) {// A custom name is given.
-		logfile = fopen(logName, "a");
+	if (logName!="") {// A custom name is given.
+		logfile = fopen(logName.data(), "a");
 	}
 	else { // Open a file named in "Alyssa-yyyy.mm.dd-hh.mm.ss.log" format.
 		char buf[256] = { 0 };
@@ -13,7 +13,7 @@ int loggingInit(char* logName) {
 		logfile = fopen(buf, "a");
 	}
 	if (!logfile) return -1; // Open failed.
-	setvbuf(logfile, NULL, _IONBF, 0);
+	setvbuf(logfile, NULL, _IONBF, 0); // Set stream to unbuffered mode.
 
 	// Read the heading of log file, i.e. product info, version, time, some parameters, etc.
 	std::string heading = "=== Aceyware Alyssa HTTP Server version " version " started on "; heading.reserve(512);
@@ -50,9 +50,12 @@ extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALitera
 	char addr[32] = { 0 };
 	if (c->flags & FLAG_IPV6) inet_ntop(AF_INET6, c->ipAddr, addr, 32);
 	else inet_ntop(AF_INET, c->ipAddr, addr, 32);
+	// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 	if (pIsALiteralString) {
-		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %s\n", addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname, c->stream[s].path.data(), (const char*)p);
+		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %s\n", addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname
+			, c->stream[s].path.data(), (const char*)p);
 	} else {
-		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %d\n", addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname, c->stream[s].path.data(), p->statusCode);
+		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %d\n", addr, c->portAddr, (c->stream[s].vhost)?virtualHosts[c->stream[s].vhost].hostname:(char*)&c->stream[s].zstrm
+			, c->stream[s].path.data(), p->statusCode);
 	}
 }

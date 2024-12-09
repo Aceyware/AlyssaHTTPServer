@@ -40,10 +40,12 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 				}
 				else if (!strncmp(&buf[bpos + 1], "ccept-", 6)) {
 					bpos += 7;
+#ifdef COMPILE_ZLIB
 					if (!strncmp(&buf[bpos+8], "ncoding: ", 9)) {
 						bpos += 10;
 						if(memchr(&buf[bpos], 'g', epos-bpos)) r->compressType=1;
 					}
+#endif
 				}
 			}
 			break;
@@ -65,6 +67,9 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 						}
 					}
 				}
+				// Save the hostname to zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
+				memcpy(&r->zstrm, &buf[bpos], epos - bpos);
+				*((char*)(&r->zstrm)+epos - bpos) = 0;
 			}
 			break;
 		case 'i':
@@ -150,7 +155,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			if (!end) { r->method = -1; }// Ending space not found, invalid request.
 			else if (end - &buf[pos] > maxpath) { r->method = -3; } // Path is too long
 			else {// All is well, keep parsing.
-				memcpy(r->path.data(), &buf[pos], end - &buf[pos]);// Copy request path
+				memcpy((void*)r->path.data(), &buf[pos], end - &buf[pos]);// Copy request path
 				r->path[end - &buf[pos]] = '\0';// Add null terminator
 				end = &r->path[end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
 				pos += end - &r->path[0] + 1;
@@ -197,7 +202,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			if (r->flags ^ FLAG_INVALID) {
 				if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos) < (maxstreams - 1) * sizeof(requestInfo)) {
 					// Append the new segment 
-					memcpy(c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data(), &buf[bpos], pos - bpos);
+					memcpy((void*)(c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data()), &buf[bpos], pos - bpos);
 					*(unsigned short*)c->stream[1].path.data() += (pos - bpos);
 					if (pos < sz) {// Line is completed.
 						// Parse the resulting line.
@@ -253,11 +258,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			bpos = pos;
 		}
 		if (pos > bpos) {// Last line was incomplete
-			// UPDATE: 3.0-prerelease3 and later uses path buffer of second stream rather than memory off all later streams 
-			// HTTP/1.1 does not use more than 1 stream so the unused memory caused by other MAXSTREAMS-1 structs will be used in this regard
-			// Doing efficient software is not always about being a good programmer, it often requires to be a jackass and do hacks like this.
-			// I don't care what rust faggots will say. I don't need a compiler to spoonfed me. All languages are safe as long as you know 
-			// what you're doing. Fuck off and whine on somewhere else.
+			// HTTP/1.1 does not use more than 1 stream so the memory, so memory for request path of second stream can be used for this purpose.
 
 			// First 2 bytes of second stream path buffer is used for size, rest is used as string of incomplete line.
 
@@ -294,7 +295,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 }
 
 void serverHeaders(respHeaders* h, clientInfo* c) {
-	logReqeust(c, 0, h);
+	if (loggingEnabled) logReqeust(c, 0, h);
 	// Set up the error page to send if there is an error
 	if (h->statusCode >= 400 && errorPagesEnabled) { 
 		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = h->conLength;
@@ -309,7 +310,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 				  break;
 		case 302: memcpy(&buf[pos], "302 Found\r\nLocation: ",	 21); pos += 21;
 				  memcpy(&buf[pos], h->conType, strlen(h->conType) ); pos += strlen(h->conType);// Content type is reused as redirect target.
-				  break;
+				  h->conType = NULL; break;
 		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
 		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
 		case 401: memcpy(&buf[pos], "401 Unauthorized\r\nWWW-Authenticate: Basic", 41); pos += 41; break;
@@ -329,13 +330,15 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
 	}
 	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
+	// Content length
 	if(h->flags & FLAG_CHUNKED) {
 		memcpy(&buf[pos], "Transfer-Encoding: chunked\r\n", 28); pos += 28;
 	}
-	else {
+	else if(h->flags ^ FLAG_NOLENGTH) {
 		memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
 		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", (h->statusCode != 206) ? h->conLength : c->stream[0].rend - c->stream[0].rstart);
 	}
+	// Content-encoding if available.
 	if(h->flags & FLAG_ENCODED) {
 		memcpy(&buf[pos], "Content-Encoding: gzip\r\n", 24); pos += 24;
 	}
@@ -438,7 +441,10 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 void getInit(clientInfo* c) {
 	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = NULL;
 	#if __cplusplus > 201700L
-	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+		std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+		#define Path u8p
+	#else
+		#define Path tBuf[c->cT]
 	#endif
 	if (c->stream[0].flags & FLAG_INVALID) {
 		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
@@ -455,6 +461,11 @@ void getInit(clientInfo* c) {
 			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		}
 		return;
+	} else if (hsts && c->flags ^ FLAG_SSL) {
+		h.statusCode = 302; h.flags |= FLAG_NOLENGTH; char target[512] = { 0 };
+		// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
+		sprintf_s(target, 512, "https://%s%s", (r->vhost) ? virtualHosts[r->vhost].hostname: (char*)&r->zstrm, r->path.data());
+		h.conType = target; serverHeaders(&h, c); epollRemove(c); return;
 	}
 getRestart:
 	switch (virtualHosts[r->vhost].type) {
@@ -463,12 +474,18 @@ getRestart:
 				int htrs = strlen(virtualHosts[r->vhost].respath);
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath, htrs);
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
+#if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFile17;
+#else
+				goto openFilePoint;
+#endif
 			}
 			else {
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+#if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(tBuf[c->cT]);
+#endif
 			}
 			break;
 		case 1: // Redirecting virtual host.
@@ -476,7 +493,9 @@ getRestart:
 			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-			epollRemove(c); break;
+			epollRemove(c); 
+			if (loggingEnabled) logReqeust(c, 0, (respHeaders*)"Request rejected and connection dropped.", true);
+			return; break;
 		default: break;
 	}
 
@@ -489,7 +508,7 @@ getRestart:
 			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 			return;
 		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); epollRemove(c); return;
+			epollRemove(c); return;
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; 
 			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
@@ -507,59 +526,22 @@ getRestart:
 			std::terminate(); break;
 	}
 
-openFilePoint:
-#if __cplusplus < 201700L // C++17 not supported, use old stat
-	r->f = fopen(tBuf[c->cT], "rb");
-	struct stat attr; 
-	if (!r->f) {
-		stat(tBuf[c->cT], &attr);
-		if (attr.st_mode & S_IFDIR) { 
-			strcat(tBuf[c->cT], "/index.html");
-			goto openFilePoint;
-		}// It is a directory, check for index.html inside it.
-		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-		else if (c->flags & FLAG_CLOSE) { closeConnection(); } // Close the connection if "Connection: close" is set.
-		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		return;
-	}
-	else {
-		stat(tBuf[c->cT], &attr);
-		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(tBuf[c->cT], "/index.html"); goto openFilePoint; }// It is a directory, check for index.html inside it.
-		// Yes, it exists on both cases because fopen'ing directories is not defined on standard
-		// and its behavior differs.
-		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs;
-		h.conType = fileMime(tBuf[c->cT]);
-		if (r->rstart || r->rend) {
-			if (r->rstart == -1) { // read last rend bytes 
-				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
-			}
-			else if (r->rend == -1) { // read thru end
-				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
-			}
-			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-			h.statusCode = 206; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
-		}
-		else {
-			h.statusCode = 200; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT); // Set polling to OUT as we'll send file.
-		}
-		return;
-	}
-#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
-	if (std::filesystem::exists(u8p)) {// Something exists on such path.
-		if (std::filesystem::is_directory(u8p)) { // It is a directory.
+	if (FileExists(Path)) {// Something exists on such path.
+		if (IsDirectory(Path)) { // It is a directory.
 			// Check for index.html
 			int pos = strlen(tBuf[c->cT]);
 			memcpy(&tBuf[c->cT][pos], "/index.html", 12);
-			u8p += "/index.html";
-			if (std::filesystem::exists(tBuf[c->cT])) goto openFile17;
+#if _cplusplus > 201700L
+			Path += "/index.html";
+#endif
+			if (FileExists(tBuf[c->cT])) goto openFilePoint;
 #ifdef COMPILE_DIRINDEX
 			// Send directory index if enabled.
 			else if (dirIndexEnabled) {
 				tBuf[c->cT][pos] = '\0';
 				std::string payload = diMain(tBuf[c->cT], r->path);
 				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
-				serverHeaders(&h, c); if(r->method!=METHOD_HEAD) Send(c, payload.data(), h.conLength);
+				serverHeaders(&h, c); if (r->method != METHOD_HEAD) Send(c, payload.data(), h.conLength);
 				if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 				else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 				return;
@@ -568,7 +550,7 @@ openFilePoint:
 			goto h1send404;
 		}
 		else { // It is a file. Open and go.
-		openFile17:
+		openFilePoint:
 #ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
 			int cbMultiByte = strlen(tBuf[c->cT]);
 			int ret = MultiByteToWideChar(CP_UTF8, 0, tBuf[c->cT], cbMultiByte, (LPWSTR)&tBuf[c->cT][cbMultiByte + 1], (bufsize - cbMultiByte - 1) / 2);
@@ -578,12 +560,12 @@ openFilePoint:
 			r->f = fopen(tBuf[c->cT], "rb");
 #endif
 			if (r->f) {
-				h.conType = fileMime(tBuf[c->cT]); h.conLength = std::filesystem::file_size(u8p);
-				h.lastMod = to_time_t(std::filesystem::last_write_time(u8p));
+				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path);
+				h.lastMod = WriteTime(Path);
 				if (r->rstart || r->rend) {// is a range request.
-										   // Note that h.conLength, content length on headers is the original file size,
-										   // And r->fs will be morphed into remaining from ranges if any.
-					if (!r->conditionType || r->condition==h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
+					// Note that h.conLength, content length on headers is the original file size,
+					// And r->fs will be morphed into remaining from ranges if any.
+					if (!r->conditionType || r->condition == h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
 						h.statusCode = 206;
 						if (r->rstart == -1) { // read last rend bytes 
 							fseek(r->f, r->rend * -1, SEEK_END);
@@ -603,53 +585,54 @@ openFilePoint:
 						h.statusCode = 200;
 						r->fs = h.conLength;
 					}
-				} 
+				}
 				// Check the conditions other than if-range if any.
 				else if (r->conditionType) {
 					switch (r->conditionType) {
-						case CR_IF_NONE_MATCH:
-							if (r->condition == h.lastMod) {// ETags match, send 304.
-								h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
-								serverHeaders(&h, c); fclose(r->f); r->fs = 0;
-								if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-								else epollCtl(c, EPOLLIN | EPOLLONESHOT);
-								return;
-							}
-							else {
-								h.statusCode = 200; r->fs = h.conLength;
-							} break;
-						case CR_IF_MATCH: // Normally not used with GET requests but here we go.
-							if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
-								h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
-								serverHeaders(&h, c); fclose(r->f); r->fs = 0;
-								if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-								else epollCtl(c, EPOLLIN | EPOLLONESHOT);
-								return;
-							}
-							else {
-								h.statusCode = 200; r->fs = h.conLength;
-							} break;
-						default: break;
+					case CR_IF_NONE_MATCH:
+						if (r->condition == h.lastMod) {// ETags match, send 304.
+							h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
+							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
+							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+							else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+							return;
+						}
+						else {
+							h.statusCode = 200; r->fs = h.conLength;
+						} break;
+					case CR_IF_MATCH: // Normally not used with GET requests but here we go.
+						if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
+							h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
+							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
+							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+							else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+							return;
+						}
+						else {
+							h.statusCode = 200; r->fs = h.conLength;
+						} break;
+					default: break;
 					}
-				} else { // No range or conditions.
+				}
+				else { // No range or conditions.
 					h.statusCode = 200;
 					r->fs = h.conLength;
 				}
-				
-				
-				if(r->method==METHOD_HEAD) {
-					h.conLength=r->fs; serverHeaders(&h, c); fclose(r->f); r->fs = 0;
+
+				if (r->method == METHOD_HEAD) {
+					h.conLength = r->fs; serverHeaders(&h, c); fclose(r->f); r->fs = 0;
 					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}
 				else if (r->fs < bufsize) { // Read it on a single step without passing it to a thread.
+#ifdef COMPILE_ZLIB
 					if (gzEnabled && r->fs < bufsize / 2) {
 						// Read the file
 						fread(tBuf[c->cT], r->fs, 1, r->f);
 						// Init compression 
 						int8_t ret = deflateInit2(&r->zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
-						if(ret!=Z_OK) {// Error
-							
+						if (ret != Z_OK) {// Error
+
 						}
 						// Set compression up
 						r->zstrm.next_in = (Bytef*)tBuf[c->cT]; r->zstrm.avail_in = r->fs;
@@ -665,8 +648,12 @@ openFilePoint:
 							h.conLength = r->fs;
 							serverHeaders(&h, c); Send(c, tBuf[c->cT], r->fs);
 						}
-					} else {
-						h.conLength=r->fs; serverHeaders(&h, c);
+					}
+#else
+					if(0){}
+#endif
+					else {
+						h.conLength = r->fs; serverHeaders(&h, c);
 						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
 						fclose(r->f); r->fs = 0;
 						if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
@@ -687,14 +674,13 @@ openFilePoint:
 		}
 	}
 	else { // Requested path does not exists at all.
-h1send404:
+	h1send404:
 		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-		if (errorPagesEnabled && r->method!=METHOD_HEAD) errorPagesSender(c);
+		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
 	}
-#endif
 }
 
 #ifdef COMPILE_CUSTOMACTIONS

@@ -179,7 +179,12 @@ int main(int argc, char* argv[]) {
 	getLocale();
 	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount);
 	hThreads.resize(threadCount); tLk.resize(threadCount);
-	if (1) loggingInit(NULL);
+	if (loggingEnabled) {
+		if (loggingInit(loggingFileName)) {
+			std::cout << "E: Failed to open logging file, logging is disabled." << std::endl;
+			loggingEnabled = 0;
+		}
+	}
 
 	// Create threads
 	for (size_t i = 0; i < threadCount; i++) {
@@ -282,8 +287,8 @@ int main(int argc, char* argv[]) {
 	int events = 0;
 	// Set up SSL
 #ifdef COMPILE_WOLFSSL
-	wolfSSL_Init(); SOCKET sslListening;
-	if (sslEnabled) {
+	SOCKET sslListening;
+	if (sslEnabled>0) {
 		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
 			std::cout<<"WolfSSL: internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."<<std::endl;

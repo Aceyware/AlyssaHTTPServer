@@ -299,9 +299,8 @@ streamFound:
 					case 2: c->stream[streamIndex].method = 1;	break; // :method: GET
 					case 3: c->stream[streamIndex].method = 2;	break; // :method: POST
 					case 4: c->stream[streamIndex].path[0] = '/';
-						c->stream[streamIndex].path[1] = 0;		break; // :path: /
-					case 5: memcpy(c->stream[streamIndex].path.data(), "/index.html", 12);
-														break; // :path: /index.html
+						    c->stream[streamIndex].path[1] = 0;	break; // :path: /
+					case 5: memcpy((void*)c->stream[streamIndex].path.data(), "/index.html", 12); break; // :path: /index.html
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
 					default: break;
 				}
@@ -354,11 +353,11 @@ streamFound:
 					case 4: // :path
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							memcpy(c->stream[streamIndex].path.data(), huffstr.data(), huffstr.size());
+							memcpy((void*)c->stream[streamIndex].path.data(), huffstr.data(), huffstr.size());
 							pathParsing(&c->stream[streamIndex], huffstr.size());
 						}
 						else {
-							memcpy(c->stream[streamIndex].path.data(), &buf[pos], size);
+							memcpy((void*)c->stream[streamIndex].path.data(), &buf[pos], size);
 							pathParsing(&c->stream[streamIndex], size);
 						}
 						
@@ -439,11 +438,14 @@ static void h2getInit(clientInfo* c, int s) {
 		if (c->stream[i].id == s) { streamIndex = i; break; }
 	}
 	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
-#if __cplusplus > 201700L
-	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-#endif
 #define h2bufsz 16600
 	char buff[h2bufsz] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
+#if __cplusplus > 201700L
+	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+	#define Path u8p
+#else
+	#define Path buff
+#endif
 h2getRestart:
 	if (r->flags & FLAG_INVALID) {
 		if (r->flags & FLAG_DENIED) h.statusCode = 403;
@@ -471,12 +473,21 @@ h2getRestart:
 				int htrs = strlen(virtualHosts[r->vhost].respath);
 				memcpy(buff, virtualHosts[r->vhost].respath, htrs);
 				memcpy(buff + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
-				u8p = std::filesystem::u8path(buff); goto openFile17;
+#if __cplusplus > 201700L
+				u8p = std::filesystem::u8path(buff); 
+				goto openFile17;
+#else
+				goto openFilePoint2;
+#endif
+				
 			}
 			else {
 				memcpy(buff, virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
 				memcpy(buff + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
-				u8p = std::filesystem::u8path(buff); break;
+#if __cplusplus > 201700L
+				u8p = std::filesystem::u8path(buff);
+#endif
+				break;
 			}
 		case 1: // Redirecting virtual host.
 			h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
@@ -485,6 +496,7 @@ h2getRestart:
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending anything back
 			epollRemove(c);
+			if (loggingEnabled) logReqeust(c, 0, (respHeaders*)"Request rejected and connection dropped.", true);
 			// Close and delete stream datas.
 			for (int j = 0; j < 8; j++) {
 				c->stream[j].fs = 0;
@@ -532,61 +544,15 @@ h2getRestart:
 	}
 
 openFilePoint2:
-	//#if __cplusplus < 201700L // C++17 not supported, use old stat
-#if false
-	r->f = fopen(buff, "rb");
-	if (!r->f) {
-		struct stat attr; stat(buff, &attr);
-		if (attr.st_mode & S_IFDIR) { strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
-		h.statusCode = 404;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, r->vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-			h2serverHeaders(c, &h, streamIndex);
-			if (r->method != METHOD_HEAD) {
-				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) r->id = 0;
-			}
-		}
-		else {// Reset polling.
-			h.conLength = 0; h2serverHeaders(c, &h, streamIndex);
-			r->id = 0;  // Mark the stream space on memory free.
-		}
-		return;
-	}
-	else {
-		struct stat attr; stat(buff, &attr);
-		if (attr.st_mode & S_IFDIR) { fclose(r->f); strcat(buff, "/index.html"); goto openFilePoint2; }// It is a directory, check for index.html inside it.
-		// Yes, it exists on both cases because fopen'ing directories is not defined on standard
-		// and its behavior differs.
-		h.lastMod = attr.st_mtime; r->fs = attr.st_size; h.conLength = r->fs;
-		if (r->method == METHOD_HEAD) {
-			r->id = 0; // Mark the stream space on memory free.
-			fclose(r->f); h.flags |= FLAG_ENDSTREAM;
-		}
-		else c->activeStreams++;
-		//h.conType = fileMime(buff);
-		if (r->rstart || r->rend) {
-			if (r->rstart == -1) { // read last rend bytes 
-				fseek(r->f, 0, r->fs - r->rend); r->rstart = r->fs - r->rend;  r->fs = r->rend;
-			}
-			else if (r->rend == -1) { // read thru end
-				fseek(r->f, 0, r->rstart); r->fs -= r->rstart;
-			}
-			else { fseek(r->f, 0, r->rstart); r->fs -= r->rstart - r->rend + 1; } // standard range req.
-			h.statusCode = 206; h2serverHeaders(c, &h, streamIndex);
-		else {
-			h.statusCode = 200; h2serverHeaders(c, &h, streamIndex);
-		}
-		return;
-		}
-#else // C++17 supported, use std::filesystem and directory indexes if enabled as well.
-	if (std::filesystem::exists(u8p)) {// Something exists on such path.
-		if (std::filesystem::is_directory(u8p)) { // It is a directory.
+	if (FileExists(Path)) {// Something exists on such path.
+		if (IsDirectory(Path)) { // It is a directory.
 			// Check for index.html
 			int pos = strlen(buff);
 			memcpy(&buff[pos], "/index.html", 12);
+#if _cplusplus>201700L
 			u8p += "/index.html";
-			if (std::filesystem::exists(u8p)) goto openFile17;
+#endif
+			if (FileExists(Path)) goto openFile17;
 #ifdef COMPILE_DIRINDEX
 			// Send directory index if enabled.
 			else if (dirIndexEnabled) {
@@ -594,7 +560,7 @@ openFilePoint2:
 				std::string payload = diMain(buff, r->path);
 				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
 				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h2serverHeaders(c, &h, streamIndex); 
+				h2serverHeaders(c, &h, streamIndex);
 				if (r->method != METHOD_HEAD) h2SendData(c, s, payload.data(), h.conLength);
 				r->id = 0;  // Mark the stream space on memory free.
 				return;
@@ -614,8 +580,7 @@ openFilePoint2:
 #endif
 			if (r->f) {
 				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h.conType = fileMime(buff);  h.conLength = std::filesystem::file_size(u8p);
-				h.lastMod = to_time_t(std::filesystem::last_write_time(u8p));
+				h.conType = fileMime(buff);  h.conLength = FileSize(Path); h.lastMod = WriteTime(Path);
 				if (r->rstart || r->rend) {// is a range request.
 					// Note that h.conLength, content length on headers is the original file size,
 					// And r->fs will be morphed into remaining from ranges if any.
@@ -677,6 +642,7 @@ openFilePoint2:
 					fclose(r->f); return;
 				} // Else keep going.
 				else if (r->fs < h2bufsz - 9) {
+#ifdef COMPILE_ZLIB
 					if (gzEnabled && r->fs < h2bufsz / 2 - 9) {
 						// Read the file
 						fread(&buff[h2bufsz / 2], r->fs, 1, r->f);
@@ -688,7 +654,7 @@ openFilePoint2:
 						}
 						else {
 							// Set compression parameters
-							r->zstrm.next_out = (Bytef*)buff+9; r->zstrm.avail_out = h2bufsz / 2 - 9;
+							r->zstrm.next_out = (Bytef*)buff + 9; r->zstrm.avail_out = h2bufsz / 2 - 9;
 							r->zstrm.next_in = (Bytef*)&buff[h2bufsz / 2]; r->zstrm.avail_in = r->fs;
 							// Do compression and set the headers
 							deflate(&r->zstrm, Z_FINISH); deflateEnd(&r->zstrm);
@@ -702,6 +668,9 @@ openFilePoint2:
 							}
 						}
 					}
+#else
+					if(0){}
+#endif
 					else { // Read and send file normally.
 						fread(&buff[9], r->fs, 1, r->f); h.conLength = r->fs; h2serverHeaders(c, &h, streamIndex);
 					}
@@ -727,7 +696,7 @@ openFilePoint2:
 		}
 	}
 	else { // Requested path does not exists at all.
-h2Get404:
+	h2Get404:
 		h.statusCode = 404;
 		if (errorPagesEnabled) {
 			unsigned short eSz = errorPages(buff, h.statusCode, r->vhost, c->stream[streamIndex]);
@@ -746,7 +715,6 @@ h2Get404:
 			r->id = 0; ; // Mark the stream space on memory free.
 		}
 	}
-#endif
 }
 
 /// <summary>

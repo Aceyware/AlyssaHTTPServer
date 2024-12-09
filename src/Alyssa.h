@@ -96,7 +96,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.4"
+#define version "3.0-prerelease3.5"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -120,14 +120,17 @@ extern bool hascsp;
 extern std::string csp;
 extern bool dirIndexEnabled;
 extern int8_t customactions;
-extern bool	sslEnabled;
 extern bool ipv6Enabled;
 extern bool gzEnabled;
 extern int srvLocale;
 extern int8_t configLoaded;
+extern bool loggingEnabled;
+extern std::string loggingFileName;
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
+
+extern int8_t sslEnabled;
 
 enum clientFlags {
 	// RequestInfo flags regarding to header parsing
@@ -189,7 +192,18 @@ typedef struct requestInfo {
 	unsigned short acao; // (CORS) Access Control Allow Origin origin number.
 #ifdef COMPILE_ZLIB
 	int8_t compressType = 0;
+	// Starting with "3.0 prerelase 3.5" zstrm is now used for storing the value of "host" header if it is not a registered virtual host.
+	// Previously we were only saving index of which virtual host user agent connects, and discarding the actual hostname string, which can be *anything*
+	// I realized that actual hostname string is actually needed for logging and HSTS redirection (and nothing else really), and didn't wanted to allocate
+	// more space for something like that which has very few (but necessary) purpose, and decided to use some already existing space instead.
+	// 
+	// zstrm (along with f and fs, but 16 bytes are so small that something like "www.aceyware.net\0" won't fit there.) is the only field that is not
+	// used until request parsing ends and gets started on processing. So that space can be used for storing anything until compression starts.
+	// For users without zlib we will allocate some decoy char array for solely that purpose.
+	// Requests done to a registered virtual host will not be saved here as we have the hostname already, only "vhost" variable will be used for such.
 	z_stream zstrm = { 0 };
+#else
+	char zstrm[88] = { 0 };
 #endif
 
 	void clean() {
@@ -357,7 +371,7 @@ int getCoreCount();
 int getLocale();
 int commandline(int argc, char* argv[]);
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
-int loggingInit(char* logName = NULL);
+int loggingInit(std::string logName);
 #if __cplusplus > 201700L
 template <typename TP>
 inline std::time_t to_time_t(TP tp) {
@@ -389,4 +403,30 @@ inline std::time_t to_time_t(TP tp) {
 extern std::vector<listeningPort> ports;
 #ifdef COMPILE_WOLFSSL
 extern std::vector<listeningPort> sslPorts;
+#endif
+
+// Functions/definitions provided for API compatibility between pre-C++17 and post-C++17 inclusive.
+#if __cplusplus < 201700L
+static bool FileExists(char* path) {
+	FILE* f = fopen(path, "rb");
+	if (!f) return false;
+	fclose(f); return true;
+}
+static size_t FileSize(char* path) {
+	struct stat attr; stat(path, &attr);
+	return attr.st_size;
+}
+static bool IsDirectory(char* path) {
+	struct stat attr; stat(path, &attr);
+	return attr.st_mode & S_IFDIR;
+}
+static int WriteTime(char* path) {
+	struct stat attr; stat(path, &attr);
+	return attr.st_mtime;
+}
+#else
+#define FileExists std::filesystem::exists
+#define FileSize std::filesystem::file_size
+#define IsDirectory std::filesystem::is_directory
+#define WriteTime(A) to_time_t(std::filesystem::last_write_time(A));
 #endif

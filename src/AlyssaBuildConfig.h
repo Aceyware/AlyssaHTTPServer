@@ -20,7 +20,7 @@
 #define COMPILE_CUSTOMACTIONS
 
 // Directory indexes support
-#define COMPILE_DIRINDEX
+//#define COMPILE_DIRINDEX
 #ifdef COMPILE_DIRINDEX
 #if __cplusplus < 201700L
 	#error C++17 compatible compiler is required for building with directory indexes.
@@ -34,7 +34,7 @@
 #define Compile_locales
 
 // Compile with zlib for gz encoding support.
-#define COMPILE_ZLIB
+//#define COMPILE_ZLIB
 
 #define LIB_B64CPP 1
 #define LIB_WOLFSSL 2

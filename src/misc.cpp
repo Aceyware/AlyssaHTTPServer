@@ -178,9 +178,21 @@ int getLocale(){
 	return 0;
 }
 
+using std::cout;
+extern int8_t readPorts(char* buf, std::vector<listeningPort>& target);
 int commandline(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
 		switch (argv[i][1]) {
+		case 'c':
+			if (argc < i + 1) {
+				printf("E: -c requires an argument!");
+				exit(-1);
+			}
+			if (readConfig(argv[i + 1])) {
+				printf("E: Opening config file %s failed!", argv[i + 1]);
+				exit(-1);
+			} i++;
+			break;
 		case 'h':
 		case '?':
 			printf("Alyssa HTTP Server command-line help\n"
@@ -189,9 +201,87 @@ int commandline(int argc, char* argv[]) {
 				   "-h(elp) or -?             : Displays this message\n"
 				   "-c(onfig) <path\\of\\.cfg>: Loads given config file\n"
 				   "-p(port) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
+#ifdef COMPILE_WOLFSSL
+				   "-n(ossl)                  : Disables SSL regardless of config.\n"
+				   "-s(slport)<prt1>[,p2,p3..]: Overrides SSL listening ports with given ones\n"
+#endif
 				   "-v(ersion)                : Prints version and detailed info\n"
+				"\n"
+				"\nFor detailed manual please visit \"https://aceyware.net/Alyssa/Documentation\".\n"
 					,argv[0]);
 			exit(0); break;
+		case 'p':
+			if (argc < i + 1) {
+				printf("E: -p requires an argument!");
+				exit(-1);
+			} ports.clear();
+			if (readPorts(argv[i + 1],ports)) {
+				printf("E: Invalid argument: %s", argv[i + 1]);
+				exit(-1);
+			} i++;
+			break;
+#ifdef COMPILE_WOLFSSL
+		case 'n':
+			sslEnabled = -1;
+			break;
+		case 's':
+			if (argc < i + 1) {
+				printf("E: -s requires an argument!");
+				exit(-1);
+			} sslPorts.clear();
+			if (readPorts(argv[i + 1], sslPorts)) {
+				printf("E: Invalid argument: %s", argv[i + 1]);
+				exit(-1);
+			} i++;
+			break;
+#endif
+		case 'v':
+			cout << "Aceyware Alyssa HTTP Server version " << version << std::endl
+#ifdef COMPILE_WOLFSSL
+			     << "WolfSSL Library Version: " << wolfSSL_lib_version() << std::endl
+#endif
+			     << "Compiled on " << __DATE__ << " " << __TIME__ << std::endl
+			     << "Features: Core"
+#ifdef _DEBUG
+				 << ", Debug"
+#endif
+#if __cplusplus > 201700L
+				 << ", C++17 std::filesystem"
+#endif
+#ifdef COMPILE_WOLFSSL
+				 << ", SSL"
+#endif
+#ifdef COMPILE_HTTP2
+				 << ", HTTP/2"
+#endif
+#ifdef COMPILE_CUSTOMACTIONS
+				 << ", Custom Actions"
+#endif
+#ifdef COMPILE_CGI
+				 << ", CGI"
+#endif
+#ifdef COMPILE_DIRINDEX
+				 << ", Directory Index"
+#endif
+#ifdef COMPILE_ZLIB
+				 << ", zlib"
+#endif
+				 << std::endl
+			     << std::endl << 
+				"Copyright (C) 2025 Aceyware\n"
+				"This program is free software: you can redistribute it and/or modify\n"
+				"it under the terms of the GNU General Public License as published by\n "
+				"the Free Software Foundation, either version 3 of the License, or \n"
+				"(at your option) any later version.\n\n"
+
+				"This program is distributed in the hope that it will be useful, but\n"
+				"WITHOUT ANY WARRANTY; without even the implied warranty of \n"
+				"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n"
+				"GNU General Public License for more details.\n\n"
+
+				"You should have received a copy of the GNU General Public License\n"
+				"along with this program. If not, see \"https://www.gnu.org/licenses/\".\n";
+			exit(0); return 0;
 		default:
 			break;
 		}

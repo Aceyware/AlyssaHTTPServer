@@ -5,7 +5,7 @@
 #include <fstream>
 //std::unordered_map<std::string, std::string> configData;
 
-static int8_t readPorts(char* buf, std::vector<listeningPort>& target) {
+int8_t readPorts(char* buf, std::vector<listeningPort>& target) {
 	unsigned long newport=strtoul(buf, &buf, 10);
 	while (newport) {
 		if(newport > 65535) return -1;
@@ -22,8 +22,16 @@ extern "C" int8_t readConfig(const char* path) {
 	} configLoaded++;
 	auto x = new std::codecvt_utf8<wchar_t>;
 	conf.imbue(std::locale(std::locale(), x));
-	int sz = std::filesystem::file_size(path); char* buf = new char[sz+2];
-	conf.read(buf, sz); buf[sz-1]='\n'; buf[sz]=0; char* begin=buf; char* end;
+#if __cplusplus > 201700L
+	int sz = std::filesystem::file_size(path); 
+#else
+	struct stat attr; stat(path, &attr);
+	int sz = attr.st_size;
+#endif
+	char* buf = new char[sz+1];
+	sz = conf.read(buf, sz).gcount(); // File is read as text so size is smaller than real file size. 
+	buf[sz] = 0; char* begin=buf; char* end;
+	if (buf[sz - 1] != '\n') { buf[sz] = '\n'; sz++; } // Check if file ends with a empty newline, else add newline delimiter because the loop below works with them.
 	while ((end=(char*)memchr(begin,'\n',sz-(begin-buf)))) {
 		*end = '\0'; if (*(end - 1) == '\r') *(end - 1) = '\0';
 //		TODO: additional checks can be added here in a loop when modules support is added.
@@ -81,9 +89,12 @@ extern "C" int8_t readConfig(const char* path) {
 					}
 					break;
 				case 'l': // lang
-				case 'L':
+				case 'L': // logfile
 					if(*(begin + 3)=='g'||*(begin+3)=='G'){
 						
+					}
+					else if (*(begin + 6) == 'e' || *(begin + 6) == 'E') { // logfile
+						loggingFileName = begin + 8;
 					}
 					break;
 				case 'm': // maxpath, maxauth, maxstream, maxpayload, maxclient
@@ -131,7 +142,7 @@ extern "C" int8_t readConfig(const char* path) {
 						sslKeyPath=begin+7;
 					}
 					else if(*(begin + 3)==' '){// ssl
-						if(*(begin + 4)=='1') sslEnabled=1;
+						if(*(begin + 4)=='1') sslEnabled+=1;
 						else sslEnabled=0;
 					}
 					break;

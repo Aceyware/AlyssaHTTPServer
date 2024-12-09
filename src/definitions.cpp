@@ -34,16 +34,18 @@ bool		ipv6Enabled		  = 1;
 #ifdef COMPILE_ZLIB
 bool		gzEnabled		  = 1;
 #endif
+bool loggingEnabled = 1;
 int srvLocale = 0;
 
 std::vector<listeningPort> ports = {9999};
 
 int8_t configLoaded = 0;
 time_t startupTime = time(NULL);
+std::string loggingFileName;
 
 // SSL stuff
 #ifdef COMPILE_WOLFSSL
-bool		sslEnabled = 0;
+int8_t		sslEnabled = 0;
 std::string sslCertPath = "./crt.pem";
 std::string sslKeyPath  = "./key.key";
 std::vector<listeningPort> sslPorts = {4433};

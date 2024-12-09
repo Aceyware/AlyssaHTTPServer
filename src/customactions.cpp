@@ -19,7 +19,12 @@ struct customAction {
 static int8_t caAuth(const char* auth, char* path) {
 	if (!auth[0]) return -2; // Check if user agent has given any credentials
 	unsigned short pws = 0; // Password start
+#if __cplusplus > 201700L
 	int sz = std::filesystem::file_size(path);
+#else
+	struct stat attr; stat(path, &attr);
+	int sz = attr.st_size;
+#endif
 	char* buf = (char*)alloca(sz);
 	FILE* f = fopen(path, "rb"); fread(buf, sz, 1, f); fclose(f);
 	int i = 0; // Counter variable.
@@ -273,7 +278,12 @@ if (buf[i] != '{') return -2;\
 
 // This code parses an .alyssa file and calls the executing functions if finds a match.
 static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
+#if __cplusplus > 201700L
 	int sz = std::filesystem::file_size(path);
+#else
+	struct stat attr; stat(path, &attr);
+	int sz = attr.st_size;
+#endif
 	char* buf = (char*)alloca(sz);
 	FILE* f = fopen(path, "rb"); fread(buf, sz, 1, f); fclose(f);
 	for (int i = 0; i < sz; i++) {
@@ -355,17 +365,14 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 	// Make a copy of original path for modifying.
 	memcpy(&Buf[sz + 1], Buf, sz); 
 	Buf[2 * sz + 1] = 0; Buf[sz] = 0;
-#if __cplusplus < 201700L // C++17 is not supported, stat is used.
-#error not implemented
-#else // C++17 is supported, std::filesystem is used.
-	if (std::filesystem::is_directory(&Buf[sz+1])) { // Req. path is a directory, check for .alyssa file in it.
-		Buf[2*sz+1]	 = '/', Buf[2*sz + 2] = '.', Buf[2*sz + 3] = 'a', Buf[2*sz + 4] = 'l',
-		Buf[2*sz + 5] = 'y', Buf[2*sz + 6] = 's', Buf[2*sz + 7] = 's', Buf[2*sz + 8] = 'a', 
+	if (IsDirectory(&Buf[sz + 1])) { // Req. path is a directory, check for .alyssa file in it.
+		Buf[2 * sz + 1] = '/', Buf[2 * sz + 2] = '.', Buf[2 * sz + 3] = 'a', Buf[2 * sz + 4] = 'l',
+			Buf[2 * sz + 5] = 'y', Buf[2 * sz + 6] = 's', Buf[2 * sz + 7] = 's', Buf[2 * sz + 8] = 'a',
 			Buf[2 * sz + 9] = '\0';
 		// If recursive is not enabled check for file and parse it.
-		if (std::filesystem::exists(&Buf[sz+1])) {//.alyssa exists inside.
+		if (FileExists(&Buf[sz + 1])) {//.alyssa exists inside.
 			if (customactions == 1) {
-				return caParse(c, r, &Buf[sz+1]);
+				return caParse(c, r, &Buf[sz + 1]);
 			}
 			else { // add it to list of files that will checked.
 				*(unsigned short*)&Buf[BufSz - as] = sz + 10; as -= 2;
@@ -377,14 +384,14 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 		else goto RecursiveSearch; // else search recursively.
 	}
 	else { // is a file, check if parent dir. has an .alyssa file inside
-RecursiveSearch:
-		for (; i > 2*sz-rsz; i--) {// Reverse iterate until / for directory is found.
+	RecursiveSearch:
+		for (; i > 2 * sz - rsz; i--) {// Reverse iterate until / for directory is found.
 			if (Buf[i] == '/') {
 				Buf[i + 1] = '.', Buf[i + 2] = 'a', Buf[i + 3] = 'l', Buf[i + 4] = 'y',
-				Buf[i + 5] = 's', Buf[i + 6] = 's', Buf[i + 7] = 'a', Buf[i + 8] = '\0';
-				if (std::filesystem::exists(&Buf[sz+1])) {//.alyssa exists inside.
+					Buf[i + 5] = 's', Buf[i + 6] = 's', Buf[i + 7] = 'a', Buf[i + 8] = '\0';
+				if (FileExists(&Buf[sz + 1])) {//.alyssa exists inside.
 					if (customactions == 1) {
-						return caParse(c, r, &Buf[sz+1]);
+						return caParse(c, r, &Buf[sz + 1]);
 					}
 					else { // add it to list of files that will checked.
 						*(unsigned short*)&Buf[BufSz - as] = i - sz + 9; as -= 2;
@@ -393,7 +400,7 @@ RecursiveSearch:
 					}
 				}
 				else if (customactions == 1) return CA_NO_ACTION; // File is not found and recursion is disabled, nothing left to do.
-																  // If recursion is enabled this will also search for parent directories.
+				// If recursion is enabled this will also search for parent directories.
 			}
 		}
 		*(unsigned short*)&Buf[BufSz - as] = 0;
@@ -409,7 +416,6 @@ RecursiveSearch:
 		else return CA_NO_ACTION;
 		i += *(unsigned short*)&Buf[i] + 3;
 	}
-#endif
 	return 0;
 }
 #endif // COMPILE_CUSTOMACTIONS
