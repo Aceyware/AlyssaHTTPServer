@@ -1,15 +1,15 @@
-#ifndef AlyssaHeader
 #include "Alyssa.h"
+#ifdef COMPILE_DIRINDEX
 #include <string>
 #include <sstream>
-#endif
+
 
 struct IndexEntry {
 	std::string FileName; size_t FileSize;
 	bool isDirectory;	  std::string ModifyDate;
 };
 
-#ifdef COMPILE_DIRINDEX
+
 static std::deque<IndexEntry> diGetDirectory(const std::filesystem::path& p) {
 	std::deque<IndexEntry> ret; IndexEntry NewEntry; int8_t DirCount = 0;
 	for (auto& x : std::filesystem::directory_iterator(p)) {

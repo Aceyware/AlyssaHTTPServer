@@ -35,6 +35,7 @@
 #endif
 
 #include "AlyssaBuildConfig.h"
+#include "localization.h"
 
 #ifdef _WIN32
 	#include "wepoll.h" // https://github.com/piscisaureus/wepoll thanks a lot.
@@ -372,6 +373,8 @@ int getLocale();
 int commandline(int argc, char* argv[]);
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(std::string logName);
+extern int printa(int String, char Type, ...);
+const void* getLocaleString(int String);
 #if __cplusplus > 201700L
 template <typename TP>
 inline std::time_t to_time_t(TP tp) {
@@ -390,6 +393,7 @@ inline std::time_t to_time_t(TP tp) {
 #ifdef COMPILE_CUSTOMACTIONS
 	int caMain(const clientInfo& c, const requestInfo& r, char* h2path = NULL);
 	enum caReturns {
+		CA_ERR_SYNTAX = -2,
 		CA_ERR_SERV = -1,
 		CA_NO_ACTION,
 		CA_KEEP_GOING,

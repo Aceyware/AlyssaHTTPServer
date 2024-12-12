@@ -148,7 +148,6 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 #endif // _DEBUG
 							goto cgiDataSend;
 						}
-						
 					}
 					lineBeginOff = i + 1;
 				}
@@ -164,7 +163,6 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 #ifdef _DEBUG
 				printf("stillOnHeaders: %d: %.*s\r\n", read, read, &buf[9]);
 #endif // _DEBUG
-
 			}
 		}
 		else {

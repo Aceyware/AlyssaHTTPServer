@@ -27,6 +27,8 @@ HANDLE ep; // epoll handle
 WOLFSSL_CTX* ctx;
 #endif // COMPILE_WOLFSSL
 
+extern void printInformation();
+
 void* threadMain(int num) {
 	while (true) {
 // Wait for semaphore to be fired.
@@ -163,14 +165,17 @@ void* threadMain(int num) {
 	}
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
-
+#include <io.h>
+#include <fcntl.h>
 int main(int argc, char* argv[]) {
+	_setmode(_fileno(stdout), _O_U16TEXT); // _O_U16TEXT
+
 	// Print product info and version
-	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version
-#ifdef _DEBUG
-		" (debug)"
-#endif
-		<<std::endl;
+//	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version
+//#ifdef _DEBUG
+//		" (debug)"
+//#endif
+//		<<std::endl;
 
 	commandline(argc, argv); // Parse command line arguments
 
@@ -181,8 +186,7 @@ int main(int argc, char* argv[]) {
 	hThreads.resize(threadCount); tLk.resize(threadCount);
 	if (loggingEnabled) {
 		if (loggingInit(loggingFileName)) {
-			std::cout << "E: Failed to open logging file, logging is disabled." << std::endl;
-			loggingEnabled = 0;
+			loggingEnabled = 0; printa(STR_LOG_FAIL, TYPE_ERROR);
 		}
 	}
 
@@ -231,13 +235,12 @@ int main(int argc, char* argv[]) {
 	for (int i = 0; i < ports.size(); i++) {
 		listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listening == INVALID_SOCKET){
-			std::cout<<"Listening socket creation failed\n"; std::terminate();
+			printa(STR_SOCKET_FAIL, TYPE_ERROR); std::terminate();
 		}
 		hints.sin_port = htons(ports[i].port);
 		if(bind(listening, (struct sockaddr*)&hints, hintSize)) {
-			perror("bind failed: ");
-			std::terminate();
-			
+			printa(STR_PORTFAIL, TYPE_ERROR, 4, ports[i].port);
+			return -1;			
 		}
 		if(listen(listening, SOMAXCONN)){
 			perror("listen failed: ");
@@ -255,7 +258,8 @@ int main(int argc, char* argv[]) {
 		if (ipv6Enabled) {
 			listening=socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 			if (listening == INVALID_SOCKET){
-				std::cout<<"IPv6 Listening socket creation failed\n"; std::terminate();
+				printa(STR_SOCKET_FAIL, TYPE_ERROR, 6);
+				return -1;
 			}
 			const static int on = 1;
 			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
@@ -263,10 +267,11 @@ int main(int argc, char* argv[]) {
 			hints6.sin6_flowinfo = 0;
 			hints6.sin6_scope_id = 0;
 			if (bind(listening, (struct sockaddr*)&hints6, hint6Size)) {
+				printa(STR_PORTFAIL, TYPE_ERROR, 6, ports[i].port);
 #ifdef _WIN32
 				int error = WSAGetLastError();
 #endif
-				std::terminate();
+				return -1;
 			}
 			if(listen(listening, SOMAXCONN)){
 				perror("listen6 failed: ");
@@ -291,25 +296,25 @@ int main(int argc, char* argv[]) {
 	if (sslEnabled>0) {
 		wolfSSL_Init();
 		if ((ctx = wolfSSL_CTX_new(wolfSSLv23_server_method())) == NULL) {
-			std::cout<<"WolfSSL: internal error occurred with SSL (wolfSSL_CTX_new error), SSL is disabled."<<std::endl;
-			sslEnabled = 0;
+			printa(STR_SSL_INTFAIL, TYPE_ERROR); sslEnabled = 0;
 		}
 		else if (wolfSSL_CTX_use_PrivateKey_file(ctx, sslKeyPath.data(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			std::cout<<"WolfSSL: failed to load SSL private key file, SSL is disabled."<<std::endl;
-			sslEnabled = 0;
+			printa(STR_SSL_KEYFAIL, TYPE_ERROR); sslEnabled = 0;
 		}
 		else if (wolfSSL_CTX_use_certificate_file(ctx, sslCertPath.data(), SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-			std::cout<<"WolfSSL: failed to load SSL certificate file, SSL is disabled."<<std::endl;
-			sslEnabled = 0;
+			printa(STR_SSL_CERTFAIL, TYPE_ERROR); sslEnabled = 0;
 		}
 		else {
 			for (int i = 0; i < ports.size(); i++) {
 				sslListening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 				if (sslListening == INVALID_SOCKET){
-					std::cout<<"Listening socket creation failed\n"; std::terminate();
+					printa(STR_SOCKET_FAIL, TYPE_ERROR, 4); std::terminate();
 				}
 				hints.sin_port = htons(sslPorts[i].port);
-				if(bind(sslListening, (struct sockaddr*)&hints, hintSize)) std::terminate();
+				if(bind(sslListening, (struct sockaddr*)&hints, hintSize)) {
+					printa(STR_PORTFAIL, TYPE_ERROR, 4, sslPorts[i].port);
+					return -1;
+				}
 				if(listen(sslListening, SOMAXCONN)) std::terminate();
 				
 				// Add SSL ports to epoll too
@@ -325,14 +330,17 @@ int main(int argc, char* argv[]) {
 				if (ipv6Enabled) {
 					sslListening = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 					if (sslListening == INVALID_SOCKET){
-						std::cout<<"IPv6 Listening socket creation failed\n"; std::terminate();
+						printa(STR_SOCKET_FAIL, TYPE_ERROR, 6); return -1;
 					}
 					const static int on = 1;
 					setsockopt(sslListening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
 					hints6.sin6_port = htons(sslPorts[i].port);
 					hints6.sin6_flowinfo = 0;
 					hints6.sin6_scope_id = 0;
-					if(bind(sslListening, (struct sockaddr*)&hints6, sizeof(hints6))) std::terminate();
+					if(bind(sslListening, (struct sockaddr*)&hints6, sizeof(hints6))) {
+						printa(STR_PORTFAIL, TYPE_ERROR, 6, sslPorts[i].port);
+						return -1;
+					}
 					if(listen(sslListening, SOMAXCONN)) std::terminate();
 					
 					// Add SSL ports to epoll too
@@ -358,19 +366,7 @@ int main(int argc, char* argv[]) {
 #endif // COMPILE_WOLFSSL
 	
 	// If we could come this far, then server is started successfully. Print a message and ports.
-	std::cout << "I: Server started successfully. Listening on HTTP: ";
-	for (int i = 0; i<ports.size(); i++) {
-		std::cout << ports[i].port<<" ";
-	}
-#ifdef COMPILE_WOLFSSL
-	if (sslEnabled) {
-		std::cout << "HTTPS: ";
-		for (int i = 0; i<sslPorts.size(); i++) {
-			std::cout << sslPorts[i].port<<" ";
-		}
-	}
-#endif // COMPILE_WOLFSSL
-	std::cout<<std::endl;
+	printInformation();
 
 	// Start polling.
 	while (true) {
@@ -401,7 +397,7 @@ int main(int argc, char* argv[]) {
 					else cSock = accept(ee[i].data.fd, (struct sockaddr*)&hints, (socklen_t*)&hintSize);
 					if (cSock == INVALID_SOCKET) continue;
 					if (cSock / rate > maxclient) {
-						printf("Error: socket exceeds allocated space.\n");
+						printa(STR_SOCK_EXCEEDS_ALLOCATED_SPACE, TYPE_ERROR);
 						closesocket(cSock); continue;
 					}
 					// Set epoll data.

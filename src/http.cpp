@@ -475,7 +475,7 @@ getRestart:
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath, htrs);
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
 #if __cplusplus > 201700L
-				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFile17;
+				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFilePoint;
 #else
 				goto openFilePoint;
 #endif
@@ -510,6 +510,7 @@ getRestart:
 		case CA_CONNECTIONEND:
 			epollRemove(c); return;
 		case CA_ERR_SERV:
+		case CA_ERR_SYNTAX:
 			h.statusCode = 500; h.conLength = 0; 
 			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
 			else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
@@ -517,11 +518,11 @@ getRestart:
 			return;
 		case CA_RESTART:
 			goto getRestart;
-		case -2:
-			h.statusCode = 405; h.conLength = 0; serverHeaders(&h, c); 
-			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
+		//case -2: no idea what the fuck this was
+		//	h.statusCode = 405; h.conLength = 0; serverHeaders(&h, c); 
+		//	if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+		//	else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
+		//	return;
 		default:
 			std::terminate(); break;
 	}
@@ -716,6 +717,7 @@ postRestart:
 			return;
 		case CA_CONNECTIONEND:
 			shutdown(c->s, 2); return;
+		case CA_ERR_SYNTAX:
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0;
 			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);

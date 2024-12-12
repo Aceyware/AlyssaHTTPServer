@@ -479,7 +479,6 @@ h2getRestart:
 #else
 				goto openFilePoint2;
 #endif
-				
 			}
 			else {
 				memcpy(buff, virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
@@ -517,6 +516,7 @@ h2getRestart:
 			return;
 		case CA_CONNECTIONEND:
 			shutdown(c->s, 2); return;
+		case CA_ERR_SYNTAX:
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
 			if (errorPagesEnabled) {
@@ -534,11 +534,11 @@ h2getRestart:
 			return;
 		case CA_RESTART:
 			goto h2getRestart;
-		case -2:
-			h.statusCode = 405; h.conLength = 0; c->stream[streamIndex].id = 0;
-			h2serverHeaders(c, &h, streamIndex);
-			c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-			return;
+		//case -2: again no idea whatever fuck that was
+		//	h.statusCode = 405; h.conLength = 0; c->stream[streamIndex].id = 0;
+		//	h2serverHeaders(c, &h, streamIndex);
+		//	c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
+		//	return;
 		default:
 			std::terminate(); break;
 	}
@@ -804,6 +804,7 @@ h2postRestart:
 			return;
 		case CA_CONNECTIONEND:
 			shutdown(c->s, 2); return;
+		case CA_ERR_SYNTAX:
 		case CA_ERR_SERV:
 			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
 			if (errorPagesEnabled) {

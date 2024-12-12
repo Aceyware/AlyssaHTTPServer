@@ -4,11 +4,20 @@
 #include "Alyssa.h"
 #ifdef COMPILE_CUSTOMACTIONS
 
-#define CA_A_REDIRECT 1
-#define CA_A_CGI 2
-#define CA_A_AUTH 3
-#define CA_A_FORBID 4
-#define CA_A_SOFTREDIR 5
+enum CAActions {
+	CA_A_REDIRECT = 1,
+	CA_A_CGI,
+	CA_A_AUTH,
+	CA_A_FORBID,
+	CA_A_SOFTREDIR
+};
+
+enum AuthReturns {
+	AUTH_NOCREDS = -2,
+	AUTH_FORBIDDEN = 0,
+	AUTH_AUTHORIZED = 1,
+	AUTH_ERROR = -3
+};
 
 extern int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd);
 
@@ -19,6 +28,11 @@ struct customAction {
 static int8_t caAuth(const char* auth, char* path) {
 	if (!auth[0]) return -2; // Check if user agent has given any credentials
 	unsigned short pws = 0; // Password start
+	FILE* f = fopen(path, "rb");
+	if (!f) {
+		printa(STR_CRED_FAIL, TYPE_ERROR, path);
+		return AUTH_ERROR;
+	}
 #if __cplusplus > 201700L
 	int sz = std::filesystem::file_size(path);
 #else
@@ -26,7 +40,7 @@ static int8_t caAuth(const char* auth, char* path) {
 	int sz = attr.st_size;
 #endif
 	char* buf = (char*)alloca(sz);
-	FILE* f = fopen(path, "rb"); fread(buf, sz, 1, f); fclose(f);
+	fread(buf, sz, 1, f); fclose(f);
 	int i = 0; // Counter variable.
 	int8_t ht = 0; // Hash type. 0: plain 1: sha256 2: sha512 3: sha3-256 4: sha3-512
 	int asz = strlen(auth);
@@ -37,26 +51,29 @@ static int8_t caAuth(const char* auth, char* path) {
 			pws = i; break;
 		}
 	}
-	if (!pws) return -3;
+	if (!pws) {
+		printa(STR_CRED_INVALID, TYPE_ERROR, path);
+		return -3;
+	}
 
 	if ((buf[0] == 'H' || buf[0] == 'h') &&
 		(buf[3] == 'H' || buf[3] == 'h') &&
 		buf[4] == ' ') { // Hash is stated on file.
-		if ((buf[5] == 'S' || buf[5] == 's') &&
-			(buf[7] == 'A' || buf[7] == 'a')) { // hash type is SHA-something
-			if (buf[8]=='3') { // SHA3-xxx
-				if (buf[12] == '2') ht = 4; // SHA3-512
-				else if (buf[12] == '6') ht = 3; // SHA3-256
-				i = 13;
-			}
-			else if (buf[8] == '-') { // SHA-xxx
-				if (buf[11] == '2') ht = 2; // SHA-512
-				else if (buf[11] == '6') ht = 1; // SHA-256
-				i = 12;
-			}
-		}
-		else if ((buf[5] == 'P' || buf[5] == 'p') &&
-				 (buf[9] == 'N' || buf[9] == 'n')) { ht=0; i=10; } // Plain (no hash).
+					if ((buf[5] == 'S' || buf[5] == 's') &&
+						(buf[7] == 'A' || buf[7] == 'a')) { // hash type is SHA-something
+						if (buf[8]=='3') { // SHA3-xxx
+							if (buf[12] == '2') ht = 4; // SHA3-512
+							else if (buf[12] == '6') ht = 3; // SHA3-256
+							i = 13;
+						}
+						else if (buf[8] == '-') { // SHA-xxx
+							if (buf[11] == '2') ht = 2; // SHA-512
+							else if (buf[11] == '6') ht = 1; // SHA-256
+							i = 12;
+						}
+					}
+					else if ((buf[5] == 'P' || buf[5] == 'p') &&
+					(buf[9] == 'N' || buf[9] == 'n')) { ht=0; i=10; } // Plain (no hash).
 	}
 
 	for (; i < sz; i++) {
@@ -119,6 +136,7 @@ static int8_t caAuth(const char* auth, char* path) {
 					}
 					return 1;
 #else
+#error not implemented
 #endif
 				}
 
@@ -223,6 +241,9 @@ caExecLoop:
 				case -2:
 					h.statusCode = 401; h.conLength = 0;
 					caSendHeaders() return CA_REQUESTEND;
+				case -3:
+					h.statusCode = 500; h.conLength = 0;
+					caSendHeaders() return CA_REQUESTEND;
 				default:
 					h.statusCode = 400; h.conLength = 0;
 					caSendHeaders() return CA_REQUESTEND;
@@ -259,21 +280,54 @@ caExecLoop:
 }
 
 #define checkAndExec() { \
-while (buf[i] != '{' && i < sz) i++; \
+while (buf[i] != '{' && i < sz) {\
+	if(buf[i]=='}') {\
+/* vvv ending of a non-existent scope. vvv. */\
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_1)); \
+		return CA_ERR_SYNTAX;\
+	} i++;\
+}\
 /* vvv EOF before scope beginning vvv. */\
-if (buf[i] != '{') return -2; \
+if (buf[i] != '{') {\
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_6)); \
+	return CA_ERR_SYNTAX;\
+} \
 char* begin = &buf[i]; \
-while (buf[i] != '}' && i < sz) i++; \
+while (buf[i] != '}' && i < sz) {\
+	if(buf[i]=='{') {\
+/* vvv beginning of another scope before previous one closed vvv. */\
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3)); \
+		return CA_ERR_SYNTAX;\
+	} i++;\
+}\
 /* vvv EOF before scope ending vvv. */\
-if (buf[i] != '}') return -2; \
+if (buf[i] != '}') {\
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5)); \
+	return CA_ERR_SYNTAX;\
+} \
 else return caExec(c, r, begin, &buf[i] - begin); \
 }
 
 #define checkNoExec() {\
-while (buf[i] != '{' && i < sz) i++;\
-while (buf[i] != '}' && i < sz) i++;\
+while (buf[i] != '{' && i < sz) {\
+	if(buf[i]=='}') {\
+/* vvv ending of a non-existent scope. vvv. */\
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_1)); \
+		return CA_ERR_SYNTAX;\
+	} i++;\
+}\
+while (buf[i] != '}' && i < sz) {\
+	if(buf[i]=='{') {\
+/* vvv beginning of another scope before previous one closed vvv. */\
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3)); \
+		return CA_ERR_SYNTAX;\
+	} i++;\
+}\
 /* vvv EOF before scope ending vvv. */\
-if (buf[i] != '{') return -2;\
+if (buf[i] != '{') if (buf[i] != '}') {\
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5)); \
+	return CA_ERR_SYNTAX;\
+} \
 }
 
 // This code parses an .alyssa file and calls the executing functions if finds a match.
@@ -341,7 +395,8 @@ static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
 				else checkNoExec()
 				break;
 			default:
-				break;
+				printa(STR_CA_SYNTAX, TYPE_ERROR, STR_CA_STX_2);
+				return CA_ERR_SYNTAX;
 		}
 	}
 	return CA_NO_ACTION;
