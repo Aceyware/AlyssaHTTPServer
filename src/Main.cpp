@@ -165,30 +165,29 @@ void* threadMain(int num) {
 	}
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
-#include <io.h>
-#include <fcntl.h>
+
 int main(int argc, char* argv[]) {
-	_setmode(_fileno(stdout), _O_U16TEXT); // _O_U16TEXT
-
-	// Print product info and version
-//	std::cout<<"Aceyware \"Alyssa\" HTTP Server version " version
-//#ifdef _DEBUG
-//		" (debug)"
-//#endif
-//		<<std::endl;
-
+#ifdef _WIN32
+	SetConsoleOutputCP(CP_UTF8); // Set console codepage to UTF-8 on Windows.
+#endif
 	commandline(argc, argv); // Parse command line arguments
 
 	if(!configLoaded) readConfig("Alyssa.cfg"); // Load default config if no config is given on command line.
-	if (!threadCount) threadCount = getCoreCount();
-	getLocale();
-	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount);
+	getLocale(); // Get system locale if not explicitly set from config
+
+	if (!threadCount) threadCount = getCoreCount(); // Set thread count to CPU core count if not explicitly set by config.
+	// Allocate data for threads
+	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount); 
 	hThreads.resize(threadCount); tLk.resize(threadCount);
+	// Setup logging if enabled from config.
 	if (loggingEnabled) {
 		if (loggingInit(loggingFileName)) {
 			loggingEnabled = 0; printa(STR_LOG_FAIL, TYPE_ERROR);
 		}
 	}
+
+	// Print product info and version
+	printa(STR_SERVERMAIN, TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME);
 
 	// Create threads
 	for (size_t i = 0; i < threadCount; i++) {

@@ -47,91 +47,90 @@ int loggingInit(std::string logName) {
 /// <param name="p">Pointer for response data OR literal string.</param>
 /// <param name="pIsALiteralString">Defines if 'p' is the response data or a literal string. True means it's the latter.</param>
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString) {
-	char addr[32] = { 0 };
+	char addr[32] = { 0 }; char Time[64] = { 0 };
 	if (c->flags & FLAG_IPV6) inet_ntop(AF_INET6, c->ipAddr, addr, 32);
 	else inet_ntop(AF_INET, c->ipAddr, addr, 32);
+	time_t t = time(NULL); strftime(Time, 64, "%d.%b %H:%M:%S", localtime(&t));
 	// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 	if (pIsALiteralString) {
-		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %s\n", addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname
+		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname
 			, c->stream[s].path.data(), (const char*)p);
 	} else {
-		fprintf(logfile, "[TIME]R: %s:%d -> %s%s: %d\n", addr, c->portAddr, (c->stream[s].vhost)?virtualHosts[c->stream[s].vhost].hostname:(char*)&c->stream[s].zstrm
+		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (c->stream[s].vhost)?virtualHosts[c->stream[s].vhost].hostname:(char*)&c->stream[s].zstrm
 			, c->stream[s].path.data(), p->statusCode);
 	}
 }
 
 /// <summary>
+/// Prints given string to console with selected locale and writes the given string to logfile in English.
+/// Flags can be used for disabling any of both or forcing console to print in English, refer to PrintaTypeFlags enum.
 /// 
+/// If given string is not avaiable (= NULL) in given locale (i.e. not translated yet), it will be printed in English.
 /// </summary>
-/// <param name="String"></param>
-/// <param name="Type"></param>
-/// <param name=""></param>
+/// <param name="String">String to be printed, enumerated as "Strings" on localization.h</param>
+/// <param name="Type">Type and flags, enumerated as "PrintaTypeFlags" in same file.</param>
+/// <param name="">Rest of vardiatic arguments, same as how printf works.</param>
 /// <returns></returns>
 int printa(int String, char Type, ...) {
-	va_list val;
-	va_start(val, Type); time_t t = time(NULL);
-	char buf[512] = { 0 }; int x = 0;
-	if ((loggingEnabled & !Type & TYPE_FLAG_NOLOG) || 0 || (Type & TYPE_FLAG_ENGLISH)) {
-FallbackEnglish:
-		if (!Type & TYPE_FLAG_NOTIME) {
-			x = strftime(buf, 512, "[%d.%b %H:%M:%S] ", localtime(&t));
-			buf[x - 1] = Type; buf[x] = ':'; buf[x + 1] = ' '; x += 2;
-		}
-		x += vsprintf_s(&buf[x], 512 - x, StringTable[String], val);
-		if(Type ^ TYPE_FLAG_NOLOG) 
-			fputs(buf, logfile);
-		if (0 || (Type & TYPE_FLAG_ENGLISH)) {
-			puts(buf); return x;
-		}
+	va_list val; va_start(val, Type); // Parameters after Type
+	char buf[512] = { 0 }; int x = 0; // Buffer and position
+	if (!Type & TYPE_FLAG_NOTIME) {// Print current time 
+		time_t t = time(NULL);
+		x = strftime(buf, 512, "[%d.%b %H:%M:%S] ", localtime(&t));
+		buf[x - 1] = Type; buf[x] = ':'; buf[x + 1] = ' '; x += 2;
 	}
-	if (1) {
-		if (LocaleTable[LANG_TR - 1][String]==NULL) { // String being NULL beans such string is not translated yet,  fall back to English.
-			if (loggingEnabled || 0 || (Type & TYPE_FLAG_ENGLISH)) { // If these are satisfied, that means buf already has the English formatted string 
-															// So we can just outright print it and get out.
-				puts(buf); return x;
-			} else {
-				Type |= TYPE_FLAG_ENGLISH; goto FallbackEnglish;
-			}
-		}
-		if (!Type & TYPE_FLAG_NOTIME) {
-			x = wcsftime((wchar_t*)buf, 256, L"[%d.%b %H:%M:%S] ", localtime(&t));
-			*((wchar_t*)buf + x - 1) = Type; *((wchar_t*)buf + x) = L':'; *((wchar_t*)buf + x + 1) = L' '; x += 2;
-		}
-		x += _vsnwprintf(((wchar_t*)buf + x), 256 - x, LocaleTable[LANG_TR-1][String], val);
-		//_putws((wchar_t*)buf);
-		std::wcout << (wchar_t*)buf;
+	if (StringTable[LANG_TR][String] != NULL || !(Type & TYPE_FLAG_ENGLISH)) {
+		// Print to console with current locale unless such string is NULL or flags set to print on English
+		int x2 = x;
+		// Add the type itself if specified
+			 if (Type & TYPE_ERROR)  { buf[x2] = StringTable[LANG_TR][STR_ERROR]  [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+		else if (Type & TYPE_WARNING){ buf[x2] = StringTable[LANG_TR][STR_WARNING][0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+		else if (Type & TYPE_INFO)   { buf[x2] = StringTable[LANG_TR][STR_INFO]   [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+		// Add the actual string to buf
+		x2 += vsprintf_s(&buf[x2], 512 - x2, StringTable[LANG_TR][String], val);
+		puts(buf); // Print it to console.
+		if ((Type & TYPE_FLAG_NOLOG) || !loggingEnabled) return x + x2; // Logging is disabled, so no need for going for rest.
+	}
+	// Rest is for English, for console and/or logfile.
+	// Add the type itself if specified
+		 if (Type & TYPE_ERROR)  { buf[x] = 'E'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
+	else if (Type & TYPE_WARNING){ buf[x] = 'W'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
+	else if (Type & TYPE_INFO)   { buf[x] = 'I'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
+	// Add the actual string to buf
+	x += vsprintf_s(&buf[x], 512 - x, StringTable[LANG_EN][String], val);
+	if (0) puts(buf); // Print to console if language is English
+	if (!(Type & TYPE_FLAG_NOLOG) || loggingEnabled) { // Write to logfile if enabled.
+		buf[x] = '\n'; buf[x + 1] = '\0'; fputs(buf, logfile);
 	}
 	return x;
 }
 //#define xprintf(a,b) Printf(a,0,b);
 
-#define COUT(x) if(1) {std::wcout << L ## x;} else std::cout << x 
-#define COUTEX(x,y) if(1) {std::wcout << x << L ## y;} else std::cout << x << y 
 /// <summary>
-/// 
+/// Prints brief information about server, currently only about listening ports.
 /// </summary>
 void printInformation() {
-	printa(STR_LISTENINGON, TYPE_INFO | TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME | TYPE_FLAG_ENGLISH); 
-	COUT("HTTP: ");
+	printa(STR_LISTENINGON, TYPE_INFO | TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME); 
+	std::cout << "HTTP: ";
 	for (int i = 0; i < ports.size(); i++) {
-		COUTEX(ports[i].port," ");
+		std::cout << ports[i].port << " ";
 	}
 #ifdef COMPILE_WOLFSSL
 	if (sslEnabled) {
-		COUT("HTTPS: ");
+		std::cout << "HTTPS: ";
 		for (int i = 0; i < sslPorts.size(); i++) {
-			COUTEX(sslPorts[i].port, " ");
+			std::cout << sslPorts[i].port << " ";
 		}
 	}
 #endif // COMPILE_WOLFSSL
-	if(1) {std::wcout << std::endl;} else std::cout << std::endl;
+	std::cout << std::endl;
 }
 
 const void* getLocaleString(int String) {
 	if (1) { // Language is non-English
-		if (LocaleTable[LANG_TR - 1][String] == NULL) // Check if requested string is translated
+		if (StringTable[LANG_TR][String] == NULL) // Check if requested string is translated
 			return StringTable[String];
-		return LocaleTable[LANG_TR - 1][String]; // Else fall back to English one.
+		return StringTable[LANG_TR][String]; // Else fall back to English one.
 	}
-	return StringTable[String]; // Language is English.
+	return StringTable[LANG_EN][String]; // Language is English.
 }

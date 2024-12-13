@@ -84,9 +84,4 @@ enum PrintaTypeFlags {
 	TYPE_FLAG_NOTIME = 32 // Do not print time.
 };
 
-extern const char* StringTable[STR_END];
-
-//#ifdef Compile_locales
-#if 1
-extern const wchar_t* LocaleTable[][STR_END];
-#endif
+extern const char* StringTable[][STR_END];
