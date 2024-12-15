@@ -79,15 +79,15 @@ int printa(int String, char Type, ...) {
 		x = strftime(buf, 512, "[%d.%b %H:%M:%S] ", localtime(&t));
 		buf[x - 1] = Type; buf[x] = ':'; buf[x + 1] = ' '; x += 2;
 	}
-	if (StringTable[LANG_TR][String] != NULL || !(Type & TYPE_FLAG_ENGLISH)) {
+	if (currentLocale || StringTable[currentLocale][String] != NULL || !(Type & TYPE_FLAG_ENGLISH)) {
 		// Print to console with current locale unless such string is NULL or flags set to print on English
 		int x2 = x;
 		// Add the type itself if specified
-			 if (Type & TYPE_ERROR)  { buf[x2] = StringTable[LANG_TR][STR_ERROR]  [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
-		else if (Type & TYPE_WARNING){ buf[x2] = StringTable[LANG_TR][STR_WARNING][0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
-		else if (Type & TYPE_INFO)   { buf[x2] = StringTable[LANG_TR][STR_INFO]   [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+			 if (Type & TYPE_ERROR)  { buf[x2] = StringTable[currentLocale][STR_ERROR]  [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+		else if (Type & TYPE_WARNING){ buf[x2] = StringTable[currentLocale][STR_WARNING][0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
+		else if (Type & TYPE_INFO)   { buf[x2] = StringTable[currentLocale][STR_INFO]   [0]; buf[x2 + 1] = ':'; buf[x2 + 2] = ' '; x2 += 3; }
 		// Add the actual string to buf
-		x2 += vsprintf_s(&buf[x2], 512 - x2, StringTable[LANG_TR][String], val);
+		x2 += vsprintf_s(&buf[x2], 512 - x2, StringTable[currentLocale][String], val);
 		puts(buf); // Print it to console.
 		if ((Type & TYPE_FLAG_NOLOG) || !loggingEnabled) return x + x2; // Logging is disabled, so no need for going for rest.
 	}
@@ -98,7 +98,7 @@ int printa(int String, char Type, ...) {
 	else if (Type & TYPE_INFO)   { buf[x] = 'I'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
 	// Add the actual string to buf
 	x += vsprintf_s(&buf[x], 512 - x, StringTable[LANG_EN][String], val);
-	if (0) puts(buf); // Print to console if language is English
+	if (currentLocale == LANG_EN) puts(buf); // Print to console if language is English
 	if (!(Type & TYPE_FLAG_NOLOG) || loggingEnabled) { // Write to logfile if enabled.
 		buf[x] = '\n'; buf[x + 1] = '\0'; fputs(buf, logfile);
 	}

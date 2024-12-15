@@ -62,7 +62,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 				if (numVhosts) {
 					for (int i = 1; i < numVhosts; i++) {
 						//printf("i: %d ",i);
-						if (!strncmp(virtualHosts[i].hostname, &buf[bpos], strlen(virtualHosts[i].hostname))) {
+						if (!strncmp(virtualHosts[i].hostname.data(), &buf[bpos], strlen(virtualHosts[i].hostname.data()))) {
 							r->vhost = i; break;																		
 						}
 					}
@@ -464,16 +464,16 @@ void getInit(clientInfo* c) {
 	} else if (hsts && c->flags ^ FLAG_SSL) {
 		h.statusCode = 302; h.flags |= FLAG_NOLENGTH; char target[512] = { 0 };
 		// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
-		sprintf_s(target, 512, "https://%s%s", (r->vhost) ? virtualHosts[r->vhost].hostname: (char*)&r->zstrm, r->path.data());
+		sprintf_s(target, 512, "https://%s%s", (r->vhost) ? virtualHosts[r->vhost].hostname.data() : (char*)&r->zstrm, r->path.data());
 		h.conType = target; serverHeaders(&h, c); epollRemove(c); return;
 	}
 getRestart:
 	switch (virtualHosts[r->vhost].type) {
 		case 0: // Standard virtual host.
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
-				int htrs = strlen(virtualHosts[r->vhost].respath);
-				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath, htrs);
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
+				int htrs = strlen(virtualHosts[r->vhost].respath.data());
+				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath.data(), htrs);
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath.data()), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
 #if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFilePoint;
 #else
@@ -481,15 +481,15 @@ getRestart:
 #endif
 			}
 			else {
-				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
+				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
 #if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(tBuf[c->cT]);
 #endif
 			}
 			break;
 		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
+			h.conType = virtualHosts[r->vhost].target.data(); // Reusing content-type variable for redirection path.
 			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
@@ -692,11 +692,11 @@ void postInit(clientInfo* c) {
 	respHeaders h;
 	switch (virtualHosts[c->stream[0].vhost].type) {
 		case 0: // Standard virtual host.
-			memcpy(tBuf[c->cT], virtualHosts[c->stream[0].vhost].target, strlen(virtualHosts[c->stream[0].vhost].target));
-			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->stream[0].vhost].target), c->stream[0].path.data(), strlen(c->stream[0].path.data()) + 1);
+			memcpy(tBuf[c->cT], virtualHosts[c->stream[0].vhost].target.data(), strlen(virtualHosts[c->stream[0].vhost].target.data()));
+			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->stream[0].vhost].target.data()), c->stream[0].path.data(), strlen(c->stream[0].path.data()) + 1);
 			break;
 		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[c->stream[0].vhost].target; // Reusing content-type variable for redirection path.
+			h.conType = virtualHosts[c->stream[0].vhost].target.data(); // Reusing content-type variable for redirection path.
 			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			return; break;
 		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)

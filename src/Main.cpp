@@ -173,7 +173,8 @@ int main(int argc, char* argv[]) {
 	commandline(argc, argv); // Parse command line arguments
 
 	if(!configLoaded) readConfig("Alyssa.cfg"); // Load default config if no config is given on command line.
-	getLocale(); // Get system locale if not explicitly set from config
+	if(currentLocale==LANG_UNSPEC) currentLocale = getLocale(); // Get system locale if not explicitly set from config
+	if(!virtualHosts.size()) virtualHosts.emplace_back("", 0, htroot, respath); // Add default vhost if there is none.
 
 	if (!threadCount) threadCount = getCoreCount(); // Set thread count to CPU core count if not explicitly set by config.
 	// Allocate data for threads

@@ -7,6 +7,7 @@
 /// 
 #include "AlyssaBuildConfig.h"
 enum Languages {
+	LANG_UNSPEC = -1,
 	LANG_EN,
 #ifdef Compile_locales
 	LANG_TR

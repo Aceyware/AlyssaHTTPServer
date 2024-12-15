@@ -24,7 +24,7 @@ bool		hsts			  = 0;
 // Internal bool for server
 bool		hascsp			  = 0;
 // Content security policy headers.
-std::string csp = "connect-src \"https://aceyware.net\";";
+std::string csp;
 // Directory index pages enabled?
 bool		dirIndexEnabled	  = 1;
 // Custom actions enabled? (2: recursive)
@@ -36,18 +36,29 @@ bool		gzEnabled		  = 1;
 #endif
 bool loggingEnabled = 1;
 int srvLocale = 0;
+int8_t currentLocale = LANG_UNSPEC;
 
-std::vector<listeningPort> ports = {9999};
+std::vector<listeningPort> ports = {80};
 
 int8_t configLoaded = 0;
 time_t startupTime = time(NULL);
 std::string loggingFileName;
+
+std::vector<vhost> virtualHosts;
+int numVhosts = 0;
+
+std::vector<std::string> acaoList;
+int numAcao;
+int8_t acaoMode;
+
+// Legacy htroot and respath, not directly used anymore.
+std::string htroot = "./htroot";
+std::string respath = "./res";
 
 // SSL stuff
 #ifdef COMPILE_WOLFSSL
 int8_t		sslEnabled = 0;
 std::string sslCertPath = "./crt.pem";
 std::string sslKeyPath  = "./key.key";
-std::vector<listeningPort> sslPorts = {4433};
-std::vector<std::string> acaoList = { "","127.0.0.1:9999" };
+std::vector<listeningPort> sslPorts = {443};
 #endif

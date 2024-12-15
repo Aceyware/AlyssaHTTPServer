@@ -15,6 +15,88 @@ int8_t readPorts(char* buf, std::vector<listeningPort>& target) {
 	return 0;
 }
 
+static std::vector<std::string> readAcao(char* path) {
+	std::vector<std::string> ret; std::ifstream f; f.open(path);
+	if (!f.is_open()) {
+		return ret;
+	} acaoMode = 1;
+	auto x = new std::codecvt_utf8<wchar_t>;
+	f.imbue(std::locale(std::locale(), x));
+	for (std::string line; std::getline(f, line); ) {
+		std::cout << line << std::endl;
+		ret.push_back(line);
+	} numAcao = ret.size();
+	return ret;
+}
+
+//static std::vector<vhost> readVhosts(char* path) {
+//	std::vector<vhost> ret(1); std::ifstream f; f.open(path);
+//	if (!f.is_open()) {
+//		return;
+//	}
+//	auto x = new std::codecvt_utf8<wchar_t>;
+//	f.imbue(std::locale(std::locale(), x));
+//	for (std::string line; std::getline(f, line); ) {
+//		vhost element; bool def = 0;
+//		std::cout << line << std::endl;
+//		
+//		ret.push_back(element);
+//	}
+//	return ret;
+//}
+
+// reads vhosts. taken from old alyssa and frontported to current one because i didnt want to parse shit one more time. returns 0 on success, 1 on fail.
+static bool readVhosts(char* path) {
+	vhost Element; virtualHosts.emplace_back(Element);// Leave a space for default host.
+	std::ifstream VHostFile(path);
+	std::string hostname, type, value, respath;
+	if (!VHostFile) {
+		printa(STR_VHOST_FAIL, TYPE_ERROR | TYPE_FLAG_NOTIME, path); return 1;
+	}
+	while (VHostFile >> hostname >> type >> value >> respath) {
+		Element.hostname = hostname; Element.target = value;
+		if (type == "standard") {
+			Element.type = 0;
+#if __cplusplus > 201700L
+			try {
+				for (const auto& asd : std::filesystem::directory_iterator(std::filesystem::u8path(value))) {
+					break;
+				}
+			}
+			catch (std::filesystem::filesystem_error&) {//VHost is inaccessible.
+				printa(STR_VHOST_COPYFAIL, TYPE_ERROR | TYPE_FLAG_NOTIME, value.data()); return 1;
+			}
+#else
+			if (isInaccesible(value.data())) {
+				printa(STR_VHOST_COPYFAIL, TYPE_ERROR | TYPE_FLAG_NOTIME, value.data()); return 1;
+			}
+#endif
+		}
+		else if (type == "redirect") Element.type = 1;
+		else if (type == "copy") {
+			for (int i = 0; i < virtualHosts.size(); i++) {
+				if (virtualHosts[i].hostname == value) {
+					Element = virtualHosts[i]; Element.hostname = hostname; goto VHostAdd;
+				}
+			}
+			printa(STR_VHOST_COPYFAIL, TYPE_WARNING | TYPE_FLAG_NOTIME, value.c_str());
+		}
+		else if (type == "forbid") Element.type = 2;
+		else if (type == "hangup") Element.type = 3;
+	VHostAdd:
+		if (hostname == "default") virtualHosts[0] = Element;
+		else virtualHosts.emplace_back(Element);
+	}
+	if (VHostFile.fail()) {
+		__debugbreak();
+	}
+	VHostFile.close();
+	if (virtualHosts[0].target == "") {// No "default" on vhost config, inherit from main config.
+		virtualHosts[0].target = htroot; virtualHosts[0].type = 0;
+	}
+	return 0;
+}
+
 extern "C" int8_t readConfig(const char* path) {
 	std::ifstream conf; conf.open(path);
 	if (!conf.is_open()) {
@@ -41,6 +123,13 @@ extern "C" int8_t readConfig(const char* path) {
 		else {
 			switch (*begin) {
 				// TODO: add buffer size check on these.
+				case 'a': // acao
+				case 'A':
+					if(*(begin + 3)=='o'||*(begin+3)=='O'){ // acao
+						if (begin[5] == '*') acaoMode = 2;
+						else readAcao(begin + 5);
+					}
+					break;
 				case 'b': // bufsize
 				case 'B':
 					if(*(begin + 6)=='e'||*(begin+6)=='E'){ // bufsize
@@ -52,8 +141,8 @@ extern "C" int8_t readConfig(const char* path) {
 				case 'c': // customactions or csp
 				case 'C':
 					if(*(begin + 2)=='p'||*(begin+2)=='P'){ // csp
-						if(*(begin + 4)=='1') hascsp=1;
-						else hascsp=0;
+						if (*(begin + 4) == '0') hascsp = 0;
+						else { csp = begin + 4; hascsp = 1; }
 					}
 #ifdef COMPILE_CUSTOMACTIONS
 					if(*(begin + 12)=='s'||*(begin+12)=='S'){ // customactions
@@ -83,6 +172,9 @@ extern "C" int8_t readConfig(const char* path) {
 					if(*(begin + 3)=='s'||*(begin+3)=='S'){// hsts
 						if(*(begin+5)=='1') hsts=1;
 						else hsts=0;
+					}
+					else if (*(begin + 5) == 't' || *(begin + 5) == 'T') {// hsts
+						htroot = begin + 7;
 					}
 					else if(*(begin + 8)=='h'||*(begin+8)=='H'){ // htrespath
 						htrespath = begin+10;
@@ -125,6 +217,12 @@ extern "C" int8_t readConfig(const char* path) {
 						if(!ports.size()) return -1;
 					}
 					break;
+				case 'r': // respath
+				case 'R':
+					if (*(begin + 6) == 'h' || *(begin + 6) == 'H') { // respath
+						loggingFileName = begin + 8;
+					}
+					break;
 #ifdef COMPILE_WOLFSSL
 				case 's': // ssl, sslport, sslcert, sslkey.
 				case 'S':
@@ -147,6 +245,14 @@ extern "C" int8_t readConfig(const char* path) {
 					}
 					break;
 #endif
+				case 'v': // vhost
+				case 'V':
+					if (*(begin + 4) == 't' || *(begin + 3) == 'T') { // vhost
+						if (readVhosts(begin + 5)) {
+							virtualHosts.clear(); virtualHosts.emplace_back("", 0, htroot, respath);
+						}
+					}
+					break;
 				case '/': // comment
 				case '#': // comment
 				default :

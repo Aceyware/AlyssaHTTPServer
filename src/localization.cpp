@@ -33,7 +33,7 @@ const char* StringTable[][STR_END] = {
 		"IP%d Socket creation failed! Quitting.",
 		// 20
 		"Cannot open virtual hosts config file.",
-		"source element not found for copying, ignoring.",
+		"source vhost %s not found for copying, ignoring.",
 #ifdef branch
 		"This build is from work-in-progress experimental " branch " branch.\n"
 		"It may contain incomplete, unstable or broken code and probably will not respond to clients reliably. This build is for development purposes only.\n"
@@ -64,7 +64,7 @@ const char* StringTable[][STR_END] = {
 #endif
 		"Virtual hosts:",
 		// 40
-		"invalid virtual host path specified or path is inaccessible. Virtual hosts disabled."
+		"invalid virtual host path %s specified or path is inaccessible. Virtual hosts disabled."
 	},
 	{
 		// 0
@@ -126,6 +126,6 @@ const char* StringTable[][STR_END] = {
 #endif
 		u8"Sanal konaklar: ",
 	// 40
-		u8"sanal konak yolu geçerli değil veya erişilemez. Sanal konaklar devre dışı bırakıldı."
+		u8"sanal konak yolu %s geçerli değil veya erişilemez. Sanal konaklar devre dışı bırakıldı."
 	}
 };

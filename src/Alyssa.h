@@ -97,7 +97,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.5"
+#define version "3.0-prerelease3.7"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -105,7 +105,7 @@
 ///  88    d8' 88'  `88 88'  `88 88 88'  `88 88'  `88 88 88ooood8 Y8ooooo. 
 ///  88  .d8P  88.  .88 88       88 88.  .88 88.  .88 88 88.  ...       88 
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
-///                                                                        
+///  (and constants)                                                                       
 
 extern std::string htrespath;
 extern unsigned int maxpath;
@@ -127,6 +127,10 @@ extern int srvLocale;
 extern int8_t configLoaded;
 extern bool loggingEnabled;
 extern std::string loggingFileName;
+extern int8_t currentLocale;
+// Legacy htroot and respath, not directly used anymore.
+extern std::string htroot;
+extern std::string respath;
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;
@@ -260,29 +264,22 @@ typedef struct clientInfo {
 } clientInfo;
 
 typedef struct vhost {
-	char* hostname; char type; char* target; char* respath;
+	std::string hostname, target, respath; char type; char reserved;
 
 	vhost(char* hostname, char type, char* target, char* respath) : 
 		hostname(hostname), type(type), target(target), respath(respath) {}
-	// Temporary one for development
-	vhost(const char* hostname, char type, const char* target, const char* respath) :
-		hostname((char*)hostname), type(type), target((char*)target), respath((char*)respath) {}
-	vhost(const char* hostname, char type, const char* target) :
-		hostname((char*)hostname), type(type), target((char*)target), respath(NULL) {}
+	vhost(std::string hostname, char type, std::string target, std::string respath) :
+		hostname(hostname), type(type), target(target), respath(respath) {}
+	vhost() :
+		hostname(NULL), type(0), target(NULL), respath(NULL) {}
 } vhost;
 
-static vhost virtualHosts[4] = {
-	{"",0,"./htroot","./res"}, //first one is default.
-	{"192.168.1.131",0,"./htroot2","./res2"},
-	{"redirect.local",1,"https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-	{"forbidden.local", 2, "" }
-};
-
-#define numVhosts 4
+extern std::vector<vhost> virtualHosts;
+extern int numVhosts;
 
 extern std::vector<std::string> acaoList;
-#define numAcao 2
-#define acaoMode 2
+extern int numAcao;
+extern int8_t acaoMode;
 
 extern char* predefinedHeaders; extern int predefinedSize;
 
@@ -369,7 +366,7 @@ const char* fileMime(const char* filename);
 bool pathParsing(requestInfo* r, unsigned int end);
 extern "C" int8_t readConfig(const char* path);
 int getCoreCount();
-int getLocale();
+int8_t getLocale();
 int commandline(int argc, char* argv[]);
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(std::string logName);
@@ -427,6 +424,11 @@ static bool IsDirectory(char* path) {
 static int WriteTime(char* path) {
 	struct stat attr; stat(path, &attr);
 	return attr.st_mtime;
+}
+static int isInaccesible(const char* path) {
+	struct stat attr; int x = stat(path, &attr);
+	if (x) return errno;
+	return 0;
 }
 #else
 #define FileExists std::filesystem::exists

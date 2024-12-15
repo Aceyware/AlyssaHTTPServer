@@ -340,9 +340,9 @@ streamFound:
 						std::string huffstr;
 						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
 						for (short i = 0; i < numVhosts; i++) {
-							if (!strncmp(virtualHosts[i].hostname,
+							if (!strncmp(virtualHosts[i].hostname.data(),
 								((isHuffman) ? huffstr.data() : &buf[pos]),
-								strlen(virtualHosts[i].hostname))) {
+								strlen(virtualHosts[i].hostname.data()))) {
 							
 								c->stream[streamIndex].vhost = i;
 							}
@@ -470,9 +470,9 @@ h2getRestart:
 	switch (virtualHosts[r->vhost].type) {
 		case 0: // Standard virtual host.
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
-				int htrs = strlen(virtualHosts[r->vhost].respath);
-				memcpy(buff, virtualHosts[r->vhost].respath, htrs);
-				memcpy(buff + strlen(virtualHosts[r->vhost].respath), r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
+				int htrs = strlen(virtualHosts[r->vhost].respath.data());
+				memcpy(buff, virtualHosts[r->vhost].respath.data(), htrs);
+				memcpy(buff + strlen(virtualHosts[r->vhost].respath.data()), r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
 #if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(buff); 
 				goto openFile17;
@@ -481,15 +481,15 @@ h2getRestart:
 #endif
 			}
 			else {
-				memcpy(buff, virtualHosts[r->vhost].target, strlen(virtualHosts[r->vhost].target));
-				memcpy(buff + strlen(virtualHosts[r->vhost].target), r->path.data(), strlen(r->path.data()) + 1);
+				memcpy(buff, virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
+				memcpy(buff + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
 #if __cplusplus > 201700L
 				u8p = std::filesystem::u8path(buff);
 #endif
 				break;
 			}
 		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[r->vhost].target; // Reusing content-type variable for redirection path.
+			h.conType = virtualHosts[r->vhost].target.data(); // Reusing content-type variable for redirection path.
 			h.statusCode = 302; h2serverHeaders(c, &h, streamIndex); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			r->id = 0;
 			return; break;
@@ -761,11 +761,11 @@ h2postRestart:
 
 	switch (virtualHosts[c->stream[streamIndex].vhost].type) {
 		case 0: // Standard virtual host.
-			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target, strlen(virtualHosts[c->stream[streamIndex].vhost].target));
-			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
+			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target.data(), strlen(virtualHosts[c->stream[streamIndex].vhost].target.data()));
+			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target.data()), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
 			break;
 		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[c->stream[streamIndex].vhost].target; // Reusing content-type variable for redirection path.
+			h.conType = virtualHosts[c->stream[streamIndex].vhost].target.data(); // Reusing content-type variable for redirection path.
 			h.statusCode = 302; h2serverHeaders(c, &h, streamIndex); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			c->stream[streamIndex].id = 0;
 			return; break;

@@ -173,9 +173,9 @@ int getCoreCount(){
 #endif
 }
 
-int getLocale(){
+int8_t getLocale(){
 	//std::string loc = std::setlocale(LC_ALL, "");
-	return 0;
+	return LANG_TR;
 }
 
 using std::cout;
@@ -193,6 +193,8 @@ int commandline(int argc, char* argv[]) {
 				exit(-1);
 			} i++;
 			break;
+		case 'e':
+			currentLocale = LANG_EN; break;
 		case 'h':
 		case '?':
 			printf("Alyssa HTTP Server command-line help\n"
@@ -200,6 +202,7 @@ int commandline(int argc, char* argv[]) {
 				   
 				   "-h(elp) or -?             : Displays this message\n"
 				   "-c(onfig) <path\\of\\.cfg>: Loads given config file\n"
+				   "-e(nglish)                : Ignores system language and uses English\n"
 				   "-p(port) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
 #ifdef COMPILE_WOLFSSL
 				   "-n(ossl)                  : Disables SSL regardless of config.\n"
