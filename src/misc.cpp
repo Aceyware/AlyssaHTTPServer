@@ -175,7 +175,24 @@ int getCoreCount(){
 
 int8_t getLocale(){
 	//std::string loc = std::setlocale(LC_ALL, "");
-	return LANG_TR;
+	//return LANG_TR;
+	
+	// Linux and probably others too will return something like tr_TR.UTF-8
+	// Windows will retrun something Turkish_Türkiye.1254
+#ifndef _WIN32
+	std::string loc = setlocale(LC_ALL, "");
+	setlocale(LC_TIME, "C");
+	if(loc.size()>4){
+		if(!strncmp("tr_TR",loc.data(),5)) return LANG_TR;
+		else return LANG_EN;
+	} return LANG_EN;
+#else
+	LCID lcid = GetThreadLocale();
+	wchar_t loc[LOCALE_NAME_MAX_LENGTH];
+	if (LCIDToLocaleName(lcid, loc, LOCALE_NAME_MAX_LENGTH, 0) == 0) return LANG_EN;
+	if (!wcsncmp(L"tr", loc, 2)) return LANG_TR;
+	else return LANG_EN;
+#endif
 }
 
 using std::cout;
@@ -203,7 +220,7 @@ int commandline(int argc, char* argv[]) {
 				   "-h(elp) or -?             : Displays this message\n"
 				   "-c(onfig) <path\\of\\.cfg>: Loads given config file\n"
 				   "-e(nglish)                : Ignores system language and uses English\n"
-				   "-p(port) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
+				   "-p(ort) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
 #ifdef COMPILE_WOLFSSL
 				   "-n(ossl)                  : Disables SSL regardless of config.\n"
 				   "-s(slport)<prt1>[,p2,p3..]: Overrides SSL listening ports with given ones\n"
@@ -289,4 +306,5 @@ int commandline(int argc, char* argv[]) {
 			break;
 		}
 	}
+	return 0;
 }

@@ -25,6 +25,7 @@ HANDLE ep; // epoll handle
 
 #ifdef COMPILE_WOLFSSL
 WOLFSSL_CTX* ctx;
+extern char* h2Settings; extern unsigned short h2SettingsSize;
 #endif // COMPILE_WOLFSSL
 
 extern void printInformation();
@@ -167,13 +168,13 @@ void* threadMain(int num) {
 }
 
 int main(int argc, char* argv[]) {
-#ifdef _WIN32
-	SetConsoleOutputCP(CP_UTF8); // Set console codepage to UTF-8 on Windows.
-#endif
 	commandline(argc, argv); // Parse command line arguments
 
 	if(!configLoaded) readConfig("Alyssa.cfg"); // Load default config if no config is given on command line.
 	if(currentLocale==LANG_UNSPEC) currentLocale = getLocale(); // Get system locale if not explicitly set from config
+#ifdef _WIN32
+	SetConsoleOutputCP(CP_UTF8); // Set console codepage to UTF-8 on Windows.
+#endif
 	if(!virtualHosts.size()) virtualHosts.emplace_back("", 0, htroot, respath); // Add default vhost if there is none.
 
 	if (!threadCount) threadCount = getCoreCount(); // Set thread count to CPU core count if not explicitly set by config.
@@ -423,8 +424,8 @@ int main(int argc, char* argv[]) {
 							char magic[24] = { 0 };
 							wolfSSL_recv(ssl, magic, 24, 0);
 							if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
-								// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = 8
-								wolfSSL_send(ssl, "\0\0\x06\4\0\0\0\0\0\0\3\0\0\0\x08", 15, 0);
+								// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = maxstream and SETTINGS_HEADER_TABLE_SIZE = 0
+								wolfSSL_send(ssl, h2Settings, h2SettingsSize, 0);
 							}
 						}
 					}
@@ -433,14 +434,14 @@ int main(int argc, char* argv[]) {
 					clients[clientIndex2(cSock)].s = cSock;
 					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_IPV6) {
 						clients[clientIndex2(cSock)].flags |= FLAG_IPV6;
-						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr	  = *(unsigned long*)hints6.sin6_addr.u.Byte;
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[4]  = *(unsigned long*)&hints6.sin6_addr.u.Byte[4];
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[8]  = *(unsigned long*)&hints6.sin6_addr.u.Byte[8];
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[12] = *(unsigned long*)&hints6.sin6_addr.u.Byte[12];
+						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr	  = *(unsigned long*)hints6.sin6_addr._Sin6Addr;
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[4]  = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[4];
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[8]  = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[8];
+						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[12] = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[12];
 						clients[clientIndex2(cSock)].portAddr = ntohs(hints6.sin6_port);
 					}
 					else {
-						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)&hints.sin_addr.S_un.S_un_b.s_b1;
+						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)&hints.sin_addr._SinAddr;
 						clients[clientIndex2(cSock)].portAddr = ntohs(hints.sin_port);
 					}
 					epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);

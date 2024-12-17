@@ -8,6 +8,7 @@ const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
 
 char* h2PredefinedHeaders;	unsigned short h2PredefinedHeadersSize;
 unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
+char* h2Settings; unsigned short h2SettingsSize = 0;
 
 enum h2FrameTypes {
 	H2DATA,
@@ -33,7 +34,7 @@ enum h2Errors {
 	H2CANCEL = 8,
 	H2COMPRESSION_ERROR = 9
 };
-static short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads integer representations in headers and converts them to normal integer.
+static unsigned short h2Integer(char* buf, unsigned short* pos, int fullValue) {// Reads integer representations in headers and converts them to normal integer.
 	if (buf[0] == fullValue) {// Index is bigger than byte, add next bit to it too.
 		short ret;
 		if (*((unsigned int*)&buf[0]) == (fullValue & 0xFFFFFFFF)) return -1; // Next 4 bytes are full (index >=895), probably won't happen so kill the connection.
@@ -189,6 +190,11 @@ void h2SetPredefinedHeaders() {
 		h2PredefinedHeaders[pos + 2] = '*'; // Value
 		pos += 3; h2PredefinedHeaders[h2PredefinedHeadersSize + pio] = 128 | (62 + pio);
 	}
+	// SETTINGS frame with SETTINGS_HEADER_TABLE_SIZE = 0 and SETTINGS_MAX_CONCURRENT_STREAMS will be set to maxstreams.
+	char settings[] = "\0\0\xc\4\0\0\0\0\0\0\3\0\0\0\0\0\1\0\0\0\0"; 
+	*((unsigned int*)&settings[11]) = htonl(maxstreams);
+	h2SettingsSize = sizeof(settings) - 1; h2Settings = new char[h2SettingsSize];
+	memcpy(h2Settings, settings, h2SettingsSize);
 }
 
 /// <summary>
@@ -219,7 +225,7 @@ void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz) {
 /// <param name="stream">Stream identifier</param>
 /// <param name="statusCode">Error code for resetting</param>
 static void resetStream(clientInfo* c, unsigned int stream, char statusCode) {
-	char buf[13] = "\4\0\0\3\0\0\0\0\0\0\0\0";
+	char buf[] = "\4\0\0\3\0\0\0\0\0\0\0\0";
 	*(unsigned int*)&buf[9] = htonl(stream);
 	wolfSSL_send(c->ssl, buf, 13, 0);
 }
@@ -285,7 +291,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 		return -9;
 	}
 streamFound:
-	unsigned short pos = 9; unsigned short index = 0, size = 0; bool isHuffman = 0;
+	unsigned short pos = 9, index = 0, size = 0; bool isHuffman = 0;
 	if (buf[4] & PADDED) {
 		sz -= buf[5]; pos++;
 	}
@@ -306,17 +312,18 @@ streamFound:
 				}
 			}
 			else { // Search on dynamic table.
+				__debugbreak();
 				for (size_t i = 0; i < 0; i++) {
 					break;
 				}
 			}
 		}
-		else if (buf[pos] & 32) {// Dynamic table size update.
-			pos++;
+		else if (buf[pos] & 32 && !(buf[pos] & 64)) {// Dynamic table size update.
+			pos++; h2Integer(&buf[pos], &pos, 31);
 		}
 		else { // Literal header with/without indexing
 			bool isIndexed = (buf[pos] & 64); if(isIndexed) buf[pos] ^= 64;
-			if (buf[pos] & 16) buf[pos] ^= 16; // Never indexed flag. 
+			else if (buf[pos] & 16) buf[pos] ^= 16; // Never indexed flag. 
 			// Get index
 			index = h2Integer(&buf[pos], &pos, ((isIndexed) ? 63 : 15));
 			if (index < 0) return -7; // error.
@@ -325,7 +332,7 @@ streamFound:
 				// Get length of name.
 				size = h2Integer(&buf[pos], &pos, 127);
 				if (size < 1) return -7; // error.
-				index = -1; pos += size;
+				index = 31; pos += size; // Magic number. 31 is not on the list below, effectively making such header discarded.
 			}
 			// Get value size.
 			isHuffman = (buf[pos] & 128); if (isHuffman) buf[pos] ^= 128;
@@ -416,6 +423,7 @@ streamFound:
 				}
 			}
 			else { // Search on dynamic table.
+				__debugbreak();
 				for (size_t i = 0; i < 0; i++) {
 					break;
 				}

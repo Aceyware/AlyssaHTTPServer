@@ -13,7 +13,7 @@ int loggingInit(std::string logName) {
 		logfile = fopen(buf, "a");
 	}
 	if (!logfile) return -1; // Open failed.
-	setvbuf(logfile, NULL, _IONBF, 0); // Set stream to unbuffered mode.
+	setvbuf(logfile, NULL, _IOLBF, 0); // Set stream to unbuffered mode.
 
 	// Read the heading of log file, i.e. product info, version, time, some parameters, etc.
 	std::string heading = "=== Aceyware Alyssa HTTP Server version " version " started on "; heading.reserve(512);
@@ -97,6 +97,7 @@ int printa(int String, char Type, ...) {
 	else if (Type & TYPE_WARNING){ buf[x] = 'W'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
 	else if (Type & TYPE_INFO)   { buf[x] = 'I'; buf[x + 1] = ':'; buf[x + 2] = ' '; x += 3; }
 	// Add the actual string to buf
+	va_start(val, Type);
 	x += vsprintf_s(&buf[x], 512 - x, StringTable[LANG_EN][String], val);
 	if (currentLocale == LANG_EN) puts(buf); // Print to console if language is English
 	if (!(Type & TYPE_FLAG_NOLOG) || loggingEnabled) { // Write to logfile if enabled.

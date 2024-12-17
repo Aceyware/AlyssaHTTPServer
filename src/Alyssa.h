@@ -44,6 +44,9 @@
 	#pragma comment(lib,"WS2_32.lib")
 	#define stat _stat64
 	#define S_IFDIR _S_IFDIR
+	// sockaddr definitions
+	#define _SinAddr S_un.S_un_b.s_b1
+	#define _Sin6Addr u.Byte
 #else
 	#include <unistd.h>
 	// TODO: maybe steal libepoll-shim and provide options to either using stolen epoll-shim or linking as a library as usual.
@@ -51,6 +54,13 @@
 	#include <sys/types.h>
 	#include <arpa/inet.h>
 	#include <sys/epoll.h>
+	#include <signal.h>
+	#define sprintf_s snprintf
+	#define vsprintf_s vsnprintf
+	// sockaddr definitions
+	#define _SinAddr s_addr
+	#define _Sin6Addr s6_addr
+
 	#ifdef __APPLE__ // macOS doesn't support unnamed semaphores, https://github.com/stanislaw/posix-macos-addons implements it.
 		#warning macOS support is only provided as a development target, so is in a lower priority.
 		#include <posix-macos-semaphore.h>	
@@ -96,8 +106,12 @@
 	#define AThread pthread_t
 #endif
 
+#ifdef DEBUG
+	#define _DEBUG
+#endif
+
 // Constants
-#define version "3.0-prerelease3.7"
+#define version "3.0-prerelease3.8"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -186,7 +200,7 @@ typedef struct requestInfo {
 	char method; // HTTP method (GET, POST, etc.)
 	unsigned char flags;
 	unsigned short contentLength; // client payload content length.
-	FILE* f; unsigned long long fs; // File stream and file size.
+	FILE* f; HANDLE f2; unsigned long long fs; // File stream and file size.
 	size_t rstart; size_t rend; // Range start and end.
 	char* qStr; // Query string location.
 	std::string path = std::string(maxpath,'\0');

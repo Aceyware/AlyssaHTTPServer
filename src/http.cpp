@@ -556,13 +556,14 @@ getRestart:
 			int cbMultiByte = strlen(tBuf[c->cT]);
 			int ret = MultiByteToWideChar(CP_UTF8, 0, tBuf[c->cT], cbMultiByte, (LPWSTR)&tBuf[c->cT][cbMultiByte + 1], (bufsize - cbMultiByte - 1) / 2);
 			*(wchar_t*)&tBuf[c->cT][cbMultiByte + 1 + ret * 2] = 0; // Add wchar null terminator
-			r->f = _wfopen((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], L"rb");
+			//r->f = _wfopen((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], L"rb");
+			r->f2 = CreateFile((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 #else
 			r->f = fopen(tBuf[c->cT], "rb");
 #endif
-			if (r->f) {
+			if (r->f2 != INVALID_HANDLE_VALUE) {
 				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path);
-				h.lastMod = WriteTime(Path);
+				//h.lastMod = WriteTime(Path);
 				if (r->rstart || r->rend) {// is a range request.
 					// Note that h.conLength, content length on headers is the original file size,
 					// And r->fs will be morphed into remaining from ranges if any.
@@ -655,12 +656,13 @@ getRestart:
 #endif
 					else {
 						h.conLength = r->fs; serverHeaders(&h, c);
-						fread(tBuf[c->cT], r->fs, 1, r->f); Send(c, tBuf[c->cT], r->fs);
-						fclose(r->f); r->fs = 0;
-						if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-						else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+						//fread(tBuf[c->cT], r->fs, 1, r->f); 
+						ReadFile(r->f2, tBuf[c->cT], r->fs, NULL, NULL);
+						Send(c, tBuf[c->cT], r->fs);
 					}
-					fclose(r->f); r->fs = 0;
+					//fclose(r->f); 
+					CloseHandle(r->f2);
+					// r->fs = 0;
 					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}

@@ -16,7 +16,7 @@ enum Languages {
 
 enum Strings {
 // 0
-	STR_LANG_NAME,
+	STR_LANG_NAME = 0,
 	STR_ERROR,
 	STR_WARNING,
 	STR_INFO,

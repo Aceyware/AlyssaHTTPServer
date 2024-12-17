@@ -96,15 +96,15 @@ const char* StringTable[][STR_END] = {
 		u8"Winsock başlatma başarısız oldu, çıkılıyor.",
 		u8"Soket oluşturma başarısız oldu, çıkılıyor.",
 		// 20
-		u8"Sanal konak dosyası açılamadı.",
-		u8"kopyalamak için kaynak öğe bulunamadı, görmezden geliniyor.",
+		u8"Sanal konak dosyası %s açılamadı.",
+		u8"kopyalamak için kaynak öğe %s bulunamadı, görmezden geliniyor.",
 #ifdef branch
 		u8"Bu yapı tamamlanmamış deneysel" branch u8"dalından derlendi.\n"
 		u8"Tamamlanmamış, kararsız veya bozuk kod içerebilir ve büyük ihtimal istemcilere güvenilir şekilde yanıt vermeyecektir. Bu yapı sadece geliştirme amaçlıdır.\n"
 		u8"Bunlarının hiçbirinin ne anlama geldiğini bilmiyorsanız \"https://www.github.com/AlyssaSoftware/AlyssaHTTPServer/releases/latest\" adresinden en son kararlı yapıyı alın."
 #endif // branch
-		u8"%d portunda soket tanımlama başarısız oldu. \nPortun kullanımda olmadığıdan emin olun.\n",
-		u8"%d portunda soket tanımlama başarısız oldu. (OS başka bir port atadı.) \n"
+		u8"IPv%d %d portunda soket tanımlama başarısız oldu. \nPortun kullanımda olmadığıdan emin olun.\n",
+		u8"IPv%d %d portunda soket tanımlama başarısız oldu. (OS başka bir port atadı.) \n"
 		"Portun kullanımda olmadığıdan veya gerekli yetkilere sahip olduğunuzdan emin olun.\n",
 #ifdef COMPILE_CGI
 		u8"CGI ortam değişkenlerini ayarlama bşarısız oldu.",

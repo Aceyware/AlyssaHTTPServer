@@ -186,10 +186,11 @@ extern "C" int8_t readConfig(const char* path) {
 						
 					}
 					else if (*(begin + 6) == 'e' || *(begin + 6) == 'E') { // logfile
-						loggingFileName = begin + 8;
+						if(begin[8]=='0') loggingEnabled=0;
+						else loggingFileName = begin + 8;
 					}
 					break;
-				case 'm': // maxpath, maxauth, maxstream, maxpayload, maxclient
+                case 'm': // maxpath, maxauth, maxstream, maxpayload, maxclient, maxthreads
 				case 'M':
 					if(*(begin + 6)=='h'||*(begin+6)=='H'){// maxpath or maxauth
 						if(*(begin+3)=='p'||*(begin+3)=='P') { // maxpath
@@ -208,6 +209,9 @@ extern "C" int8_t readConfig(const char* path) {
 					else if(*(begin + 9)=='d'||*(begin+9)=='D'){// maxpayload
 						maxpayload=strtoul(begin+11, NULL, 10);
 					}
+                    else if(*(begin + 9)=='s'||*(begin+9)=='S'){// maxthreads
+                        threadCount=strtoul(begin+11, NULL, 10);
+                    }
 					break;
 				case 'p': // port
 				case 'P':
