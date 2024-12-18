@@ -5,7 +5,7 @@
 
 
 struct IndexEntry {
-	std::string FileName; size_t FileSize;
+	std::string FileName; size_t fileSize;
 	bool isDirectory;	  std::string ModifyDate;
 };
 
@@ -22,11 +22,11 @@ static std::deque<IndexEntry> diGetDirectory(const std::filesystem::path& p) {
 		std::stringstream timebuf; timebuf << std::put_time(gmt, "%d %b %Y %H:%M");
 		NewEntry.ModifyDate = timebuf.str();
 		if (!NewEntry.isDirectory) {
-			NewEntry.FileSize = x.file_size();
+			NewEntry.fileSize = x.file_size();
 			ret.emplace_back(NewEntry);
 		}
 		else {
-			NewEntry.FileSize = 0; ret.emplace(ret.begin() + DirCount, NewEntry); DirCount++;
+			NewEntry.fileSize = 0; ret.emplace(ret.begin() + DirCount, NewEntry); DirCount++;
 		}
 	}
 	return ret;
@@ -67,7 +67,7 @@ std::string diMain(const std::filesystem::path& p, const std::string& RelPath) {
 		else {
 			ret += "<th><img src=\""  + htrespath + "/file.png\"><a href=\"./" + Array[i].FileName + "\">" + Array[i].FileName + "</a></th>"
 				"<th>" + Array[i].ModifyDate + "</th>"
-				"<th>[" + std::to_string(Array[i].FileSize) + "]</th>"
+				"<th>[" + std::to_string(Array[i].fileSize) + "]</th>"
 				"</tr>";
 		}
 	}

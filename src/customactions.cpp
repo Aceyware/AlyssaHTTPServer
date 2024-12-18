@@ -289,20 +289,20 @@ while (buf[i] != '{' && i < sz) {\
 }\
 /* vvv EOF before scope beginning vvv. */\
 if (buf[i] != '{') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_6)); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_6), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
-char* begin = &buf[i]; \
+char* begin = &buf[i]; i++; \
 while (buf[i] != '}' && i < sz) {\
 	if(buf[i]=='{') {\
 /* vvv beginning of another scope before previous one closed vvv. */\
-		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3)); \
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3), i, path); \
 		return CA_ERR_SYNTAX;\
 	} i++;\
 }\
 /* vvv EOF before scope ending vvv. */\
 if (buf[i] != '}') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5)); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
 else return caExec(c, r, begin, &buf[i] - begin); \
@@ -312,20 +312,20 @@ else return caExec(c, r, begin, &buf[i] - begin); \
 while (buf[i] != '{' && i < sz) {\
 	if(buf[i]=='}') {\
 /* vvv ending of a non-existent scope. vvv. */\
-		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_1)); \
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_1), i, path); \
 		return CA_ERR_SYNTAX;\
 	} i++;\
-}\
+} i++; \
 while (buf[i] != '}' && i < sz) {\
 	if(buf[i]=='{') {\
 /* vvv beginning of another scope before previous one closed vvv. */\
-		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3)); \
+		printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_3), i, path); \
 		return CA_ERR_SYNTAX;\
 	} i++;\
 }\
 /* vvv EOF before scope ending vvv. */\
 if (buf[i] != '{') if (buf[i] != '}') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5)); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
 }

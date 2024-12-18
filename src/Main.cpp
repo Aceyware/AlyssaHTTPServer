@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Aceyware - GPLv3 licensed.
 
 #include "Alyssa.h"
+#include "AlyssaOverrides.h"
 
 // These are used for making file descriptors monotonic.
 // The base value of FDs and their increment rate is platform-dependent.
@@ -17,6 +18,7 @@ std::deque<std::atomic_bool> tLk;
 std::vector<struct epoll_event> tShared;
 std::vector<char*> tBuf;
 struct clientInfo* clients = NULL;
+bool Wait = 1;
 
 #define clientIndex(num) tShared[num].data.fd/rate
 #define clientIndex2(fd) fd/rate
@@ -31,30 +33,106 @@ extern char* h2Settings; extern unsigned short h2SettingsSize;
 extern void printInformation();
 
 void* threadMain(int num) {
+	struct epoll_event ee[256] = { 0 };
+	struct sockaddr_in hints; int hintSize = sizeof(hints);
+	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_family = AF_INET;
+	sockaddr_in6 hints6; int hint6Size = sizeof(hints6);
+	inet_pton(AF_INET6, "::", &hints6.sin6_addr); hints6.sin6_family = AF_INET6;
+	struct epoll_event element = { 0 }; // This one is used as surrogator to add to epoll.
+	while (Wait) {
+		Sleep(100);
+	}
 	while (true) {
 // Wait for semaphore to be fired.
-#ifdef _WIN32
-		WaitForSingleObject(tSemp[num], INFINITE);
-#else
-		sem_wait(&tSemp[num]);
-#endif
-
+//#ifdef _WIN32
+//		WaitForSingleObject(tSemp[num], INFINITE);
+//#else
+//		sem_wait(&tSemp[num]);
+//#endif
+		int events = epoll_wait(ep, ee, 1, -1);
+		if (events < 0) {
+			perror("epoll: "); std::terminate();
+		} tShared[num] = ee[0];
 #ifdef _DEBUG
 		printf("T: %d, S: %d, E: %s\r\n", num, tShared[num].data.fd, (tShared[num].events & EPOLLOUT) ? "OUT" : "IN");
 #endif // _DEBUG
 
 		clients[clientIndex(num)].cT = num; clientInfo* shit = &clients[clientIndex(num)];
 		if (tShared[num].events & EPOLLIN) { // Client sent something...
-			int received = Recv(&clients[clientIndex(num)], tBuf[num], bufsize); tBuf[num][received] = '\0';
-			if (received <= 0) { // Client closed connection.
-				clients[clientIndex(num)].epollNext = 31;
-			}
-			else if (shit->flags & FLAG_HTTP2) {
-				parseFrames(&clients[clientIndex(num)], received);
+			if (clients[clientIndex(num)].flags & FLAG_LISTENING) {// New connection incoming
+				SOCKET cSock;
+				// Accept the connection
+				if (clients[clientIndex(num)].flags & FLAG_IPV6) {
+					cSock = accept(tShared[num].data.fd, (struct sockaddr*)&hints6, (socklen_t*)&hint6Size);
+				}
+				else cSock = accept(tShared[num].data.fd, (struct sockaddr*)&hints, (socklen_t*)&hintSize);
+				epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num]);
+				if (cSock == INVALID_SOCKET) continue;
+				if (cSock / rate > maxclient) {
+					printa(STR_SOCK_EXCEEDS_ALLOCATED_SPACE, TYPE_ERROR);
+					closesocket(cSock); continue;
+				}
+				// Set epoll data.
+				element.data.fd = cSock; element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
+				// Clear clientInfo space for use
+#ifdef _DEBUG
+				clientInfo* watch = &clients[clientIndex2(cSock)];
+#endif
+				clients[clientIndex2(cSock)].clean();
+#ifdef COMPILE_WOLFSSL
+				if (clients[clientIndex(num)].flags & FLAG_SSL) {// SSL 
+					WOLFSSL* ssl = wolfSSL_new(ctx);
+					wolfSSL_set_fd(ssl, cSock);
+					wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+
+					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
+						wolfSSL_free(ssl); closesocket(cSock); continue;
+					}
+					char* amklpn = NULL; unsigned short amksize = 31;
+					wolfSSL_ALPN_GetProtocol(ssl, &amklpn, &amksize);
+					clients[clientIndex2(cSock)].ssl = ssl; clients[clientIndex2(cSock)].flags = FLAG_SSL;
+					if (!strncmp(amklpn, "h2", 2)) {
+						clients[clientIndex2(cSock)].flags |= FLAG_HTTP2;
+						char magic[24] = { 0 };
+						wolfSSL_recv(ssl, magic, 24, 0);
+						if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
+							// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = maxstream and SETTINGS_HEADER_TABLE_SIZE = 0
+							wolfSSL_send(ssl, h2Settings, h2SettingsSize, 0);
+						}
+					}
+				}
+#endif // COMPILE_WOLFSSL
+				// Set remaining clientInfo data.
+				clients[clientIndex2(cSock)].s = cSock;
+				if (clients[clientIndex(num)].flags & FLAG_IPV6) {
+					clients[clientIndex2(cSock)].flags |= FLAG_IPV6;
+					*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)hints6.sin6_addr._Sin6Addr;
+					*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[4] = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[4];
+					*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[8] = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[8];
+					*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[12] = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[12];
+					clients[clientIndex2(cSock)].portAddr = ntohs(hints6.sin6_port);
+				}
+				else {
+					*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)&hints.sin_addr._SinAddr;
+					clients[clientIndex2(cSock)].portAddr = ntohs(hints.sin_port);
+				}
+				epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);
+#ifdef _DEBUG
+				printf("T: %d New incoming: %d\r\n", num, cSock);
+#endif // _DEBUG	
+				goto pollPass;
 			}
 			else {
-				switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
-					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL); 
+				int received = Recv(&clients[clientIndex(num)], tBuf[num], bufsize); tBuf[num][received] = '\0';
+				if (received <= 0) { // Client closed connection.
+					clients[clientIndex(num)].epollNext = 31;
+				}
+				else if (shit->flags & FLAG_HTTP2) {
+					parseFrames(&clients[clientIndex(num)], received);
+				}
+				else {
+					switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
+					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL);
 						clients[clientIndex(num)].epollNext = 31; break;
 					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case  1: getInit(&clients[clientIndex(num)]); break;
@@ -67,6 +145,7 @@ void* threadMain(int num) {
 					case  5: getInit(&clients[clientIndex(num)]); break;
 					case 666: break;
 					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
+					}
 				}
 			}
 		}
@@ -144,7 +223,7 @@ void* threadMain(int num) {
 	handleOut:
 		// Reset polling or disconnect.
 		clients[clientIndex(num)].cT = -1;
-		if (!clients[clientIndex(num)].epollNext) __debugbreak();
+		if (!clients[clientIndex(num)].epollNext) num = num; //__debugbreak();
 		else if (clients[tShared[num].data.fd / rate].epollNext==31) { // Close connection.
 			if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
 #ifdef COMPILE_WOLFSSL // Delete SSL object.
@@ -152,17 +231,17 @@ void* threadMain(int num) {
 #endif // COMPILE_WOLFSSL // Delete SSL object.
 			clients[tShared[num].data.fd / rate].epollNext = 0;
 			shutdown(tShared[num].data.fd, 2); closesocket(tShared[num].data.fd);
-			tLk[num] = 0;
 		}
 		else { // Set polling
 			tShared[num].events = clients[clientIndex(num)].epollNext; 
 			clients[tShared[num].data.fd / rate].epollNext = 0;
 			if (epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num])) abort();
-			tLk[num] = 0;
 		}
-#ifdef _DEBUG
+	pollPass: // point for passing polling reset, used when a new connection is accepted.
+#ifdef _DEBUG	
 		printf("Thread %d: unlocked\r\n", num);
 #endif // _DEBUG
+		tLk[num] = 0;
 	}
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
@@ -192,7 +271,7 @@ int main(int argc, char* argv[]) {
 	printa(STR_SERVERMAIN, TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME);
 
 	// Create threads
-	for (size_t i = 0; i < threadCount; i++) {
+	for (size_t i = 1; i < threadCount; i++) {
 		tBuf[i] = new char[bufsize]; memset(tBuf[i], 0, bufsize);
 #ifdef _WIN32
 		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
@@ -205,7 +284,7 @@ int main(int argc, char* argv[]) {
 			std::cout<<"Thread creation failed!\n"; std::terminate();
 		}
 #endif
-	}
+	} tBuf[0] = new char[bufsize]; memset(tBuf[0], 0, bufsize);
 
 #ifndef _WIN32
 	// Disable SIGPIPE signals on *nixes
@@ -215,7 +294,6 @@ int main(int argc, char* argv[]) {
 	// Set up epoll
 	ep = epoll_create1(0);
 	if (ep == INVALID_HANDLE_VALUE) abort();
-	struct epoll_event ee[256] = { 0 };
 	struct epoll_event element = { 0 }; // This one is used as surrogator to add to epoll.
 	element.events = EPOLLIN;
 	
@@ -369,149 +447,89 @@ int main(int argc, char* argv[]) {
 	// If we could come this far, then server is started successfully. Print a message and ports.
 	printInformation();
 
+	Wait = 0;
+	threadMain(0);
 	// Start polling.
-	while (true) {
-		events = epoll_wait(ep, ee, 256, -1);
-		if(events<0) {
-			perror("epoll: "); std::terminate();
-		}
-		for (int i = 0; i < events; i++) {
-			if (ee[i].events & EPOLLHUP) {
-#ifdef _DEBUG
-				printf("HUP: %d\r\n", ee[i].data.fd);
-#endif // _DEBUG
-				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) abort();
-				epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
-				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
-					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
-				}
-				shutdown(ee[i].data.fd, 2); closesocket(ee[i].data.fd);
-				clients[clientIndex2(ee[i].data.fd)].epollNext = 0;
-			}
-			else if (ee[i].events & EPOLLIN) {
-				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) {// New connection incoming
-					SOCKET cSock;
-					// Accept the connection
-					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_IPV6) {
-						cSock = accept(ee[i].data.fd, (struct sockaddr*)&hints6, (socklen_t*)&hint6Size);
-					}
-					else cSock = accept(ee[i].data.fd, (struct sockaddr*)&hints, (socklen_t*)&hintSize);
-					if (cSock == INVALID_SOCKET) continue;
-					if (cSock / rate > maxclient) {
-						printa(STR_SOCK_EXCEEDS_ALLOCATED_SPACE, TYPE_ERROR);
-						closesocket(cSock); continue;
-					}
-					// Set epoll data.
-					element.data.fd = cSock; element.events = EPOLLIN | EPOLLHUP | EPOLLONESHOT;
-					// Clear clientInfo space for use
-#ifdef _DEBUG
-					clientInfo* watch = &clients[clientIndex2(cSock)];
-#endif
-					clients[clientIndex2(cSock)].clean();
-#ifdef COMPILE_WOLFSSL
-					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_SSL) {// SSL 
-						WOLFSSL* ssl = wolfSSL_new(ctx);
-						wolfSSL_set_fd(ssl, cSock);
-						wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
-
-						if (wolfSSL_accept(ssl) != SSL_SUCCESS) { 
-							wolfSSL_free(ssl); closesocket(cSock); continue; }
-						char* amklpn = NULL; unsigned short amksize = 31;
-						wolfSSL_ALPN_GetProtocol(ssl, &amklpn, &amksize);
-						clients[clientIndex2(cSock)].ssl = ssl; clients[clientIndex2(cSock)].flags = FLAG_SSL;
-						if (!strncmp(amklpn, "h2", 2)) {
-							clients[clientIndex2(cSock)].flags |= FLAG_HTTP2; 
-							char magic[24] = { 0 };
-							wolfSSL_recv(ssl, magic, 24, 0);
-							if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
-								// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = maxstream and SETTINGS_HEADER_TABLE_SIZE = 0
-								wolfSSL_send(ssl, h2Settings, h2SettingsSize, 0);
-							}
-						}
-					}
-#endif // COMPILE_WOLFSSL
-					// Set remaining clientInfo data.
-					clients[clientIndex2(cSock)].s = cSock;
-					if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_IPV6) {
-						clients[clientIndex2(cSock)].flags |= FLAG_IPV6;
-						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr	  = *(unsigned long*)hints6.sin6_addr._Sin6Addr;
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[4]  = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[4];
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[8]  = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[8];
-						*(unsigned long*)&clients[clientIndex2(cSock)].ipAddr[12] = *(unsigned long*)&hints6.sin6_addr._Sin6Addr[12];
-						clients[clientIndex2(cSock)].portAddr = ntohs(hints6.sin6_port);
-					}
-					else {
-						*(unsigned long*)clients[clientIndex2(cSock)].ipAddr = *(unsigned long*)&hints.sin_addr._SinAddr;
-						clients[clientIndex2(cSock)].portAddr = ntohs(hints.sin_port);
-					}
-					epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);
-#ifdef _DEBUG
-					printf("New incoming: %d\r\n", cSock);
-#endif // _DEBUG	
-				}
-				else {// A client sent something.
-					// Search for a free thread.
-#ifdef _DEBUG
-					printf("IN : %d\r\n", ee[i].data.fd);
-
-#endif // _DEBUG
-					bool threadFound = 0;
-					for (int k = 0; k < threadCount; k++) {
-						if (!tLk[k]) {
-							tShared[k] = ee[i];
-#ifdef _WIN32
-							ReleaseSemaphore(tSemp[k], 1, NULL);
-#else
-							sem_post(&tSemp[k]);
-#endif
-							tLk[k] = 1; 
-#ifdef _DEBUG
-							printf("Thread %d: locked\r\n", k);
-
-#endif // _DEBUG
-							threadFound = 1;
-							break;
-						}
-					}
-					if (!threadFound) {
-#ifdef _DEBUG
-						printf("NO threads found for %d\r\n", ee[i].data.fd);
-#endif // _DEBUG
-						ee[i].events = EPOLLIN | EPOLLONESHOT;
-						epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
-					}
-				}
-			}
-			else if (ee[i].events & EPOLLOUT) {
-#ifdef _DEBUG
-				printf("OUT: %d\r\n", ee[i].data.fd);
-#endif // _DEBUG
-				bool threadFound = 0;
-				for (int k = 0; k < threadCount; k++) {
-					if (!tLk[k]) {
-						tShared[k] = ee[i];
-#ifdef _WIN32
-						ReleaseSemaphore(tSemp[k], 1, NULL);
-#else
-						sem_post(&tSemp[k]);
-#endif
-						tLk[k] = 1; 
-#ifdef _DEBUG
-						printf("Thread %d: locked\r\n", k);
-#endif // _DEBUG
-						threadFound = 1;
-						break;
-					}
-				}
-				if (!threadFound) {
-#ifdef _DEBUG
-					printf("NO threads found for %d\r\n", ee[i].data.fd);
-#endif // _DEBUG
-					ee[i].events = EPOLLOUT | EPOLLONESHOT;
-					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
-				}
-
-			}
-		}
-	}
+//	while (true) {
+//		events = epoll_wait(ep, ee, 256, -1);
+//		if(events<0) {
+//			perror("epoll: "); std::terminate();
+//		}
+//		for (int i = 0; i < events; i++) {
+//			if (ee[i].events & EPOLLHUP) {
+//#ifdef _DEBUG
+//				printf("HUP: %d\r\n", ee[i].data.fd);
+//#endif // _DEBUG
+//				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) abort();
+//				epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
+//				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
+//					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
+//				}
+//				shutdown(ee[i].data.fd, 2); closesocket(ee[i].data.fd);
+//				clients[clientIndex2(ee[i].data.fd)].epollNext = 0;
+//			}
+//			else if (ee[i].events & EPOLLIN) {
+//				// Search for a free thread.
+//#ifdef _DEBUG
+//				printf("IN : %d\r\n", ee[i].data.fd);
+//
+//#endif // _DEBUG
+//				bool threadFound = 0;
+//				for (int k = 0; k < threadCount; k++) {
+//					if (!tLk[k]) {
+//						tShared[k] = ee[i];
+//#ifdef _WIN32
+//						ReleaseSemaphore(tSemp[k], 1, NULL);
+//#else
+//						sem_post(&tSemp[k]);
+//#endif
+//						tLk[k] = 1;
+//#ifdef _DEBUG
+//						printf("Thread %d: locked\r\n", k);
+//
+//#endif // _DEBUG
+//						threadFound = 1;
+//						break;
+//					}
+//				}
+//				if (!threadFound) {
+//#ifdef _DEBUG
+//					printf("NO threads found for %d\r\n", ee[i].data.fd);
+//#endif // _DEBUG
+//					ee[i].events = EPOLLIN | EPOLLONESHOT;
+//					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
+//				}
+//			}
+//			else if (ee[i].events & EPOLLOUT) {
+//#ifdef _DEBUG
+//				printf("OUT: %d\r\n", ee[i].data.fd);
+//#endif // _DEBUG
+//				bool threadFound = 0;
+//				for (int k = 0; k < threadCount; k++) {
+//					if (!tLk[k]) {
+//						tShared[k] = ee[i];
+//#ifdef _WIN32
+//						ReleaseSemaphore(tSemp[k], 1, NULL);
+//#else
+//						sem_post(&tSemp[k]);
+//#endif
+//						tLk[k] = 1; 
+//#ifdef _DEBUG
+//						printf("Thread %d: locked\r\n", k);
+//#endif // _DEBUG
+//						threadFound = 1;
+//						break;
+//					}
+//				}
+//				if (!threadFound) {
+//#ifdef _DEBUG
+//					printf("NO threads found for %d\r\n", ee[i].data.fd);
+//#endif // _DEBUG
+//					ee[i].events = EPOLLOUT | EPOLLONESHOT;
+//					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
+//				}
+//
+//			}
+//		}
+//	}
 }

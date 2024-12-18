@@ -20,7 +20,9 @@
 #define COMPILE_CUSTOMACTIONS
 
 // Directory indexes support
-//#define COMPILE_DIRINDEX
+#if __cplusplus > 201700L
+#define COMPILE_DIRINDEX
+#endif
 #ifdef COMPILE_DIRINDEX
 #if __cplusplus < 201700L
 	#error C++17 compatible compiler is required for building with directory indexes.

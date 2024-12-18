@@ -121,18 +121,18 @@ extern "C" int8_t readConfig(const char* path) {
 			// This if-else is also reserved for modules support.
 		}
 		else {
-			switch (*begin) {
+			switch (begin[0]) {
 				// TODO: add buffer size check on these.
 				case 'a': // acao
 				case 'A':
-					if(*(begin + 3)=='o'||*(begin+3)=='O'){ // acao
+					if(begin[3] =='o'||begin[3]=='O'){ // acao
 						if (begin[5] == '*') acaoMode = 2;
 						else readAcao(begin + 5);
 					}
 					break;
 				case 'b': // bufsize
 				case 'B':
-					if(*(begin + 6)=='e'||*(begin+6)=='E'){ // bufsize
+					if(begin[6]=='e'||*(begin+6)=='E'){ // bufsize
 						bufsize=strtoul(begin+8, NULL, 10);
 						if(!bufsize) return -2;
 						if(bufsize<16600) bufsize=16600;
@@ -141,81 +141,82 @@ extern "C" int8_t readConfig(const char* path) {
 				case 'c': // customactions or csp
 				case 'C':
 					if(*(begin + 2)=='p'||*(begin+2)=='P'){ // csp
-						if (*(begin + 4) == '0') hascsp = 0;
+						if (begin[4]  == '0') hascsp = 0;
 						else { csp = begin + 4; hascsp = 1; }
 					}
 #ifdef COMPILE_CUSTOMACTIONS
-					if(*(begin + 12)=='s'||*(begin+12)=='S'){ // customactions
-						if(*(begin + 14)=='1') customactions=1;
-						else if(*(begin + 14)=='2') customactions=2;
+					if(begin[12] =='s'||begin[12] =='S'){ // customactions
+						if(begin[14] =='1') customactions=1;
+						else if(begin[14] =='2') customactions=2;
 						else customactions=0;
 					}
 #endif
 					break;
 				case 'd': // directoryindex
 				case 'D':
-					if(*(begin + 13)=='x'||*(begin+13)=='X'){ // directoryindex
-						if(*(begin+15)=='1') dirIndexEnabled=1;
+					if(begin[13] =='x'||begin[13] =='X'){ // directoryindex
+						if(begin[15] =='1') dirIndexEnabled=1;
 						else dirIndexEnabled=0;
 					}
 					break;
 				case 'e': // errorpages
 				case 'E':
-					if(*(begin + 9)=='s'||*(begin+9)=='S'){
-						if(*(begin+11)=='1') errorPagesEnabled=1;
-						else if(*(begin+11)=='2') errorPagesEnabled=2;
+					if(begin[9] =='s'||begin[9] =='S'){
+						if(begin[11] =='1') errorPagesEnabled=1;
+						else if(begin[11] =='2') errorPagesEnabled=2;
 						else errorPagesEnabled=0;
 					}
 					break;
 				case 'h': // hsts, htrespath
 				case 'H':
-					if(*(begin + 3)=='s'||*(begin+3)=='S'){// hsts
-						if(*(begin+5)=='1') hsts=1;
+					if(begin[3] =='s'||begin[3]=='S'){// hsts
+						if(begin[5] =='1') hsts=1;
 						else hsts=0;
 					}
-					else if (*(begin + 5) == 't' || *(begin + 5) == 'T') {// hsts
+					else if (begin[5]  == 't' || begin[5]  == 'T') {// hsts
 						htroot = begin + 7;
 					}
-					else if(*(begin + 8)=='h'||*(begin+8)=='H'){ // htrespath
+					else if(begin[8]=='h'||begin[8]=='H'){ // htrespath
 						htrespath = begin+10;
 					}
 					break;
 				case 'l': // lang
 				case 'L': // logfile
-					if(*(begin + 3)=='g'||*(begin+3)=='G'){
-						
+					if(begin[3] =='g'||begin[3]=='G'){
+						if (begin[5] == 'e') currentLocale = LANG_EN;
+						else if (begin[5] == 't') currentLocale = LANG_TR;
 					}
-					else if (*(begin + 6) == 'e' || *(begin + 6) == 'E') { // logfile
+					else if (begin[6] == 'e' || begin[6] == 'E') { // logfile
 						if(begin[8]=='0') loggingEnabled=0;
 						else loggingFileName = begin + 8;
 					}
 					break;
                 case 'm': // maxpath, maxauth, maxstream, maxpayload, maxclient, maxthreads
 				case 'M':
-					if(*(begin + 6)=='h'||*(begin+6)=='H'){// maxpath or maxauth
-						if(*(begin+3)=='p'||*(begin+3)=='P') { // maxpath
+					if(begin[6]=='h'||*(begin+6)=='H'){// maxpath or maxauth
+						if(begin[3]=='p'||begin[3]=='P') { // maxpath
 							maxpath = strtoul(begin+8, NULL, 10);
 						}
-						else if(*(begin+3)=='a'||*(begin+3)=='A'){ // maxauth
+						else if(begin[3]=='a'||begin[3]=='A'){ // maxauth
 							maxauth = strtoul(begin+8, NULL, 10);
 						}
 					}
-					else if(*(begin + 8)=='m'||*(begin+8)=='M'){ // maxstream
+					else if(begin[8]=='m'||begin[8]=='M'){ // maxstream
 						maxstreams=strtoul(begin+10, NULL, 10);
 					}
-					else if(*(begin + 8)=='t'||*(begin+8)=='T'){// maxclient
+					else if(begin[8]=='t'||begin[8]=='T'){// maxclient
 						maxclient=strtoul(begin+10, NULL, 10);
 					}
-					else if(*(begin + 9)=='d'||*(begin+9)=='D'){// maxpayload
+					else if(begin[9] =='d'||begin[9] =='D'){// maxpayload
 						maxpayload=strtoul(begin+11, NULL, 10);
 					}
-                    else if(*(begin + 9)=='s'||*(begin+9)=='S'){// maxthreads
+                    else if(begin[9] =='s'||begin[9] =='S'){// maxthreads
                         threadCount=strtoul(begin+11, NULL, 10);
                     }
 					break;
 				case 'p': // port
 				case 'P':
-					if(*(begin+3)=='t'||*(begin+3)=='T') { // sslport
+					if(begin[3]=='t'||begin[3]=='T') { // sslport
 						ports.clear();
 						if(readPorts(begin+5, ports)) return -1;
 						if(!ports.size()) return -1;
@@ -223,35 +224,35 @@ extern "C" int8_t readConfig(const char* path) {
 					break;
 				case 'r': // respath
 				case 'R':
-					if (*(begin + 6) == 'h' || *(begin + 6) == 'H') { // respath
+					if (begin[6] == 'h' || begin[6] == 'H') { // respath
 						loggingFileName = begin + 8;
 					}
 					break;
 #ifdef COMPILE_WOLFSSL
 				case 's': // ssl, sslport, sslcert, sslkey.
 				case 'S':
-					if(*(begin + 6)=='t'||*(begin+6)=='T'){// sslport or sslcert
-						if(*(begin+3)=='p'||*(begin+3)=='P') { // sslport
+					if(begin[6]=='t'||*(begin+6)=='T'){// sslport or sslcert
+						if(begin[3]=='p'||begin[3]=='P') { // sslport
 							sslPorts.clear();
 							if(readPorts(begin+8, sslPorts)) return -1;
 							if(!sslPorts.size()) return -1;
 						}
-						else if(*(begin+3)=='c'||*(begin+3)=='C'){ // sslcert
+						else if(begin[3]=='c'||begin[3]=='C'){ // sslcert
 							sslCertPath=begin+8;
 						}
 					}
-					else if(*(begin + 5)=='y'||*(begin+5)=='Y'){ // sslkey
+					else if(begin[5] =='y'||begin[5] =='Y'){ // sslkey
 						sslKeyPath=begin+7;
 					}
-					else if(*(begin + 3)==' '){// ssl
-						if(*(begin + 4)=='1') sslEnabled+=1;
+					else if(begin[3] ==' '){// ssl
+						if(begin[4] =='1') sslEnabled+=1;
 						else sslEnabled=0;
 					}
 					break;
 #endif
 				case 'v': // vhost
 				case 'V':
-					if (*(begin + 4) == 't' || *(begin + 3) == 'T') { // vhost
+					if (begin[4]  == 't' || begin[4]  == 'T') { // vhost
 						if (readVhosts(begin + 5)) {
 							virtualHosts.clear(); virtualHosts.emplace_back("", 0, htroot, respath);
 						}

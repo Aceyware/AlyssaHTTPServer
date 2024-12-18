@@ -1,4 +1,5 @@
 #include "Alyssa.h"
+#include "AlyssaOverrides.h"
 // #ifdef COMPILE_HTTP2
 
 char h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz);
@@ -448,12 +449,18 @@ static void h2getInit(clientInfo* c, int s) {
 	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
 #define h2bufsz 16600
 	char buff[h2bufsz] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
-#if __cplusplus > 201700L
+
+	// Various variables used for file functions.
+#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
+	int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0;
+#elif __cplusplus > 201700L
 	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-	#define Path u8p
+#define Path u8p
 #else
-	#define Path buff
+#define Path tBuf[c->cT]
+	struct stat attr;
 #endif
+
 h2getRestart:
 	if (r->flags & FLAG_INVALID) {
 		if (r->flags & FLAG_DENIED) h.statusCode = 403;
@@ -480,18 +487,18 @@ h2getRestart:
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
 				int htrs = strlen(virtualHosts[r->vhost].respath.data());
 				memcpy(buff, virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(buff + strlen(virtualHosts[r->vhost].respath.data()), r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
-#if __cplusplus > 201700L
+				memcpy(&buff[htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 1);
+#ifdef _WIN32
+				WinPathConvert(buff);
+#elif __cplusplus > 201700L
 				u8p = std::filesystem::u8path(buff); 
-				goto openFile17;
-#else
-				goto openFilePoint2;
 #endif
+				goto openFilePoint;
 			}
 			else {
 				memcpy(buff, virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
 				memcpy(buff + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
-#if __cplusplus > 201700L
+#if __cplusplus > 201700L && !defined(_WIN32)
 				u8p = std::filesystem::u8path(buff);
 #endif
 				break;
@@ -551,16 +558,19 @@ h2getRestart:
 			std::terminate(); break;
 	}
 
-openFilePoint2:
+	WinPathConvert(buff)
+
 	if (FileExists(Path)) {// Something exists on such path.
 		if (IsDirectory(Path)) { // It is a directory.
 			// Check for index.html
 			int pos = strlen(buff);
 			memcpy(&buff[pos], "/index.html", 12);
-#if _cplusplus>201700L
+#ifdef _WIN32
+			WinPathConvert(buff)
+#elif _cplusplus>201700L
 			u8p += "/index.html";
 #endif
-			if (FileExists(Path)) goto openFile17;
+			if (FileExists(Path)) goto openFilePoint;
 #ifdef COMPILE_DIRINDEX
 			// Send directory index if enabled.
 			else if (dirIndexEnabled) {
@@ -577,16 +587,9 @@ openFilePoint2:
 			goto h2Get404;
 		}
 		else { // It is a file. Open and go.
-		openFile17:
-#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
-			int cbMultiByte = strlen(buff);
-			int ret = MultiByteToWideChar(CP_UTF8, 0, buff, cbMultiByte, (LPWSTR)&buff[cbMultiByte + 1], (h2bufsz - cbMultiByte - 1) / 2);
-			*(wchar_t*)&buff[cbMultiByte + 1 + ret * 2] = 0; // Add wchar null terminator
-			r->f = _wfopen((wchar_t*)&buff[cbMultiByte + 1], L"rb");
-#else
+		openFilePoint:
 			r->f = fopen(buff, "rb");
-#endif
-			if (r->f) {
+			if (r->f != OPEN_FAILED) {
 				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
 				h.conType = fileMime(buff);  h.conLength = FileSize(Path); h.lastMod = WriteTime(Path);
 				if (r->rstart || r->rend) {// is a range request.
@@ -947,7 +950,7 @@ void parseFrames(clientInfo* c, int sz) {
 /// <param name="h">respHeaders structure, parameters for headers.</param>
 /// <param name="stream">Stream offset.</param>
 void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
-	logReqeust(c, stream, h);
+	if (loggingEnabled) logReqeust(c, stream, h);
 	char buf[384] = { 0 };  unsigned short i = 9; // We can't use the thread buffer like we did on 1.1 because there may be headers unprocessed still.
 	// Stream identifier is big endian so we need to write it swapped.
 	buf[5] = c->stream[stream].id >> 24; buf[6] = c->stream[stream].id >> 16; 
@@ -977,9 +980,10 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	// Content type
 	if (h->conType) {
 		switch (h->statusCode) {
-			buf[i] = 15; buf[i + 1] = 16; i += 2; break; // Static not indexed 31: content-type
-		default:
-			buf[i] = 15; buf[i + 1] = 31; i += 2; break; // Static not indexed 46: location
+			case 302:
+				buf[i] = 15; buf[i + 1] = 31; i += 2; break; // Static not indexed 46: location
+			default:
+				buf[i] = 15; buf[i + 1] = 16; i += 2; break; // Static not indexed 31: content-type
 		}
 		buf[i] = sprintf(&buf[i + 1], "%s", h->conType); i += buf[i] + 1;
 	}

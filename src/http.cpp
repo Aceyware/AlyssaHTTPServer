@@ -1,4 +1,5 @@
 #include "Alyssa.h"
+#include "AlyssaOverrides.h"
 
 char* predefinedHeaders; int predefinedSize;
 void setPredefinedHeaders() {
@@ -439,13 +440,23 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 }
 
 void getInit(clientInfo* c) {
-	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = NULL;
-	#if __cplusplus > 201700L
-		std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-		#define Path u8p
-	#else
-		#define Path tBuf[c->cT]
-	#endif
+	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = "text/html";
+	//h.conLength = 14; serverHeaders(&h, c);
+	//send(c->s, "teestasdzxcqwe", 14, 0);
+	//if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+	//else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
+	//return;
+
+	// Various variables used for file functions.
+#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
+	int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0;
+#elif __cplusplus > 201700L
+	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+	#define Path u8p
+#else
+	#define Path tBuf[c->cT]
+	struct stat attr;
+#endif
 	if (c->stream[0].flags & FLAG_INVALID) {
 		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
 		else h.statusCode = 400;
@@ -473,17 +484,18 @@ getRestart:
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
 				int htrs = strlen(virtualHosts[r->vhost].respath.data());
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].respath.data()), r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
-#if __cplusplus > 201700L
-				u8p = std::filesystem::u8path(tBuf[c->cT]); goto openFilePoint;
-#else
-				goto openFilePoint;
+				memcpy(&tBuf[c->cT][htrs], r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
+#ifdef _WIN32
+				WinPathConvert(tBuf[c->cT]);
+#elif __cplusplus > 201700L
+				u8p = std::filesystem::u8path(tBuf[c->cT]); 
 #endif
+				goto openFilePoint;
 			}
 			else {
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
 				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
-#if __cplusplus > 201700L
+#if __cplusplus > 201700L && !defined(_WIN32)
 				u8p = std::filesystem::u8path(tBuf[c->cT]);
 #endif
 			}
@@ -518,21 +530,21 @@ getRestart:
 			return;
 		case CA_RESTART:
 			goto getRestart;
-		//case -2: no idea what the fuck this was
-		//	h.statusCode = 405; h.conLength = 0; serverHeaders(&h, c); 
-		//	if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-		//	else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		//	return;
 		default:
 			std::terminate(); break;
 	}
+
+	// path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths. Does nothing on other platforms
+	WinPathConvert(tBuf[c->cT])
 
 	if (FileExists(Path)) {// Something exists on such path.
 		if (IsDirectory(Path)) { // It is a directory.
 			// Check for index.html
 			int pos = strlen(tBuf[c->cT]);
 			memcpy(&tBuf[c->cT][pos], "/index.html", 12);
-#if _cplusplus > 201700L
+#ifdef _WIN32
+			WinPathConvert(tBuf[c->cT])
+#elif _cplusplus > 201700L
 			Path += "/index.html";
 #endif
 			if (FileExists(tBuf[c->cT])) goto openFilePoint;
@@ -552,23 +564,14 @@ getRestart:
 		}
 		else { // It is a file. Open and go.
 		openFilePoint:
-#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
-			int cbMultiByte = strlen(tBuf[c->cT]);
-			int ret = MultiByteToWideChar(CP_UTF8, 0, tBuf[c->cT], cbMultiByte, (LPWSTR)&tBuf[c->cT][cbMultiByte + 1], (bufsize - cbMultiByte - 1) / 2);
-			*(wchar_t*)&tBuf[c->cT][cbMultiByte + 1 + ret * 2] = 0; // Add wchar null terminator
-			//r->f = _wfopen((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], L"rb");
-			r->f2 = CreateFile((wchar_t*)&tBuf[c->cT][cbMultiByte + 1], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#else
 			r->f = fopen(tBuf[c->cT], "rb");
-#endif
-			if (r->f2 != INVALID_HANDLE_VALUE) {
-				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path);
-				//h.lastMod = WriteTime(Path);
+			if (r->f != OPEN_FAILED) {
+				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path); h.lastMod = WriteTime(Path);
 				if (r->rstart || r->rend) {// is a range request.
 					// Note that h.conLength, content length on headers is the original file size,
 					// And r->fs will be morphed into remaining from ranges if any.
 					if (!r->conditionType || r->condition == h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
-						h.statusCode = 206;
+						h.statusCode = 206; r->conditionType = 0;
 						if (r->rstart == -1) { // read last rend bytes 
 							fseek(r->f, r->rend * -1, SEEK_END);
 							r->rstart = r->fs - r->rend;  r->fs = r->rend;
@@ -597,6 +600,7 @@ getRestart:
 							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
 							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 							else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+							r->conditionType = 0;
 							return;
 						}
 						else {
@@ -607,11 +611,12 @@ getRestart:
 							h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
 							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
 							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-							else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+							else epollCtl(c, EPOLLIN | EPOLLONESHOT); 
+							r->conditionType = 0;
 							return;
 						}
 						else {
-							h.statusCode = 200; r->fs = h.conLength;
+							h.statusCode = 200; r->fs = h.conLength; r->conditionType = 0;
 						} break;
 					default: break;
 					}
@@ -656,13 +661,11 @@ getRestart:
 #endif
 					else {
 						h.conLength = r->fs; serverHeaders(&h, c);
-						//fread(tBuf[c->cT], r->fs, 1, r->f); 
-						ReadFile(r->f2, tBuf[c->cT], r->fs, NULL, NULL);
+						fread(tBuf[c->cT], r->fs, 1, r->f); 
 						Send(c, tBuf[c->cT], r->fs);
+						//send(c->s, "teestasdzxcqwe", 14, 0);
 					}
-					//fclose(r->f); 
-					CloseHandle(r->f2);
-					// r->fs = 0;
+					fclose(r->f);  r->fs = 0;
 					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 				}

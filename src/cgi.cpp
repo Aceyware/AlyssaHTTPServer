@@ -54,12 +54,14 @@ void h2Continuation(clientInfo* c, unsigned short stream, char* headers, unsigne
 	short endline, colon, beginline = 0;
 	if(headers!=NULL) {
 		for (short j = 0; j < szHeaders; j++) {
-			if (buf[j] == ':') { colon = j; continue; } // Colon of header found, indicates end of header name
-			else if (buf[j] < 32) {
+			if (headers[j] == ':') { colon = j; continue; } // Colon of header found, indicates end of header name
+			else if (headers[j] < 32) {
 				endline = j;
+				if (colon < beginline) break;
 				buf[i + 1] = colon - beginline; memcpy(&buf[i + 2], &headers[beginline], colon - beginline); // set size of name and copy
-				i += buf[i + 1] + 1; buf[i] = endline - colon - 2; // iterate and set size of value
-				memcpy(&buf[i + 1], &headers[beginline], colon - beginline); i += buf[i] + 1; // copy value and iterate. 
+				i += buf[i + 1] + 2; buf[i] = endline - colon - 2; // iterate and set size of value
+				colon+=2; //if (headers[colon] == ' ') colon++;
+				memcpy(&buf[i + 1], &headers[colon], endline - colon); i += buf[i] + 1; // copy value and iterate. 
 				if (headers[endline + 1] < 32) endline++;
 				beginline = endline + 1; j = beginline;
 			}
@@ -78,10 +80,11 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 	char onHeaders = 1; // Header status. 1: we are on headers still, 0: done or no headers. 2: Headers are ongoing (HTTP/2 specific)
 	short colonOff = 0, lineOff = 0; // Offsets of ':' and "\r\n" 
 	short lineBeginOff = 0; // Line beginning
+	short position = 9;
 
 	// Send the initial headers with 200 OK
 	if (c.flags & FLAG_HTTP2) {
-		//h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
+		h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
 		// Set DATA frame headers for later use.
 		buf[5] = r.id >> 24; buf[6] = r.id >> 16; buf[7] = r.id >> 8; buf[8] = r.id >> 0;
 	}
@@ -95,14 +98,13 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 
 	// I hate this cgi parsing shit.
 	// And I don't know how this works but I'll try my best to comment it.
-	while ((read=subprocess_read_stdout(&subprocess,&buf[9],1013))) { // Read the output of application
+	while ((read=subprocess_read_stdout(&subprocess,&buf[position],1013))) { // Read the output of application
 #ifdef _DEBUG
-		printf("read: %d: %.*s\r\n", read, read, &buf[9]);
+		printf("read: %d: %.*s\r\n", read, read, &buf[position]);
 #endif // _DEBUG
 
 		if (onHeaders) {
-			short i = 9; // Counter
-			for (; i < read+9; i++) {// Iterate through the read data for finding colon of headers and endlines
+			for (short i = position; i < read+position; i++) {// Iterate through the read data for finding colon of headers and endlines
 				if (buf[i] == ':') colonOff = i;// Colon found
 				else if (buf[i] < 32) {// Probably end of line
 					if (buf[i + 1] == '\n') i++; // \r\n
@@ -117,7 +119,8 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 							if (buf[i + 1] == '\n') i += 2; // \r\n
 							else i++;
 							// vvv Send the headers vvv
-							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 9, 1);
+							//if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 9, 1);
+							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, NULL, 0, 1);
 							else Send(c, &buf[9], i - 9);
 #ifdef _DEBUG
 							printf("i-lineBeginOff<2: %d: %.*s\r\n", i - 9, i - 9, &buf[9]);
@@ -155,9 +158,9 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd
 			if (onHeaders) {// If this is still true send shit as is 
 				if (c.flags & FLAG_HTTP2) {
 					if (onHeaders == 1) {
-						h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); onHeaders = 2;
+						//h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); onHeaders = 2;
 					}
-					h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0);
+					//h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0);
 				}
 				else Send(c, &buf[9], read);
 #ifdef _DEBUG

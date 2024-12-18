@@ -89,6 +89,9 @@
     <ClInclude Include="resource.h">
       <Filter>Header</Filter>
     </ClInclude>
+    <ClInclude Include="src\AlyssaOverrides.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">

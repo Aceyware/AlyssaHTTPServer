@@ -111,7 +111,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.8"
+#define version "3.0-prerelease3.9"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -200,7 +200,12 @@ typedef struct requestInfo {
 	char method; // HTTP method (GET, POST, etc.)
 	unsigned char flags;
 	unsigned short contentLength; // client payload content length.
-	FILE* f; HANDLE f2; unsigned long long fs; // File stream and file size.
+#ifndef _WIN32 // File stream 
+	FILE* f; 
+#else
+	HANDLE f; 
+#endif
+	unsigned long long fs; //file size.
 	size_t rstart; size_t rend; // Range start and end.
 	char* qStr; // Query string location.
 	std::string path = std::string(maxpath,'\0');

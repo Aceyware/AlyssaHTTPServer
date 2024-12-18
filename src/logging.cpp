@@ -128,10 +128,10 @@ void printInformation() {
 }
 
 const void* getLocaleString(int String) {
-	if (1) { // Language is non-English
+	if (currentLocale) { // Language is non-English
 		if (StringTable[LANG_TR][String] == NULL) // Check if requested string is translated
-			return StringTable[String];
-		return StringTable[LANG_TR][String]; // Else fall back to English one.
+			return StringTable[LANG_TR][String];
+		return StringTable[LANG_EN][String]; // Else fall back to English one.
 	}
 	return StringTable[LANG_EN][String]; // Language is English.
 }
