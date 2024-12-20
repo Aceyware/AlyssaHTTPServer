@@ -19,7 +19,7 @@ enum AuthReturns {
 	AUTH_ERROR = -3
 };
 
-extern int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd);
+extern int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd);
 
 struct customAction {
 	char action; unsigned short args; // Offset of arguments in the buffer.
@@ -265,7 +265,7 @@ caExecLoop:
 		}
 		case CA_A_CGI:
 			if (r.method == METHOD_HEAD) return -2;
-			cgiMain(c, r, 0, &buf[actions[1].args]);
+			cgiMain(c, r, &buf[actions[1].args]);
 			return CA_REQUESTEND;
 			break;
 		default:

@@ -38,7 +38,7 @@ bool loggingEnabled = 1;
 int srvLocale = 0;
 int8_t currentLocale = LANG_UNSPEC;
 
-std::vector<listeningPort> ports = {80};
+std::vector<listeningPort> ports;
 
 int8_t configLoaded = 0;
 time_t startupTime = time(NULL);
@@ -60,5 +60,5 @@ std::string respath = "./res";
 int8_t		sslEnabled = 0;
 std::string sslCertPath = "./crt.pem";
 std::string sslKeyPath  = "./key.key";
-std::vector<listeningPort> sslPorts = {443};
+std::vector<listeningPort> sslPorts;
 #endif

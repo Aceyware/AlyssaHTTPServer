@@ -1,106 +1,106 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
-    <Filter Include="Resource">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
-    <Filter Include="Header">
+    <Filter Include="Headers">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="Header\External">
+    <Filter Include="Headers\External">
       <UniqueIdentifier>{29c10196-2acd-495d-bf59-efbcf7896b87}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source\External">
+    <Filter Include="Resources">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Sources">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Sources\External">
       <UniqueIdentifier>{0c3f5759-515b-4634-9dd9-264a842f9f41}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\misc.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\errorPages.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\http.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\http2.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\Main.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\wepoll.c">
-      <Filter>Source\External</Filter>
+      <Filter>Sources\External</Filter>
     </ClCompile>
     <ClCompile Include="src\dirindex.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\customactions.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\cgi.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\config.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\definitions.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\logging.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="src\localization.cpp">
-      <Filter>Source</Filter>
+      <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/AlyssaBuildConfig.h">
-      <Filter>Header</Filter>
+      <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="src/AlyssaHuffman.h">
-      <Filter>Header</Filter>
+      <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="src/external/base64.h">
-      <Filter>Header\External</Filter>
+      <Filter>Headers\External</Filter>
     </ClInclude>
     <ClInclude Include="src/external/subprocess.h">
-      <Filter>Header\External</Filter>
+      <Filter>Headers\External</Filter>
     </ClInclude>
-    <ClInclude Include="src\localization.h">
-      <Filter>Header</Filter>
+    <ClInclude Include="src\AlyssaLocalization.h">
+      <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="src/resource.h">
-      <Filter>Header\External</Filter>
+      <Filter>Headers\External</Filter>
     </ClInclude>
     <ClInclude Include="src\Alyssa.h">
-      <Filter>Header</Filter>
+      <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="src\wepoll.h">
-      <Filter>Header\External</Filter>
+      <Filter>Headers\External</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>Header</Filter>
+      <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="src\AlyssaOverrides.h">
-      <Filter>Header</Filter>
+      <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Alyssa.rc">
-      <Filter>Resource</Filter>
+      <Filter>Resources</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src/external/base64.cpp">
-      <Filter>Source\External</Filter>
+      <Filter>Sources\External</Filter>
     </None>
   </ItemGroup>
 </Project>

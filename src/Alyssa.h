@@ -22,7 +22,6 @@
 #include <string.h>
 #include <time.h>
 
-#include <atomic>
 #include <deque>
 #include <iostream>
 #include <string>
@@ -35,7 +34,7 @@
 #endif
 
 #include "AlyssaBuildConfig.h"
-#include "localization.h"
+#include "AlyssaLocalization.h"
 
 #ifdef _WIN32
 	#include "wepoll.h" // https://github.com/piscisaureus/wepoll thanks a lot.
@@ -55,22 +54,15 @@
 	#include <arpa/inet.h>
 	#include <sys/epoll.h>
 	#include <signal.h>
+	#include <pthread.h>
+
 	#define sprintf_s snprintf
-	#define vsprintf_s vsnprintf
+	#define vsprintf_s vsnprint
+
 	// sockaddr definitions
 	#define _SinAddr s_addr
 	#define _Sin6Addr s6_addr
 
-	#ifdef __APPLE__ // macOS doesn't support unnamed semaphores, https://github.com/stanislaw/posix-macos-addons implements it.
-		#warning macOS support is only provided as a development target, so is in a lower priority.
-		#include <posix-macos-semaphore.h>	
-		#define sem_init mac_sem_init
-		#define sem_wait mac_sem_wait
-		#define sem_port mac_sem_post
-	#else
-		#include <semaphore.h>
-	#endif
-	#include <pthread.h>
 	#define SOCKET int
 	#define HANDLE int
 	#define closesocket close
@@ -99,10 +91,8 @@
 
 // Typedefs
 #ifdef _WIN32
-	#define ASemaphore HANDLE
 	#define AThread HANDLE
 #else
-	#define ASemaphore sem_t
 	#define AThread pthread_t
 #endif
 
@@ -111,7 +101,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease3.9"
+#define version "3.0-prerelease4"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -290,7 +280,7 @@ typedef struct vhost {
 	vhost(std::string hostname, char type, std::string target, std::string respath) :
 		hostname(hostname), type(type), target(target), respath(respath) {}
 	vhost() :
-		hostname(NULL), type(0), target(NULL), respath(NULL) {}
+		hostname(), type(0), target(), respath() {}
 } vhost;
 
 extern std::vector<vhost> virtualHosts;

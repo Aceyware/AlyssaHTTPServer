@@ -73,3 +73,5 @@ resource.h
 # CGI test apps
 *.bat
 *.sh
+
+*.txt

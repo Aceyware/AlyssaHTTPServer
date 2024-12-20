@@ -23,7 +23,6 @@ static std::vector<std::string> readAcao(char* path) {
 	auto x = new std::codecvt_utf8<wchar_t>;
 	f.imbue(std::locale(std::locale(), x));
 	for (std::string line; std::getline(f, line); ) {
-		std::cout << line << std::endl;
 		ret.push_back(line);
 	} numAcao = ret.size();
 	return ret;
@@ -88,12 +87,12 @@ static bool readVhosts(char* path) {
 		else virtualHosts.emplace_back(Element);
 	}
 	if (VHostFile.fail()) {
-		__debugbreak();
+		//__debugbreak();
 	}
 	VHostFile.close();
 	if (virtualHosts[0].target == "") {// No "default" on vhost config, inherit from main config.
 		virtualHosts[0].target = htroot; virtualHosts[0].type = 0;
-	}
+	} numVhosts = virtualHosts.size();
 	return 0;
 }
 
@@ -217,9 +216,10 @@ extern "C" int8_t readConfig(const char* path) {
 				case 'p': // port
 				case 'P':
 					if(begin[3]=='t'||begin[3]=='T') { // sslport
-						ports.clear();
-						if(readPorts(begin+5, ports)) return -1;
-						if(!ports.size()) return -1;
+						if(!ports.size()) {
+							if (readPorts(begin + 5, ports)) return -1;
+							if (!ports.size()) return -1;
+						}
 					}
 					break;
 				case 'r': // respath
@@ -233,9 +233,11 @@ extern "C" int8_t readConfig(const char* path) {
 				case 'S':
 					if(begin[6]=='t'||*(begin+6)=='T'){// sslport or sslcert
 						if(begin[3]=='p'||begin[3]=='P') { // sslport
-							sslPorts.clear();
-							if(readPorts(begin+8, sslPorts)) return -1;
-							if(!sslPorts.size()) return -1;
+							
+							if (!sslPorts.size()) {
+								if (readPorts(begin + 8, sslPorts)) return -1;
+								if (!sslPorts.size()) return -1;
+							}
 						}
 						else if(begin[3]=='c'||begin[3]=='C'){ // sslcert
 							sslCertPath=begin+8;
@@ -253,7 +255,7 @@ extern "C" int8_t readConfig(const char* path) {
 				case 'v': // vhost
 				case 'V':
 					if (begin[4]  == 't' || begin[4]  == 'T') { // vhost
-						if (readVhosts(begin + 5)) {
+						if (readVhosts(begin + 6)) {
 							virtualHosts.clear(); virtualHosts.emplace_back("", 0, htroot, respath);
 						}
 					}
@@ -266,5 +268,11 @@ extern "C" int8_t readConfig(const char* path) {
 		}
 		begin = end + 1;
 	}
-	delete[] buf; conf.close(); return 0;
+	delete[] buf; conf.close(); 
+	if (!ports.size()) ports = { 80 };
+#ifdef COMPILE_WOLFSSL
+	if (!sslPorts.size()) sslPorts = { 443 };
+#endif // COMPILE_WOLFSSL
+
+	return 0;
 }

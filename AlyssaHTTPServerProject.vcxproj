@@ -193,7 +193,7 @@
     <ClInclude Include="src/external/subprocess.h" />
     <ClInclude Include="src\Alyssa.h" />
     <ClInclude Include="src\AlyssaOverrides.h" />
-    <ClInclude Include="src\localization.h" />
+    <ClInclude Include="src\AlyssaLocalization.h" />
     <ClInclude Include="src\wepoll.h" />
   </ItemGroup>
   <ItemGroup>

@@ -904,8 +904,9 @@ void parseFrames(clientInfo* c, int sz) {
 						c->stream[i].fs = 0;
 						if (c->stream[i].f) {
 							fclose(c->stream[i].f); c->stream[i].f = NULL;
+							c->activeStreams--;
 						}
-						c->stream[i].id = 0; c->activeStreams--;
+						c->stream[i].id = 0; 
 					}
 				}
 				break;

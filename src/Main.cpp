@@ -13,8 +13,6 @@ short rate = 1;
 #endif
 
 std::vector<AThread> hThreads;
-std::vector<ASemaphore> tSemp;
-std::deque<std::atomic_bool> tLk;
 std::vector<struct epoll_event> tShared;
 std::vector<char*> tBuf;
 struct clientInfo* clients = NULL;
@@ -43,12 +41,6 @@ void* threadMain(int num) {
 		Sleep(100);
 	}
 	while (true) {
-// Wait for semaphore to be fired.
-//#ifdef _WIN32
-//		WaitForSingleObject(tSemp[num], INFINITE);
-//#else
-//		sem_wait(&tSemp[num]);
-//#endif
 		int events = epoll_wait(ep, ee, 1, -1);
 		if (events < 0) {
 			perror("epoll: "); std::terminate();
@@ -241,8 +233,7 @@ void* threadMain(int num) {
 #ifdef _DEBUG	
 		printf("Thread %d: unlocked\r\n", num);
 #endif // _DEBUG
-		tLk[num] = 0;
-	}
+		; }
 	printf("Thread %d terminated!!!\r\n",num); std::terminate();
 }
 
@@ -258,8 +249,8 @@ int main(int argc, char* argv[]) {
 
 	if (!threadCount) threadCount = getCoreCount(); // Set thread count to CPU core count if not explicitly set by config.
 	// Allocate data for threads
-	tBuf.resize(threadCount); tShared.resize(threadCount); tSemp.resize(threadCount); 
-	hThreads.resize(threadCount); tLk.resize(threadCount);
+	tBuf.resize(threadCount); tShared.resize(threadCount);
+	hThreads.resize(threadCount);
 	// Setup logging if enabled from config.
 	if (loggingEnabled) {
 		if (loggingInit(loggingFileName)) {
@@ -274,12 +265,8 @@ int main(int argc, char* argv[]) {
 	for (size_t i = 1; i < threadCount; i++) {
 		tBuf[i] = new char[bufsize]; memset(tBuf[i], 0, bufsize);
 #ifdef _WIN32
-		tSemp[i] = CreateSemaphore(NULL, 0, 1, NULL);
 		hThreads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadMain, (LPVOID)i, 0, NULL);
 #else
-		if(sem_init(&tSemp[i],0,0)) {
-			std::cout<<"Semaphore setup failed!\n"; std::terminate();
-		}
 		if(pthread_create(&hThreads[i],NULL,(void *(*)(void *))(threadMain),(void*)i)) {
 			std::cout<<"Thread creation failed!\n"; std::terminate();
 		}
@@ -449,87 +436,4 @@ int main(int argc, char* argv[]) {
 
 	Wait = 0;
 	threadMain(0);
-	// Start polling.
-//	while (true) {
-//		events = epoll_wait(ep, ee, 256, -1);
-//		if(events<0) {
-//			perror("epoll: "); std::terminate();
-//		}
-//		for (int i = 0; i < events; i++) {
-//			if (ee[i].events & EPOLLHUP) {
-//#ifdef _DEBUG
-//				printf("HUP: %d\r\n", ee[i].data.fd);
-//#endif // _DEBUG
-//				if (clients[clientIndex2(ee[i].data.fd)].flags & FLAG_LISTENING) abort();
-//				epoll_ctl(ep, EPOLL_CTL_DEL, ee[i].data.fd, NULL);
-//				if (clients[clientIndex2(ee[i].data.fd)].ssl) {
-//					wolfSSL_free(clients[clientIndex2(ee[i].data.fd)].ssl);
-//				}
-//				shutdown(ee[i].data.fd, 2); closesocket(ee[i].data.fd);
-//				clients[clientIndex2(ee[i].data.fd)].epollNext = 0;
-//			}
-//			else if (ee[i].events & EPOLLIN) {
-//				// Search for a free thread.
-//#ifdef _DEBUG
-//				printf("IN : %d\r\n", ee[i].data.fd);
-//
-//#endif // _DEBUG
-//				bool threadFound = 0;
-//				for (int k = 0; k < threadCount; k++) {
-//					if (!tLk[k]) {
-//						tShared[k] = ee[i];
-//#ifdef _WIN32
-//						ReleaseSemaphore(tSemp[k], 1, NULL);
-//#else
-//						sem_post(&tSemp[k]);
-//#endif
-//						tLk[k] = 1;
-//#ifdef _DEBUG
-//						printf("Thread %d: locked\r\n", k);
-//
-//#endif // _DEBUG
-//						threadFound = 1;
-//						break;
-//					}
-//				}
-//				if (!threadFound) {
-//#ifdef _DEBUG
-//					printf("NO threads found for %d\r\n", ee[i].data.fd);
-//#endif // _DEBUG
-//					ee[i].events = EPOLLIN | EPOLLONESHOT;
-//					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
-//				}
-//			}
-//			else if (ee[i].events & EPOLLOUT) {
-//#ifdef _DEBUG
-//				printf("OUT: %d\r\n", ee[i].data.fd);
-//#endif // _DEBUG
-//				bool threadFound = 0;
-//				for (int k = 0; k < threadCount; k++) {
-//					if (!tLk[k]) {
-//						tShared[k] = ee[i];
-//#ifdef _WIN32
-//						ReleaseSemaphore(tSemp[k], 1, NULL);
-//#else
-//						sem_post(&tSemp[k]);
-//#endif
-//						tLk[k] = 1; 
-//#ifdef _DEBUG
-//						printf("Thread %d: locked\r\n", k);
-//#endif // _DEBUG
-//						threadFound = 1;
-//						break;
-//					}
-//				}
-//				if (!threadFound) {
-//#ifdef _DEBUG
-//					printf("NO threads found for %d\r\n", ee[i].data.fd);
-//#endif // _DEBUG
-//					ee[i].events = EPOLLOUT | EPOLLONESHOT;
-//					epoll_ctl(ep, EPOLL_CTL_MOD, ee[i].data.fd, &ee[i]);
-//				}
-//
-//			}
-//		}
-//	}
 }

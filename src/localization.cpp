@@ -1,5 +1,5 @@
 #include "Alyssa.h"
-#include "localization.h"
+#include "AlyssaLocalization.h"
 
 const char* StringTable[][STR_END] = {
 	{
@@ -45,8 +45,8 @@ const char* StringTable[][STR_END] = {
 #ifdef COMPILE_CGI
 		"failed to set up CGI environment variables.",
 		"Failed to execute CGI: %s",
-		"Error reading output of or executing, or no output on CGI: %s",
-		"Missing header terminator on CGI %s",
+		"Error reading output of or executing, or no output on CGI \"%s\"",
+		"CGI \"%s\" is broken and does not have newline indicating termination of headers.",
 		"Malformed header on CGI %s",
 #endif
 #ifdef COMPILE_CUSTOMACTIONS

@@ -51,19 +51,27 @@ void h2Continuation(clientInfo* c, unsigned short stream, char* headers, unsigne
 	buf[3] = 9; // Type: CONTINUATION
 	if (endHeaders) buf[4] = 4;
 	// I'm so bored of that cgi shit that won't even bother to write more/better/cleaner than this poorman's code.
-	short endline, colon, beginline = 0;
+	short endline, colon = -1, beginline = 0;
 	if(headers!=NULL) {
-		for (short j = 0; j < szHeaders; j++) {
-			if (headers[j] == ':') { colon = j; continue; } // Colon of header found, indicates end of header name
-			else if (headers[j] < 32) {
-				endline = j;
-				if (colon < beginline) break;
-				buf[i + 1] = colon - beginline; memcpy(&buf[i + 2], &headers[beginline], colon - beginline); // set size of name and copy
-				i += buf[i + 1] + 2; buf[i] = endline - colon - 2; // iterate and set size of value
-				colon+=2; //if (headers[colon] == ' ') colon++;
-				memcpy(&buf[i + 1], &headers[colon], endline - colon); i += buf[i] + 1; // copy value and iterate. 
-				if (headers[endline + 1] < 32) endline++;
-				beginline = endline + 1; j = beginline;
+		if(szHeaders) {
+			for (short j = 0; j < szHeaders; j++) {// Colon of header found, indicates end of header name
+				if (headers[j] == ':') { 
+					colon = j; 
+					for (int k = 0; k<j; k++) {
+						headers[k] = tolower(headers[k]);
+					}
+					continue; 
+				} 
+				else if (headers[j] < 32) {
+					endline = j;
+					if (colon < beginline) break;
+					buf[i + 1] = colon - beginline; memcpy(&buf[i + 2], &headers[beginline], colon - beginline); // set size of name and copy
+					i += buf[i + 1] + 2; buf[i] = endline - colon - 2; // iterate and set size of value
+					colon += 2; //if (headers[colon] == ' ') colon++;
+					memcpy(&buf[i + 1], &headers[colon], endline - colon); i += buf[i] + 1; // copy value and iterate. 
+					if (headers[endline + 1] < 32) endline++;
+					beginline = endline + 1; j = beginline;
+				}
 			}
 		}
 	}
@@ -72,104 +80,139 @@ void h2Continuation(clientInfo* c, unsigned short stream, char* headers, unsigne
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
 
-int8_t cgiMain(const clientInfo& c, const requestInfo& r, int8_t type, char* cmd) {
+int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd) {
 	char* commandline[] = { cmd,NULL };	subprocess_s subprocess;
-	int ret = subprocess_create(commandline, subprocess_option_inherit_environment, &subprocess);
-	if (ret) return -1;
-	char buf[1024] = { 0 }; int read = 0; buf[7] = '\r', buf[8] = '\n';
-	char onHeaders = 1; // Header status. 1: we are on headers still, 0: done or no headers. 2: Headers are ongoing (HTTP/2 specific)
-	short colonOff = 0, lineOff = 0; // Offsets of ':' and "\r\n" 
-	short lineBeginOff = 0; // Line beginning
-	short position = 9;
+	char buf[2048] = { 0 };
+	int read = 0; // How many bytes are read?
+	int8_t headers = 1; // Are we on headers or not?
+	int colonPos = 0; // Where ':' is
+	int lineBeginning = 9; // Where line has begin.
 
-	// Send the initial headers with 200 OK
+	// Create the CGI process.
+	if (subprocess_create(commandline, subprocess_option_inherit_environment, &subprocess)) {
+		// CGI exec failed.
+		return -1;
+	}
+	// Send the initial headers with 200 OK and prepare chunk/frame headers.
 	if (c.flags & FLAG_HTTP2) {
-		h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
+		//h2serverHeadersMinimal((clientInfo*)&c, r.id, 0); <-- NO!
+		// CGI may have no headers at all, if it tuns out to be after we sent headers without END_HEADERS set,
+		// we can't go back with an empty CONTINUATION (I tried and user agent raises a GOAWAY to it.)
+		// so we will send it later depending on what is going on.
+		
 		// Set DATA frame headers for later use.
 		buf[5] = r.id >> 24; buf[6] = r.id >> 16; buf[7] = r.id >> 8; buf[8] = r.id >> 0;
 	}
-	else serverHeadersMinimal(c);
-
+	else {
+		serverHeadersMinimal(c);
+		int read = 0; buf[7] = '\r', buf[8] = '\n'; // Newline indicating beginning of chunk data.
+	}
+	// Write data client sent to process' stdin (POST request)
 	if (r.payload[0])  {
 		fputs(&r.payload[2], subprocess_stdin(&subprocess));
 		fflush(subprocess_stdin(&subprocess));
 		*(unsigned short*)&r.payload[0] = 0;
 	}
 
-	// I hate this cgi parsing shit.
-	// And I don't know how this works but I'll try my best to comment it.
-	while ((read=subprocess_read_stdout(&subprocess,&buf[position],1013))) { // Read the output of application
+	while ((read = subprocess_read_stdout(&subprocess, &buf[9], 2039))) {
 #ifdef _DEBUG
-		printf("read: %d: %.*s\r\n", read, read, &buf[position]);
+		printf("read: %d: %.*s\r\n", read, read, &buf[9]);
 #endif // _DEBUG
-
-		if (onHeaders) {
-			for (short i = position; i < read+position; i++) {// Iterate through the read data for finding colon of headers and endlines
-				if (buf[i] == ':') colonOff = i;// Colon found
-				else if (buf[i] < 32) {// Probably end of line
-					if (buf[i + 1] == '\n') i++; // \r\n
-					lineOff = i;
+		// Read the output of application, note that what we read can be a single line, empty newline
+		// or all output application ever did.
+		if (headers) { // We are on headers, keep reading and find where headers end.
+			int i = 9; // Counter.
+			for (; i < read + 9; i++) {
+				if (buf[i] == ':') colonPos = i;
+				else if (buf[i] < ' ') { // Probably line ending.
 #ifdef _DEBUG
-					printf("lbo: %d, co: %d, i: %d\r\n", lineBeginOff, colonOff, i);
+					printf("lp: %d, cp: %d, i: %d\r\n", lineBeginning, colonPos, i);
 #endif // _DEBUG
-					if (lineBeginOff>=colonOff) { // Headers are done, as colon is left behind of this line
-						onHeaders = 0;
-						// Check if what we encounterewd is a blank line, if not pretend as there never was headers but data
-						if (i - lineBeginOff < 2) {// Blank line
-							if (buf[i + 1] == '\n') i += 2; // \r\n
-							else i++;
-							// vvv Send the headers vvv
-							//if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, &buf[9], i - 9, 1);
-							if (c.flags & FLAG_HTTP2) h2Continuation((clientInfo*)&c, r.id, NULL, 0, 1);
-							else Send(c, &buf[9], i - 9);
-#ifdef _DEBUG
-							printf("i-lineBeginOff<2: %d: %.*s\r\n", i - 9, i - 9, &buf[9]);
-#endif // _DEBUG
-
-							if (read - (i - 9) > 1) { // There also is some data, send it too.
-								if (c.flags & FLAG_HTTP2) {// On HTTP/2 we will send it as DATA frame. set frame headers and then send the header, and data after that.
-									buf[1] = read - (i - 9) >> 8; buf[2] = read - (i - 9) >> 0; // size of frame
-									wolfSSL_send(c.ssl, buf, 9, 0); wolfSSL_send(c.ssl, &buf[i], read - (i - 9), 0);
-								}
-								else {
-									char hexsize = sprintf(buf, "%X\r\n", read - (i - 9)); // Write the length of data in hex
-									memcpy(&buf[i - hexsize], buf, hexsize);// Place the chunk length before the newline
-									buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
-									Send(c, &buf[i - hexsize], read - i + hexsize + 2); // Send the data
-#ifdef _DEBUG
-									printf("read-i>1: %d: %.*s\r\n", read - i + hexsize + 2, read - i + hexsize + 2, &buf[i - hexsize]);
-#endif // _DEBUG
-								}
-							}
-							break;
-						}
-						else { // Headers were done way before or there never was headers. Send empty line to indicate end of line and send the data as normal.
-							if (c.flags & FLAG_HTTP2) h2serverHeadersMinimal((clientInfo*)&c, r.id, 1);
-							else Send(c, "\r\n", 2);
-#ifdef _DEBUG
-							printf("hwd: ");
-#endif // _DEBUG
-							goto cgiDataSend;
+#ifdef _WIN32
+					if (buf[i] == '\r' && buf[i + 1] == '\n') {
+						i++;
+					}
+#else // Other systems uses only LF as line ending, HTTP requires headers to be CRLF so we will shift them by one and add '\r'
+					if (buf[i] == '\n') {
+						if (!(c.flags & FLAG_HTTP2)) { // Shifting is only required on HTTP/1.1
+							memmove(&buf[i + 1], &buf[i], read - i);
+							buf[i] = '\r';
+							i++;
 						}
 					}
-					lineBeginOff = i + 1;
+#endif // That one below is same in both.
+					else {// Not line ending, treat it as raw data and as we never had headers.
+						if (c.flags & FLAG_HTTP2) {
+							if (headers == 1) {// Special case on H2, we can't sending empty CONTINATION frames are illegal so we have to do this.
+								h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); headers = 0; // This also sets END_HEADERS = 1
+							}
+						}
+						headers = 0; goto cgiDataAsIs;
+					}
+
+					if (lineBeginning >= colonPos) { // Last ':' was on previous line, end of headers.
+#ifdef _DEBUG
+						printf("lp: %d >= cp: %d, i: %d\r\n", lineBeginning, colonPos, i);
+#endif // _DEBUG
+						if (i - lineBeginning > 2) { // Running CGI is a piece of shit and does not have a empty newline on end of headers. 
+													 // Going to send everything prior as headers and rest as data, with injection of a newline between.
+													 // This is best that can be done, other than rejecting request with 500.
+							printa(STR_CGI_SHIT, TYPE_WARNING, cmd);
+							unsigned short org = *(unsigned short*)&buf[lineBeginning];
+							buf[lineBeginning] = '\r'; buf[lineBeginning + 1] = '\n';
+							// Send headers so far.
+							if (c.flags & FLAG_HTTP2) {
+								if (headers == 1) {
+									h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
+								}
+								h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 1); 
+							}
+							else Send(c, &buf[9], lineBeginning - 9 + 2);
+							// Undo new newline with original data.
+							*(unsigned short*)&buf[lineBeginning] = org;
+						}
+						else { // Real endline.
+							if (c.flags & FLAG_HTTP2) {
+								if (headers == 1) {
+									h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
+								}
+								h2Continuation((clientInfo*)&c, r.id, &buf[9], lineBeginning - 9, 1);
+							}
+							else Send(c, &buf[9], lineBeginning-9+2);
+						}
+						// Send rest as data.
+						if (read+9-lineBeginning-2) {
+							if (c.flags & FLAG_HTTP2) {
+								buf[1] = read - lineBeginning + 9 >> 8; buf[2] = read - lineBeginning + 9 >> 0; // size of frame
+								wolfSSL_send(c.ssl, buf, 9, 0);
+								wolfSSL_send(c.ssl, &buf[lineBeginning], read - lineBeginning + 9, 0);
+							}
+							else {
+								buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
+								char hexsize = sprintf(buf, "%x", read - lineBeginning + 9); // Write the length of data in hex
+								memcpy(&buf[7 - hexsize], buf, hexsize);// Place the chunk length before the newline
+								Send(c, &buf[7 - hexsize], hexsize + 2); // Send data + chunk beginning + ending
+								Send(c, &buf[lineBeginning], read - lineBeginning + 9 + 2);
+							}
+						}
+						headers = 0;
+					}
+					lineBeginning = i + 1;
 				}
 			}
-			if (onHeaders) {// If this is still true send shit as is 
+			if (headers) {// We didn't find end of headers from last read, so we're still in headers. Send the all data as headers.
 				if (c.flags & FLAG_HTTP2) {
-					if (onHeaders == 1) {
-						//h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); onHeaders = 2;
+					if (headers == 1) {// Special case on H2, we can't sending empty CONTINATION frames are illegal so we have to do this.
+						h2serverHeadersMinimal((clientInfo*)&c, r.id, 0); headers = 2; // Note that this DOES NOT reads the headers of process.
 					}
-					//h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0);
+					h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0); // THIS reads the headers of process.
 				}
 				else Send(c, &buf[9], read);
-#ifdef _DEBUG
-				printf("stillOnHeaders: %d: %.*s\r\n", read, read, &buf[9]);
-#endif // _DEBUG
 			}
+			colonPos = 9; lineBeginning = 9;
 		}
-		else {
-cgiDataSend:
+		else { // Data, can be sent as is.
+cgiDataAsIs:
 			if (c.flags & FLAG_HTTP2) {
 				buf[1] = read >> 8; buf[2] = read >> 0; // size of frame
 				wolfSSL_send(c.ssl, buf, read + 9, 0);
@@ -179,20 +222,17 @@ cgiDataSend:
 				char hexsize = sprintf(buf, "%x", read); // Write the length of data in hex
 				memcpy(&buf[7 - hexsize], buf, hexsize);// Place the chunk length before the newline
 				Send(c, &buf[7 - hexsize], read + hexsize + 4); // Send data + chunk beginning + ending
-#ifdef _DEBUG
-				printf("direct: %d: %.*s\r\n", read + hexsize + 4, read + hexsize + 4, &buf[7 - hexsize]);
-#endif // _DEBUG
 			}
 		}
-		lineBeginOff = 9; lineOff = 9, colonOff = 9; // Reset the counters.
 	}
-
+	// Applications lifetime is over. Send empty chunk/frame indicating response is done.
 	if (c.flags & FLAG_HTTP2) {
 		buf[1] = 0, buf[2] = 0, buf[4] = 1; // Set size to 0 and flags to END_STREAM
 		wolfSSL_send(c.ssl, buf, 9, 0);
 	}
 	else {
-		Send(c, "0\r\n\r\n", 5); // Send empty chunk indicating end of data and exit. 
+		Send(c, "0\r\n\r\n", 5); // Send empty chunk indicating end of data and exit.
 	}
+	// Destroy subprocess and fuck off.
 	subprocess_destroy(&subprocess); return 0;
 }
