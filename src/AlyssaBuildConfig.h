@@ -2,7 +2,7 @@
 // Configuration for building.
 
 // Define that if this code is of another branch.
-#define branch "v3prerelease"
+//#define branch "v3prerelease"
 
 // Compile with SSL support
 #define COMPILE_WOLFSSL
@@ -13,11 +13,14 @@
 	#error SSL is required for HTTP/2 support.
 #endif
 
-// CGI execution support
-#define COMPILE_CGI
-
 // Custom actions support
 #define COMPILE_CUSTOMACTIONS
+
+// CGI execution support
+#define COMPILE_CGI
+#if defined COMPILE_CGI && !defined COMPILE_CUSTOMACTIONS
+#error Custom actions support is required for CGI.
+#endif
 
 // Directory indexes support
 #if __cplusplus > 201700L
@@ -29,14 +32,11 @@
 #endif
 #endif // COMPILE_DIRINDEX
 
-// Do testing.
-//#define AlyssaTesting
-
 // Compile with multilanguage support. Disabling this will only add English language.
-#define Compile_locales
+#define COMPILE_LOCALES
 
 // Compile with zlib for gz encoding support.
-//#define COMPILE_ZLIB
+#define COMPILE_ZLIB
 
 #define LIB_B64CPP 1
 #define LIB_WOLFSSL 2

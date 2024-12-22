@@ -46,7 +46,7 @@ std::string diMain(const std::filesystem::path& p, const std::string& RelPath) {
 		"<body><div>"
 			"<h1>Index of " + std::string(RelPath.c_str()) + "</h1><hr><br>"
 			"<table class=\"t\">";
-	if (RelPath != "/") {// Add parent directory entry if we're not at root.
+	if (RelPath[0] == '/' && RelPath[1] != '\0') {// Add parent directory entry if we're not at root.
 		ret += "<tr>"
 			"<th><img src=\"" + htrespath + "/directory.png\"><a href=\"../\">../</a></th>"
 			"<th>-</th>"

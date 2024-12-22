@@ -170,18 +170,22 @@ caExecLoop:
 		while (buf[i] <= 32 && i < sz) i++; // Skip line delimiters, spaces and etc.
 		if (i == sz) break; // End of scope
 		switch (buf[i]) { // Determine the action.
+#ifdef COMPILE_WOLFSSL
 			case 'a': // Authenticate
 			case 'A':
 				if (buf[i + 11] == 'e' || buf[i + 11] == 'E') {
 					i += 12; action = CA_A_AUTH; actionLevel = 0; hasArgs = 1;
 				}
 				break;
+#endif
+#ifdef COMPILE_CGI
 			case 'e': // ExecCGI
 			case 'E':
 				if (buf[i + 6] == 'i' || buf[i + 6] == 'I') {
 					i += 7; action = CA_A_CGI; actionLevel = 1; hasArgs = 1;
 				}
 				break;
+#endif
 			case 'f': // Forbid.
 			case 'F':
 				if (buf[i + 5] == 'd' || buf[i + 6] == 'D') {
@@ -229,6 +233,7 @@ caExecLoop:
 			h.statusCode = 403; h.conLength = 0;
 			caSendHeaders()
 			return CA_REQUESTEND;
+#ifdef COMPILE_WOLFSSL
 		case CA_A_AUTH:
 			switch (caAuth(r.auth.data(), &buf[actions[0].args])) {
 				case 0:
@@ -249,6 +254,7 @@ caExecLoop:
 					caSendHeaders() return CA_REQUESTEND;
 			}
 			break;
+#endif
 		default:
 			break;
 	}
@@ -263,11 +269,13 @@ caExecLoop:
 			memcpy((char*)r.path.data(), &buf[actions[1].args], sz + 1);
 			return CA_RESTART;
 		}
+#ifdef COMPILE_CGI
 		case CA_A_CGI:
 			if (r.method == METHOD_HEAD) return -2;
 			cgiMain(c, r, &buf[actions[1].args]);
 			return CA_REQUESTEND;
 			break;
+#endif
 		default:
 			break;
 	}

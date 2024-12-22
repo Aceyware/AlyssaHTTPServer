@@ -38,6 +38,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 		switch (buf[bpos]) {												
 		case 'a':
 		case 'A': // Content negotiation (Accept-*) headers and Authorisation
+#ifdef COMPILE_WOLFSSL
 			if (!strncmp(&buf[bpos + 1], "uthorization: ", 14)) {
 				bpos += 15; 
 				if (!strncmp(&buf[bpos], "Basic", 5)) {
@@ -45,15 +46,17 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = -8; }
 					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = -1; }
 				}
-				else if (!strncmp(&buf[bpos + 1], "ccept-", 6)) {
-					bpos += 7;
-#ifdef COMPILE_ZLIB
-					if (!strncmp(&buf[bpos+8], "ncoding: ", 9)) {
-						bpos += 10;
-						if(memchr(&buf[bpos], 'g', epos-bpos)) r->compressType=1;
-					}
+			}
+			else
 #endif
+				if (!strncmp(&buf[bpos + 1], "ccept-", 6)) {
+				bpos += 7;
+#ifdef COMPILE_ZLIB
+				if (!strncmp(&buf[bpos + 8], "ncoding: ", 9)) {
+					bpos += 10;
+					if (memchr(&buf[bpos], 'g', epos - bpos)) r->compressType = 1;
 				}
+#endif
 			}
 			break;																							
 		case 'h':																										
@@ -461,18 +464,13 @@ void getInit(clientInfo* c) {
 		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
 		else h.statusCode = 400;
 
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(tBuf[c->cT], h.statusCode, c->stream[0].vhost, c->stream[0]);
-			h.conLength = eSz; h.conType = "text/html"; serverHeaders(&h, c);
-			errorPagesSender(c);
-		}
-		else {// Reset polling.
-			h.conLength = 0; serverHeaders(&h, c); 
-			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		}
+		serverHeaders(&h, c);
+		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
+		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
 		return;
-	} else if (hsts && c->flags ^ FLAG_SSL) {
+	} 
+	else if (hsts && c->flags ^ FLAG_SSL) {
 		h.statusCode = 302; h.flags |= FLAG_NOLENGTH; char target[512] = { 0 };
 		// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 		sprintf_s(target, 512, "https://%s%s", (r->vhost) ? virtualHosts[r->vhost].hostname.data() : (char*)&r->zstrm, r->path.data());
@@ -484,7 +482,7 @@ getRestart:
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
 				int htrs = strlen(virtualHosts[r->vhost].respath.data());
 				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(&tBuf[c->cT][htrs], r->path.data() + htrs, strlen(r->path.data()) - htrs + 1);
+				memcpy(&tBuf[c->cT][htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
 #ifdef _WIN32
 				WinPathConvert(tBuf[c->cT]);
 #elif __cplusplus > 201700L
@@ -510,7 +508,7 @@ getRestart:
 			return; break;
 		default: break;
 	}
-
+#ifdef COMPILE_CUSTOMACTIONS
 	if (customactions) switch (caMain(*c, *r)) {
 		case CA_NO_ACTION:
 		case CA_KEEP_GOING:
@@ -533,7 +531,7 @@ getRestart:
 		default:
 			std::terminate(); break;
 	}
-
+#endif
 	// path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths. Does nothing on other platforms
 	WinPathConvert(tBuf[c->cT])
 

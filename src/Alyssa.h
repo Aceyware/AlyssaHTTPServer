@@ -101,7 +101,7 @@
 #endif
 
 // Constants
-#define version "3.0-rc1"
+#define version "3.0"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -116,7 +116,12 @@ extern unsigned int maxpath;
 extern unsigned int maxauth;
 extern unsigned int maxpayload;
 extern unsigned int maxclient;
+#ifdef COMPILE_HTTP2
 extern unsigned int maxstreams;
+extern bool http2Enabled;
+#else
+#define maxstreams 2
+#endif
 extern unsigned short threadCount;
 extern int8_t errorPagesEnabled;
 extern unsigned int bufsize;
@@ -265,9 +270,9 @@ typedef struct clientInfo {
 		 s(s), activeStreams(activeStreams), flags(flags), cT(cT), ssl(ssl) {}
 	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), ssl(NULL) {}
 #else
-	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short off, unsigned short vhost) :
-		s(s), activeStreams(activeStreams), flags(flags), cT(cT), off(off) {}
-	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), off(0) {}
+	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short vhost) :
+		s(s), activeStreams(activeStreams), flags(flags), cT(cT) {}
+	clientInfo() : s(0), activeStreams(0), flags(0), cT(0) {}
 #endif
 } clientInfo;
 
@@ -374,7 +379,11 @@ const char* fileMime(const char* filename);
 bool pathParsing(requestInfo* r, unsigned int end);
 extern "C" int8_t readConfig(const char* path);
 int getCoreCount();
+#ifdef COMPILE_LOCALES
 int8_t getLocale();
+#else
+#define getLocale() 0
+#endif
 int commandline(int argc, char* argv[]);
 extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(std::string logName);

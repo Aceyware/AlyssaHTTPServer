@@ -27,7 +27,7 @@ int loggingInit(std::string logName) {
 		heading += std::to_string(sslPorts[i].port) + " ";
 	} heading += "\n";
 #else
-	heading += "SSL: N/A\n"
+	heading += "SSL: N/A\n";
 #endif // COMPILE_WOLFSSL
 	heading += "CA: " + std::to_string(customactions) + ", T: " + std::to_string(threadCount) +
 	", Sz: \"" += std::to_string(maxclient) + "c " + std::to_string(maxpath) + "p " + std::to_string(maxpayload) + "l "
@@ -128,10 +128,12 @@ void printInformation() {
 }
 
 const void* getLocaleString(int String) {
+#ifdef COMPILE_LOCALES
 	if (currentLocale) { // Language is non-English
-		if (StringTable[LANG_TR][String] == NULL) // Check if requested string is translated
-			return StringTable[LANG_TR][String];
+		if (StringTable[currentLocale][String] == NULL) // Check if requested string is translated
+			return StringTable[currentLocale][String];
 		return StringTable[LANG_EN][String]; // Else fall back to English one.
 	}
+#endif
 	return StringTable[LANG_EN][String]; // Language is English.
 }

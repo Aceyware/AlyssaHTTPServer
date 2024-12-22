@@ -1,4 +1,8 @@
 # Alyssa HTTP Server Project
+
+> [!WARNING]
+> Alyssa HTTP Server is still work in progress. Some bugs or unexpected behavior may happen.
+
 Alyssa is a HTTP server project that aims to be as good as mainstream HTTP server implementation while maintaining a simple source tree. 
 It can just work without hours of configuration, on anywhere.
 ## How to use?

@@ -185,6 +185,7 @@ int getCoreCount(){
 #endif
 }
 
+#ifdef COMPILE_LOCALES
 int8_t getLocale(){
 	//std::string loc = std::setlocale(LC_ALL, "");
 	//return LANG_TR;
@@ -206,6 +207,7 @@ int8_t getLocale(){
 	else return LANG_EN;
 #endif
 }
+#endif
 
 using std::cout;
 extern int8_t readPorts(char* buf, std::vector<listeningPort>& target);

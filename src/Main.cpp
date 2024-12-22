@@ -75,23 +75,27 @@ void* threadMain(int num) {
 				if (clients[clientIndex(num)].flags & FLAG_SSL) {// SSL 
 					WOLFSSL* ssl = wolfSSL_new(ctx);
 					wolfSSL_set_fd(ssl, cSock);
-					wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
-
+#ifdef COMPILE_HTTP2
+					if (http2Enabled) wolfSSL_UseALPN(ssl, alpn, sizeof alpn, WOLFSSL_ALPN_FAILED_ON_MISMATCH);
+#endif
 					if (wolfSSL_accept(ssl) != SSL_SUCCESS) {
 						wolfSSL_free(ssl); closesocket(cSock); continue;
-					}
-					char* amklpn = NULL; unsigned short amksize = 31;
-					wolfSSL_ALPN_GetProtocol(ssl, &amklpn, &amksize);
-					clients[clientIndex2(cSock)].ssl = ssl; clients[clientIndex2(cSock)].flags = FLAG_SSL;
-					if (!strncmp(amklpn, "h2", 2)) {
-						clients[clientIndex2(cSock)].flags |= FLAG_HTTP2;
-						char magic[24] = { 0 };
-						wolfSSL_recv(ssl, magic, 24, 0);
-						if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
-							// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = maxstream and SETTINGS_HEADER_TABLE_SIZE = 0
-							wolfSSL_send(ssl, h2Settings, h2SettingsSize, 0);
+					} clients[clientIndex2(cSock)].ssl = ssl; clients[clientIndex2(cSock)].flags = FLAG_SSL;
+#ifdef COMPILE_HTTP2
+					if (http2Enabled) {
+						char* amklpn = NULL; unsigned short amksize = 31;
+						wolfSSL_ALPN_GetProtocol(ssl, &amklpn, &amksize);
+						if (!strncmp(amklpn, "h2", 2)) {
+							clients[clientIndex2(cSock)].flags |= FLAG_HTTP2;
+							char magic[24] = { 0 };
+							wolfSSL_recv(ssl, magic, 24, 0);
+							if (!strncmp(magic, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 24)) {// Check for connection preface
+								// Send an SETTINGS frame with MAX_CONCURRENT_STREAMS = maxstream and SETTINGS_HEADER_TABLE_SIZE = 0
+								wolfSSL_send(ssl, h2Settings, h2SettingsSize, 0);
+							}
 						}
-					}
+					}		
+#endif
 				}
 #endif // COMPILE_WOLFSSL
 				// Set remaining clientInfo data.
@@ -115,13 +119,15 @@ void* threadMain(int num) {
 				goto pollPass;
 			}
 			else {
-				int received = Recv(&clients[clientIndex(num)], tBuf[num], bufsize); tBuf[num][received] = '\0';
+				int received = Recv((&clients[clientIndex(num)]), tBuf[num], bufsize); tBuf[num][received] = '\0';
 				if (received <= 0) { // Client closed connection.
 					clients[clientIndex(num)].epollNext = 31;
 				}
+#ifdef COMPILE_HTTP2
 				else if (shit->flags & FLAG_HTTP2) {
 					parseFrames(&clients[clientIndex(num)], received);
 				}
+#endif
 				else {
 					switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
 					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL);
@@ -143,6 +149,7 @@ void* threadMain(int num) {
 		}
 
 		if (tShared[num].events & EPOLLOUT) { // Client is ready to receive data.
+#ifdef COMPILE_HTTP2
 			if (shit->flags & FLAG_HTTP2) {
 				int streams = clients[clientIndex(num)].activeStreams;
 				for (size_t i = 0; i < 8; i++) {
@@ -185,10 +192,13 @@ void* threadMain(int num) {
 				else
 					clients[clientIndex(num)].epollNext = EPOLLIN | EPOLLOUT | EPOLLONESHOT; 
 			}
+#else
+			if(0){}
+#endif
 			else {// HTTP/1.1
 				if (clients[clientIndex(num)].stream[0].fs > bufsize) {// Remaining of file is still bigger than buffer
 					fread(tBuf[num], bufsize, 1, clients[clientIndex(num)].stream[0].f);
-					if (Send(&clients[clientIndex(num)], tBuf[num], bufsize) <= 0) {// Connection lost
+					if (Send((&clients[clientIndex(num)]), tBuf[num], bufsize) <= 0) {// Connection lost
 						clients[clientIndex(num)].epollNext = 31;
 						goto handleOut;
 					} clients[clientIndex(num)].stream[0].fs -= bufsize;
@@ -198,7 +208,7 @@ void* threadMain(int num) {
 				}
 				else { // Smaller than buffer, read it till the end and close.
 					fread(tBuf[num], clients[clientIndex(num)].stream[0].fs, 1, clients[clientIndex(num)].stream[0].f);
-					if (Send(&clients[clientIndex(num)], tBuf[num], clients[clientIndex(num)].stream[0].fs) <= 0) {// Connection lost
+					if (Send((&clients[clientIndex(num)]), tBuf[num], clients[clientIndex(num)].stream[0].fs) <= 0) {// Connection lost
 						clients[clientIndex(num)].epollNext = 31;
 						goto handleOut;
 					}
@@ -298,11 +308,16 @@ int main(int argc, char* argv[]) {
 	inet_pton(AF_INET, "0.0.0.0", &hints.sin_addr); hints.sin_family = AF_INET;
 	sockaddr_in6 hints6; int hint6Size=sizeof(hints6);
 	inet_pton(AF_INET6, "::", &hints6.sin6_addr); hints6.sin6_family=AF_INET6;
+	const static int on = 1;
 	for (int i = 0; i < ports.size(); i++) {
 		listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listening == INVALID_SOCKET){
 			printa(STR_SOCKET_FAIL, TYPE_ERROR); std::terminate();
 		}
+#ifndef _WIN32
+		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
+			error("setsockopt(SO_REUSEADDR) failed");
+#endif
 		hints.sin_port = htons(ports[i].port);
 		if(bind(listening, (struct sockaddr*)&hints, hintSize)) {
 			printa(STR_PORTFAIL, TYPE_ERROR, 4, ports[i].port);
@@ -327,7 +342,10 @@ int main(int argc, char* argv[]) {
 				printa(STR_SOCKET_FAIL, TYPE_ERROR, 6);
 				return -1;
 			}
-			const static int on = 1;
+#ifndef _WIN32
+			if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
+				error("setsockopt(SO_REUSEADDR) failed");
+#endif
 			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
 			hints6.sin6_port = htons(ports[i].port);
 			hints6.sin6_flowinfo = 0;
@@ -427,9 +445,9 @@ int main(int argc, char* argv[]) {
 
 	// Set predefined headers
 	setPredefinedHeaders();
-#ifdef COMPILE_WOLFSSL
+#ifdef COMPILE_HTTP2
 	h2SetPredefinedHeaders();
-#endif // COMPILE_WOLFSSL
+#endif // COMPILE_HTTP2
 	
 	// If we could come this far, then server is started successfully. Print a message and ports.
 	printInformation();

@@ -53,7 +53,7 @@ static bool readVhosts(char* path) {
 		printa(STR_VHOST_FAIL, TYPE_ERROR | TYPE_FLAG_NOTIME, path); return 1;
 	}
 	while (VHostFile >> hostname >> type >> value >> respath) {
-		Element.hostname = hostname; Element.target = value;
+		Element.hostname = hostname; Element.target = value; Element.respath = respath;
 		if (type == "standard") {
 			Element.type = 0;
 #if __cplusplus > 201700L
@@ -167,7 +167,7 @@ extern "C" int8_t readConfig(const char* path) {
 					}
 					break;
 				case 'h': // hsts, htrespath
-				case 'H':
+				case 'H': // http2
 					if(begin[3] =='s'||begin[3]=='S'){// hsts
 						if(begin[5] =='1') hsts=1;
 						else hsts=0;
@@ -178,14 +178,23 @@ extern "C" int8_t readConfig(const char* path) {
 					else if(begin[8]=='h'||begin[8]=='H'){ // htrespath
 						htrespath = begin+10;
 					}
+#ifdef COMPILE_HTTP2
+					else if (begin[4] == '2') { // http2
+						if (begin[6] == '1') http2Enabled = 1;
+						else http2Enabled = 0;
+					}
+#endif
 					break;
 				case 'l': // lang
 				case 'L': // logfile
+#ifdef COMPILE_LOCALES
 					if(begin[3] =='g'||begin[3]=='G'){
 						if (begin[5] == 'e') currentLocale = LANG_EN;
 						else if (begin[5] == 't') currentLocale = LANG_TR;
 					}
-					else if (begin[6] == 'e' || begin[6] == 'E') { // logfile
+					else
+#endif
+						if (begin[6] == 'e' || begin[6] == 'E') { // logfile
 						if(begin[8]=='0') loggingEnabled=0;
 						else loggingFileName = begin + 8;
 					}
@@ -200,9 +209,11 @@ extern "C" int8_t readConfig(const char* path) {
 							maxauth = strtoul(begin+8, NULL, 10);
 						}
 					}
+#ifdef COMPILE_HTTP2
 					else if(begin[8]=='m'||begin[8]=='M'){ // maxstream
 						maxstreams=strtoul(begin+10, NULL, 10);
 					}
+#endif
 					else if(begin[8]=='t'||begin[8]=='T'){// maxclient
 						maxclient=strtoul(begin+10, NULL, 10);
 					}

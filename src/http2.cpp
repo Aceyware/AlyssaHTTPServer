@@ -1,6 +1,7 @@
 #include "Alyssa.h"
+#ifdef COMPILE_HTTP2
 #include "AlyssaOverrides.h"
-// #ifdef COMPILE_HTTP2
+
 
 char h2ErrorPagesSender(clientInfo* c, int s, char* buf, int sz);
 
@@ -487,7 +488,7 @@ h2getRestart:
 			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
 				int htrs = strlen(virtualHosts[r->vhost].respath.data());
 				memcpy(buff, virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(&buff[htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 1);
+				memcpy(&buff[htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
 #ifdef _WIN32
 				WinPathConvert(buff);
 #elif __cplusplus > 201700L
@@ -523,6 +524,7 @@ h2getRestart:
 		default: break;
 	}
 
+#ifdef COMPILE_CUSTOMACTIONS
 	if (customactions) switch (caMain(*c, *r, buff)) {
 		case CA_NO_ACTION:
 		case CA_KEEP_GOING:
@@ -557,6 +559,7 @@ h2getRestart:
 		default:
 			std::terminate(); break;
 	}
+#endif
 
 	WinPathConvert(buff)
 
@@ -874,7 +877,9 @@ void parseFrames(clientInfo* c, int sz) {
 							memcpy(&c->stream[i].payload[1 + *(unsigned short*)&c->stream[i].payload[0]],
 								&buf[i + 9], fsz); *(unsigned short*)&c->stream[i].payload[0] += fsz;
 						}
+#ifdef COMPILE_CUSTOMACTIONS // else no idea yet.
 						if (flags & END_STREAM) h2postInit(c, str);
+#endif
 					}
 				}
 				break;
@@ -1030,4 +1035,4 @@ void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
 	i -= 9; buf[1] = i >> 8; buf[2] = i >> 0;
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
-
+#endif

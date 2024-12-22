@@ -65,8 +65,9 @@ const char* StringTable[][STR_END] = {
 		"Virtual hosts:",
 		// 40
 		"invalid virtual host path %s specified or path is inaccessible. Virtual hosts disabled."
-	},
-	{
+	}
+#ifdef COMPILE_LOCALES
+	,{
 		// 0
 		u8"Türkçe",
 		u8"Hata: ",
@@ -128,4 +129,5 @@ const char* StringTable[][STR_END] = {
 	// 40
 		u8"sanal konak yolu %s geçerli değil veya erişilemez. Sanal konaklar devre dışı bırakıldı."
 	}
+#endif
 };

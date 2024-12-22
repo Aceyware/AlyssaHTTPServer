@@ -19,6 +19,9 @@
     <Filter Include="Sources\External">
       <UniqueIdentifier>{0c3f5759-515b-4634-9dd9-264a842f9f41}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Documentation">
+      <UniqueIdentifier>{3962e6fd-af60-4641-8816-ef9ffaa222b8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\misc.cpp">
@@ -68,9 +71,6 @@
     <ClInclude Include="src/AlyssaHuffman.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="src/external/base64.h">
-      <Filter>Headers\External</Filter>
-    </ClInclude>
     <ClInclude Include="src/external/subprocess.h">
       <Filter>Headers\External</Filter>
     </ClInclude>
@@ -99,8 +99,11 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="src/external/base64.cpp">
-      <Filter>Sources\External</Filter>
+    <None Include="README.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="CHANGELOG.md">
+      <Filter>Documentation</Filter>
     </None>
   </ItemGroup>
 </Project>

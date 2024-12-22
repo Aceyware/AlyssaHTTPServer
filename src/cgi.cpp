@@ -1,10 +1,12 @@
 #include "Alyssa.h"
+#ifdef COMPILE_CGI
 #include "external/subprocess.h"
 
 static int Send(const clientInfo& c, const char* buf, int sz) {
 	if (c.flags & FLAG_SSL) return wolfSSL_send(c.ssl, buf, sz, 0);
 	else return send(c.s, buf, sz, 0);
 }
+
 static void serverHeadersMinimal(const clientInfo& c) {
 	char buf[300] = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nDate: "; short pos = 51;
 	// Current time
@@ -16,6 +18,7 @@ static void serverHeadersMinimal(const clientInfo& c) {
 	Send(c, buf, pos);
 }
 
+#ifdef COMPILE_HTTP2
 extern char* h2PredefinedHeaders; extern unsigned short h2PredefinedHeadersSize;
 extern unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
 
@@ -79,6 +82,7 @@ void h2Continuation(clientInfo* c, unsigned short stream, char* headers, unsigne
 	i -= 9; buf[1] = i >> 8; buf[2] = i >> 0;
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
+#endif
 
 int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd) {
 	char* commandline[] = { cmd,NULL };	subprocess_s subprocess;
@@ -142,11 +146,13 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd) {
 					}
 #endif // That one below is same in both.
 					else {// Not line ending, treat it as raw data and as we never had headers.
+#ifdef COMPILE_HTTP2
 						if (c.flags & FLAG_HTTP2) {
 							if (headers == 1) {// Special case on H2, we can't sending empty CONTINATION frames are illegal so we have to do this.
 								h2serverHeadersMinimal((clientInfo*)&c, r.id, 1); headers = 0; // This also sets END_HEADERS = 1
 							}
 						}
+#endif
 						headers = 0; goto cgiDataAsIs;
 					}
 
@@ -161,32 +167,42 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd) {
 							unsigned short org = *(unsigned short*)&buf[lineBeginning];
 							buf[lineBeginning] = '\r'; buf[lineBeginning + 1] = '\n';
 							// Send headers so far.
+#ifdef COMPILE_HTTP2
 							if (c.flags & FLAG_HTTP2) {
 								if (headers == 1) {
 									h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
 								}
 								h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 1); 
 							}
-							else Send(c, &buf[9], lineBeginning - 9 + 2);
+							else
+#endif
+								Send(c, &buf[9], lineBeginning - 9 + 2);
 							// Undo new newline with original data.
 							*(unsigned short*)&buf[lineBeginning] = org;
 						}
 						else { // Real endline.
+#ifdef COMPILE_HTTP2
 							if (c.flags & FLAG_HTTP2) {
 								if (headers == 1) {
 									h2serverHeadersMinimal((clientInfo*)&c, r.id, 0);
 								}
 								h2Continuation((clientInfo*)&c, r.id, &buf[9], lineBeginning - 9, 1);
 							}
-							else Send(c, &buf[9], lineBeginning-9+2);
+							else
+#endif
+								Send(c, &buf[9], lineBeginning-9+2);
 						}
 						// Send rest as data.
 						if (read+9-lineBeginning-2) {
+#ifdef COMPILE_HTTP2
 							if (c.flags & FLAG_HTTP2) {
 								buf[1] = read - lineBeginning + 9 >> 8; buf[2] = read - lineBeginning + 9 >> 0; // size of frame
 								wolfSSL_send(c.ssl, buf, 9, 0);
 								wolfSSL_send(c.ssl, &buf[lineBeginning], read - lineBeginning + 9, 0);
 							}
+#else
+							if(0){}
+#endif
 							else {
 								buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
 								char hexsize = sprintf(buf, "%x", read - lineBeginning + 9); // Write the length of data in hex
@@ -201,22 +217,29 @@ int8_t cgiMain(const clientInfo& c, const requestInfo& r, char* cmd) {
 				}
 			}
 			if (headers) {// We didn't find end of headers from last read, so we're still in headers. Send the all data as headers.
+#ifdef COMPILE_HTTP2
 				if (c.flags & FLAG_HTTP2) {
 					if (headers == 1) {// Special case on H2, we can't sending empty CONTINATION frames are illegal so we have to do this.
 						h2serverHeadersMinimal((clientInfo*)&c, r.id, 0); headers = 2; // Note that this DOES NOT reads the headers of process.
 					}
 					h2Continuation((clientInfo*)&c, r.id, &buf[9], read, 0); // THIS reads the headers of process.
 				}
-				else Send(c, &buf[9], read);
+				else
+#endif
+					Send(c, &buf[9], read);
 			}
 			colonPos = 9; lineBeginning = 9;
 		}
 		else { // Data, can be sent as is.
-cgiDataAsIs:
+		cgiDataAsIs:
+#ifdef COMPILE_HTTP2
 			if (c.flags & FLAG_HTTP2) {
 				buf[1] = read >> 8; buf[2] = read >> 0; // size of frame
 				wolfSSL_send(c.ssl, buf, read + 9, 0);
 			}
+#else
+			if(0){}
+#endif
 			else {
 				buf[9 + read] = '\r', buf[10 + read] = '\n'; // Add newline to end of chunk
 				char hexsize = sprintf(buf, "%x", read); // Write the length of data in hex
@@ -226,13 +249,15 @@ cgiDataAsIs:
 		}
 	}
 	// Applications lifetime is over. Send empty chunk/frame indicating response is done.
+#ifdef COMPILE_HTTP2
 	if (c.flags & FLAG_HTTP2) {
 		buf[1] = 0, buf[2] = 0, buf[4] = 1; // Set size to 0 and flags to END_STREAM
 		wolfSSL_send(c.ssl, buf, 9, 0);
 	}
-	else {
+	else 
+#endif
 		Send(c, "0\r\n\r\n", 5); // Send empty chunk indicating end of data and exit.
-	}
 	// Destroy subprocess and fuck off.
 	subprocess_destroy(&subprocess); return 0;
 }
+#endif

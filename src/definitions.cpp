@@ -12,7 +12,9 @@ unsigned int			maxpayload		  = 256;
 // Max number of concurrent clients can connect.
 unsigned int			maxclient		  = 256;
 // Max number of concurrent HTTP/2 streams.
+#ifdef COMPILE_HTTP2
 unsigned int			maxstreams		  = 8;
+#endif
 // Number of threads
 unsigned short			threadCount		  = 0;
 // Error pages enabled?
@@ -33,6 +35,9 @@ int8_t		customactions	  = 2;
 bool		ipv6Enabled		  = 1;
 #ifdef COMPILE_ZLIB
 bool		gzEnabled		  = 1;
+#endif
+#ifdef COMPILE_HTTP2
+bool		http2Enabled	  = 1;
 #endif
 bool loggingEnabled = 1;
 int srvLocale = 0;

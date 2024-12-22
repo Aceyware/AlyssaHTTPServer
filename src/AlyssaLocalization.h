@@ -9,7 +9,7 @@
 enum Languages {
 	LANG_UNSPEC = -1,
 	LANG_EN,
-#ifdef Compile_locales
+#ifdef COMPILE_LOCALES
 	LANG_TR
 #endif
 };
