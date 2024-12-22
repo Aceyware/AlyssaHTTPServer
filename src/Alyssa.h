@@ -101,7 +101,7 @@
 #endif
 
 // Constants
-#define version "3.0-prerelease4"
+#define version "3.0-rc1"
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -159,7 +159,6 @@ enum clientFlags {
 	FLAG_ENDSTREAM = 8, // Used on HEAD request on HTTP/2
 	FLAG_ENCODED = 16,
 	FLAG_NOLENGTH = 32, // Do not write Content-Length header field. Used on 204, 304, 412 etc.
-	//FLAG_CHUNKED = 64,
 	// Client Info Flags
 	FLAG_LISTENING = 1,
 	FLAG_SSL = 2,

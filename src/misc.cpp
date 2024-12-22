@@ -78,7 +78,7 @@ bool pathParsing(requestInfo* r, unsigned int end) {
 	// 'i' is reused as counter.
 	int level = -1;// Level of directory client is requesting for. If they try to get above root 
 					// (which is htroot, so they will access to anything on system), deny the request.
-	
+
 	for (int i=0; i < end;) {// Char pointer is directly used as counter in this one, hence the r->path[0]s.
 		if (r->path[i] == '/') {// Goes into a directory, increase level.
 			level++;
@@ -86,20 +86,32 @@ bool pathParsing(requestInfo* r, unsigned int end) {
 			//allowing multiple /'es will be a vulnerability. Same will apply to below ones too.
 		}
 		else if (r->path[i] == '.') {
-			i++; if (r->path[i] == '/') while (r->path[i] == '/' && i < end) i++; // Same directory, no increase.
+			i++; 
+			if (r->path[i] == '%') {// Next character percent encoded, decode it.
+				percentDecode(r->path, i);
+				end -= 2;
+			}
+
+			if (r->path[i] == '/') // Same directory, no increase.
+				while (r->path[i] == '/' && i < end) i++; 
 			else if (r->path[i] == '.') { // May be parent directory, check for a slash for making sure
-				i++; if (r->path[i] == '/') { // Parent directory. Decrease level by 1.
+				i++; 
+				if (r->path[i] == '%') {// Next character percent encoded, decode it.
+					percentDecode(r->path, i);
+					end -= 2;
+				}
+
+				if (r->path[i] == '/') { // Parent directory. Decrease level by 1.
 					level--; if (level < 0) { r->flags |= FLAG_INVALID | FLAG_DENIED; return 1; }
 					while (r->path[i] == '/' && i < end) i++;
 				}
 				else i++; // Something else, ignore it.
 			}
 			else if (r->path[i] == 'a' || r->path[i] == 'A') {// Some extension with .a, may be .alyssa
-				//char buff[8] = { 0 }; *(size_t*)&buff[i] = *(size_t*)&r->path[i];
 				if (i + 6 <= end) {
 					for (int j = i; j < i+6; j++) {
-						if (r->path[j] == '%') { percentDecode(r->path, j); } // FIXME: percent encoding may cause a buffer overflow.
-						if (r->path[j] != "alyssa"[j - i]) goto dotAlyssaMismatch;
+						if (r->path[j] == '%') { percentDecode(r->path, j); end -= 2; } // FIXME: percent encoding may cause a buffer overflow.
+						if (tolower(r->path[j]) != "alyssa"[j - i]) goto dotAlyssaMismatch;
 					}
 					r->flags |= FLAG_INVALID | FLAG_DENIED; return 1;
 				}
@@ -109,7 +121,7 @@ dotAlyssaMismatch:
 		}
 		else if (r->path[i] == '%') {// Percent encoded, decode it.
 			percentDecode(r->path, i);
-			i++; end -= 2;
+			end -= 2;
 		}
 		else i++; //Something else.
 	}
@@ -220,7 +232,7 @@ int commandline(int argc, char* argv[]) {
 				   "-h(elp) or -?             : Displays this message\n"
 				   "-c(onfig) <path\\of\\.cfg>: Loads given config file\n"
 				   "-e(nglish)                : Ignores system language and uses English\n"
-				   "-p(ort) <port1>[,p2,p3..]: Listens on given ports, overriding config\n"
+				   "-p(ort) <port1>[,p2,p3...]: Listens on given ports, overriding config\n"
 #ifdef COMPILE_WOLFSSL
 				   "-n(ossl)                  : Disables SSL regardless of config.\n"
 				   "-s(slport)<prt1>[,p2,p3..]: Overrides SSL listening ports with given ones\n"

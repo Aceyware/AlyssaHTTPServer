@@ -591,7 +591,8 @@ h2getRestart:
 			r->f = fopen(buff, "rb");
 			if (r->f != OPEN_FAILED) {
 				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h.conType = fileMime(buff);  h.conLength = FileSize(Path); h.lastMod = WriteTime(Path);
+				h.conType = fileMime(buff);  h.conLength = FileSize(Path); 
+				h.lastMod = WriteTime(Path); h.flags |= FLAG_HASRANGE;
 				if (r->rstart || r->rend) {// is a range request.
 					// Note that h.conLength, content length on headers is the original file size,
 					// And r->fs will be morphed into remaining from ranges if any.

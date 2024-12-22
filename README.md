@@ -7,25 +7,27 @@ edit ports or other stuff if needed, and run the executable.
 ## Documentation
 Documentation about configuration, compiling and much more is available [here.](docs/Home.md)
 ## Features
-- HTTP/2 (still work in progress)
+- HTTP/2
 - SSL/TLS
 - Redirection(soft and hard), authentication
 - CGI applications
 - IPv6 ready
 - Directory index pages
 - Name-based virtual hosts
-- Built-in ratelimiting
 
 And more.
 
 ## To-do list (random order)
-- [ ] Configurable build system with makefile
 - [x] Polling client sockets and handling requests in thread pool (~~HTTP/2~~ proxying may make this hard)
+- [x] Conditional requests handling (If-* headers)
+- [x] Server generated and custom error pages
+- [x] Compression encodings (gzip).
+- [x] Hashed authentication files support 
+- [x] Add a tester application (WIP)
+- [ ] Configurable build system with makefile
 - [ ] Windows NT service support
 - [ ] Content negotiation (Accept-* headers) 
-- [x] Conditional requests handling (If-* headers)
 - [ ] HTTP/3 QUIC support
-- [ ] Hashed authentication files support 
 - [ ] Automatic CGI execution (i.e. for .php files)
 - [ ] Gracefully shutting down (depends to client polling)
 - [ ] Response caching
@@ -33,14 +35,11 @@ And more.
 	- [ ] Forward Proxy
 	- [ ] Reverse Proxy
 - [ ] Switch to dual stack IPv6 sockets if possible (maybe)
-- [x] Guides for compilation, usage, configuration etc.
-- [x] Server generated and custom error pages
+- [ ] Guides for compilation, usage, configuration etc.
 - [ ] Kernel mode acceleration
 - [ ] Extend custom actions
 - [ ] Implement FastCGI support
-- [ ] Add code testing (i.e. unit testing)
 - [ ] Digest authentication
 - [ ] Source code documentation (maybe)
 - [ ] Modules/extensions support
-- [x] Compression encodings (deflate).
-- [x] Make sure the server is really ready for production use.
+- [ ] Make sure the server is really ready for production use.

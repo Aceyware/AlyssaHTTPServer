@@ -20,13 +20,19 @@ void setPredefinedHeaders() {
 // TODO: convert this shit to a macro. Function call is a wasted overhead.
 static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
 	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Other headers are parsed only if request is not bad.
+											 // Due to the if statement, all headers starting with C will be parsed here.
 		if (!strncmp(&buf[bpos+1], "ontent-", 7)) { 
 			bpos += 8; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
 				bpos += 8; r->contentLength = strtol(&buf[bpos], NULL, 10);
 				if (!r->contentLength) r->flags |= FLAG_INVALID;
 				else if (r->contentLength > maxpayload - 2) return -2;
 			}																											
-		}																												
+		}
+		else if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
+			bpos += 12;
+			if (!strncmp(&buf[bpos], "close", 5)) c->flags |= FLAG_CLOSE;
+			else c->flags ^= FLAG_CLOSE;
+		}
 	}																													
 	else if (r->flags ^ FLAG_INVALID) {
 		switch (buf[bpos]) {												
@@ -49,13 +55,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 #endif
 				}
 			}
-			break;
-		case 'c':
-		case 'C':
-			if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
-				bpos += 12; if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE; else r->flags ^= FLAG_CLOSE;
-			}																											
-			break;																										
+			break;																							
 		case 'h':																										
 		case 'H':																										
 			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
@@ -337,7 +337,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	}
 	else if(h->flags ^ FLAG_NOLENGTH) {
 		memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
-		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", (h->statusCode != 206) ? h->conLength : c->stream[0].rend - c->stream[0].rstart);
+		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", (h->statusCode != 206) ? h->conLength : c->stream[0].fs);
 	}
 	// Content-encoding if available.
 	if(h->flags & FLAG_ENCODED) {
@@ -566,7 +566,8 @@ getRestart:
 		openFilePoint:
 			r->f = fopen(tBuf[c->cT], "rb");
 			if (r->f != OPEN_FAILED) {
-				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path); h.lastMod = WriteTime(Path);
+				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path); 
+				h.lastMod = WriteTime(Path); h.flags |= FLAG_HASRANGE;
 				if (r->rstart || r->rend) {// is a range request.
 					// Note that h.conLength, content length on headers is the original file size,
 					// And r->fs will be morphed into remaining from ranges if any.
@@ -574,7 +575,7 @@ getRestart:
 						h.statusCode = 206; r->conditionType = 0;
 						if (r->rstart == -1) { // read last rend bytes 
 							fseek(r->f, r->rend * -1, SEEK_END);
-							r->rstart = r->fs - r->rend;  r->fs = r->rend;
+							r->rstart = h.conLength - r->rend;  r->fs = r->rend;
 						}
 						else if (r->rend == -1) { // read thru 
 							fseek(r->f, r->rstart, SEEK_SET);
@@ -660,10 +661,9 @@ getRestart:
 					if(0){}
 #endif
 					else {
-						h.conLength = r->fs; serverHeaders(&h, c);
+						serverHeaders(&h, c);
 						fread(tBuf[c->cT], r->fs, 1, r->f); 
 						Send(c, tBuf[c->cT], r->fs);
-						//send(c->s, "teestasdzxcqwe", 14, 0);
 					}
 					fclose(r->f);  r->fs = 0;
 					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
