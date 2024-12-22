@@ -1,3 +1,6 @@
+#include "../AlyssaBuildConfig.h"
+#ifdef B64_LIB
+#if B64_LIB == LIB_B64CPP
 /*
    base64.cpp and base64.h
 
@@ -86,21 +89,6 @@ static std::string insert_linebreaks(std::string str, size_t distance) {
     }
 
     return str;
-}
-
-template <typename String, unsigned int line_length>
-static std::string encode_with_line_breaks(String s) {
-  return insert_linebreaks(base64_encode(s, false), line_length);
-}
-
-template <typename String>
-static std::string encode_pem(String s) {
-  return encode_with_line_breaks<String, 64>(s);
-}
-
-template <typename String>
-static std::string encode_mime(String s) {
-  return encode_with_line_breaks<String, 76>(s);
 }
 
 template <typename String>
@@ -248,13 +236,6 @@ std::string base64_encode(std::string const& s, bool url) {
    return encode(s, url);
 }
 
-std::string base64_encode_pem (std::string const& s) {
-   return encode_pem(s);
-}
-
-std::string base64_encode_mime(std::string const& s) {
-   return encode_mime(s);
-}
 
 #if __cplusplus >= 201703L
 //
@@ -267,16 +248,10 @@ std::string base64_encode(std::string_view s, bool url) {
    return encode(s, url);
 }
 
-std::string base64_encode_pem(std::string_view s) {
-   return encode_pem(s);
-}
-
-std::string base64_encode_mime(std::string_view s) {
-   return encode_mime(s);
-}
-
 std::string base64_decode(std::string_view s, bool remove_linebreaks) {
    return decode(s, remove_linebreaks);
 }
 
 #endif  // __cplusplus >= 201703L
+#endif // B64_LIB == LIB_B64CPP
+#endif // B64_LIB

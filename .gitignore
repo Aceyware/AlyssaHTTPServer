@@ -38,6 +38,7 @@ user_settings.h
 # Secret files
 *.pem
 *.key
+*.p7*
 
 # Config files
 *.cfg
@@ -50,9 +51,15 @@ x64
 Debug
 Release
 
+# Xcode output directories
+XCBuildData
+DerivedData
+
 # Alyssa HTTP Server specific stuff
 htroot
-Alyssa.log
+*.log
+Alyssa.cfg
+*.alyssa
 
 # macOS persistent storage(?) stuff
 ._*
@@ -61,3 +68,10 @@ Alyssa.log
 # Compiled resources
 *.res
 *.aps
+resource.h
+
+# CGI test apps
+*.bat
+*.sh
+
+*.txt

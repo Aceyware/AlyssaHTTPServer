@@ -1,5 +1,23 @@
-﻿# Alyssa HTTP Server Changelog
+# Alyssa HTTP Server Changelog
 
+## 3.0 - 22.12.2024
+- Server entirely rewritten from scratch
+	- You heard it right, almost all of the server's code got rewritten from scratch, with major changes including thread pooling. Details are below.
+- Server now uses thread pooling rather than creating a thread per connection.
+	- This new approach eliminates all overhead caused by creating a thread for every new connection 
+	and results in much higher performance and fewer resource usage in high amount of connections.
+	- With this release, all resources server would need is also allocated on startup, eliminating overhead 
+	caused by allocating and freeing resources.
+- Switched to epoll for polling clients
+	- Provides more performance from classic poll and built in multithread scheduling
+	- Non-Linux platforms are also supported with shims
+- HTTP/2 is reimplemented and it is actually working now.
+	- Old junk implementation which used junk like locks and threads are now gone. This new implementation 
+	has a nice working code and feature parity with 1.1 now.
+- Started using OS-specific APIs for performance boost.
+- Localizations are fixed and now they use UTF-8 rather than widechars.
+- CGI is reimplemnented in clearer way and now works in HTTP/2 too.
+	
 ## 2.5.2.3 - 27.04.2024
 - This release only has some fixes on source that resolves compilation errors and some warnings, and also maybe some potential bugs.
 
