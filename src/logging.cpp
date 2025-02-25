@@ -46,18 +46,18 @@ int loggingInit(std::string logName) {
 /// <param name="s">Stream number, a.k.a. indice of stream.</param>
 /// <param name="p">Pointer for response data OR literal string.</param>
 /// <param name="pIsALiteralString">Defines if 'p' is the response data or a literal string. True means it's the latter.</param>
-extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString) {
+extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool pIsALiteralString) {
 	char addr[32] = { 0 }; char Time[64] = { 0 };
 	if (c->flags & FLAG_IPV6) inet_ntop(AF_INET6, c->ipAddr, addr, 32);
 	else inet_ntop(AF_INET, c->ipAddr, addr, 32);
 	time_t t = time(NULL); strftime(Time, 64, "%d.%b %H:%M:%S", localtime(&t));
 	// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 	if (pIsALiteralString) {
-		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[c->stream[s].vhost].hostname
-			, c->stream[s].path.data(), (const char*)p);
+		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[r->vhost].hostname
+			, r->path.data(), (const char*)p);
 	} else {
-		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (c->stream[s].vhost)?virtualHosts[c->stream[s].vhost].hostname:(char*)&c->stream[s].zstrm
-			, c->stream[s].path.data(), p->statusCode);
+		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (r->vhost)?virtualHosts[r->vhost].hostname:(char*)&r->zstrm
+			, r->path.data(), p->statusCode);
 	}
 }
 

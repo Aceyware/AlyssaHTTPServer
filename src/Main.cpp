@@ -85,7 +85,7 @@ void* threadMain(int num) {
 					if (http2Enabled) {
 						char* amklpn = NULL; unsigned short amksize = 31;
 						wolfSSL_ALPN_GetProtocol(ssl, &amklpn, &amksize);
-						if (!strncmp(amklpn, "h2", 2)) {
+						if (amklpn && !strncmp(amklpn, "h2", 2)) {
 							clients[clientIndex2(cSock)].flags |= FLAG_HTTP2;
 							char magic[24] = { 0 };
 							wolfSSL_recv(ssl, magic, 24, 0);
@@ -133,14 +133,16 @@ void* threadMain(int num) {
 					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL);
 						clients[clientIndex(num)].epollNext = 31; break;
 					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
-					case  1: getInit(&clients[clientIndex(num)]); break;
-#ifdef COMPILE_CUSTOMACTIONS
-					case  2:
-					case  3:
-						postInit(&clients[clientIndex(num)]); break;
+					case -3: serverHeadersInline(414, 0, &clients[clientIndex(num)], 0, NULL); break;
+					case  METHOD_POST:
+					case  METHOD_PUT:
+#ifndef COMPILE_CUSTOMACTIONS
+						serverHeadersInline(501, 0, &clients[clientIndex(num)], 0, NULL); break;
 #endif // COMPILE_CUSTOMACTIONS
-					case  4: serverHeadersInline(200, 0, &clients[clientIndex(num)], 0, NULL); break;
-					case  5: getInit(&clients[clientIndex(num)]); break;
+					case  METHOD_GET:
+					case  METHOD_HEAD:
+						methodGetPostInit(&clients[clientIndex(num)]); break;
+					case  METHOD_OPTIONS: serverHeadersInline(200, 0, &clients[clientIndex(num)], 0, NULL); break;
 					case 666: break;
 					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					}

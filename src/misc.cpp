@@ -68,8 +68,8 @@ else {\
 /* Shift array back for eliminating hex. Percent itself already got replaced with real value.*/\
 memcpy(&buf[pos + 1], &buf[pos + 3], end - i);\
 
-bool pathParsing(requestInfo* r, unsigned int end) {
 #pragma region pathParsing
+bool pathParsing(requestInfo* r, unsigned int end) {
 	// Request r->path parsing and sanity checks.
 	// Find query string first.
 	char* qs = (char*)memchr(r->path.data(), '?', end);
@@ -123,12 +123,18 @@ dotAlyssaMismatch:
 			percentDecode(r->path, i);
 			end -= 2;
 		}
+#ifdef _WIN32
+		else if (r->path[i] == '~') {// Windows short path operator. Can be
+									/// used for exploiting, so it's not allowed.
+			r->flags |= FLAG_INVALID | FLAG_DENIED; return 1;
+		}
+#endif
 		else i++; //Something else.
 	}
 	if (level < 0) { r->flags |= FLAG_INVALID | FLAG_DENIED; return 1; }
 	return 0;
-#pragma endregion
 }
+#pragma endregion
 
 const char* fileMime(const char* filename) {//This function returns the MIME type from file extension.
     char ExtOffset = 0;
@@ -187,11 +193,6 @@ int getCoreCount(){
 
 #ifdef COMPILE_LOCALES
 int8_t getLocale(){
-	//std::string loc = std::setlocale(LC_ALL, "");
-	//return LANG_TR;
-	
-	// Linux and probably others too will return something like tr_TR.UTF-8
-	// Windows will retrun something Turkish_Türkiye.1254
 #ifndef _WIN32
 	std::string loc = setlocale(LC_ALL, "");
 	setlocale(LC_TIME, "C");

@@ -150,7 +150,7 @@ static int8_t caAuth(const char* auth, char* path) {
 
 #define caSendHeaders()\
 	if (c.flags & FLAG_HTTP2) {\
-			h2serverHeaders((clientInfo*)&c, &h, r.id); \
+			h2serverHeaders((clientInfo*)&c, (requestInfo*)&r, &h); \
 	}\
 	else {\
 		serverHeaders(&h, (clientInfo*)&c); \
@@ -339,15 +339,25 @@ if (buf[i] != '{') if (buf[i] != '}') {\
 }
 
 // This code parses an .alyssa file and calls the executing functions if finds a match.
-static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
+static int caParse(const clientInfo& c, const requestInfo& r, char* path, int depth) {
 #if __cplusplus > 201700L
-	int sz = std::filesystem::file_size(path);
+	int sz = std::filesystem::file_size(std::filesystem::u8path(path));
 #else
 	struct stat attr; stat(path, &attr);
 	int sz = attr.st_size;
 #endif
 	char* buf = (char*)alloca(sz);
-	FILE* f = fopen(path, "rb"); fread(buf, sz, 1, f); fclose(f);
+#ifdef _WIN32
+	int psz = strlen(path);
+	wchar_t* ubuf = (wchar_t*)alloca(psz * 2 + 2);
+	MultiByteToWideChar(CP_UTF8, 0, path, psz, ubuf, psz * 2);
+	ubuf[psz] = 0;
+	FILE* f = _wfopen(ubuf, L"rb");
+#else
+	FILE* f = fopen(path, "rb");
+#endif
+	if (!f) return CA_ERR_SERV;
+	fread(buf, sz, 1, f); fclose(f);
 	for (int i = 0; i < sz; i++) {
 		if (buf[i] < 32) continue;
 		if (buf[i] == '/') { // Skip the comment line.
@@ -357,50 +367,65 @@ static int caParse(const clientInfo& c, const requestInfo& r, char* path) {
 		switch (buf[i]) {
 			case 'n': // Node
 			case 'N':
-				if (sz - i < 4) break;
-				else if (buf[i + 3] == 'e' || buf[i + 3] == 'E') {
-					// Check for file name
-					if (sz - i > strlen(r.path.data())) {
-						if (!strncmp(&buf[i], r.path.data(), strlen(r.path.data()))) {
-							// Correct file, exec it.
-							checkAndExec()
-						}
-						else { // Not the correct file, pass this one.
-							checkNoExec()
-						}
+				if (buf[i + 3] == 'e' || buf[i + 3] == 'E') {
+					if (depth) {
+						checkNoExec();
+						break;
+					} i += 5; 
+
+					int psz = strlen(r.path.data()) - 1; // original path size
+					int csz = -1; // length of document path inside current dir.
+					for (int j = psz; j; j--) {
+						if (r.path[j] == '/') {
+							break;
+						} csz++;
 					}
-					else break;
+
+					// Find the start of name on node to compare.
+					for (; i < sz; i++) {
+						if (buf[i] == '"') {
+							if (buf[i + psz - csz - 1] == '"' && 
+								!strncmp(&r.path[psz - csz], &buf[i+1],csz)) {
+								checkAndExec(); goto nodeExecOK;
+							}
+							else {
+								checkNoExec(); goto nodeExecOK;
+							}
+						}
+					} return CA_ERR_SYNTAX;
+				nodeExecOK:
+					break;
 				}
 				break;
 			case 'd': // DirectoryRoot
 			case 'D': // Similar the below one, this one only works when request is on directory itself
 					  // but checking for /\0 in the end wll do the trick.
-				if (r.path[*(unsigned short*)&path[-2]] == '/' && r.path[*(unsigned short*)&path[-2] + 1] == '\0') {
-					checkAndExec()
+				if (r.path[strlen(r.path.data())-1] == '/') {
+					checkAndExec();
 				}
-				else checkNoExec()
+				else checkNoExec();
 				break;
 			case 'w': // WholeDirectory
 			case 'W': // In WholeDirectory we should check if it is the directory file is in, or some parent directory occured from recursion?
 				if (customactions == 1) { // If recursion is not enabled it obviously can't be some parent directory, no need to check.
-					checkAndExec()
+					checkAndExec();
 				}
 				else {
 					// An approach to check if it's on same directory is checking if there is any slashes after such directory.
 					// Remember the is the length of path on the 2 bytes before the path, so *(unsigned short*)&path[-2] is it.
 					if (!memchr(&r.path[*(unsigned short*)&path[-2]], '/', maxpath - *(unsigned short*)&path[-2])) {
 						// '/' not found, so it is the same dir.
-						checkAndExec()
+						checkAndExec();
 					}
-					else checkNoExec()
+					else checkNoExec();
 				}
 				break;
 			case 'r': // Recursive
 			case 'R':
 				if (customactions == 2) { // Recursive enabled.
-					checkAndExec()
+					checkAndExec();
 				}
-				else checkNoExec()
+				else checkNoExec();
 				break;
 			default:
 				printa(STR_CA_SYNTAX, TYPE_ERROR, STR_CA_STX_2);
@@ -435,7 +460,7 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 		// If recursive is not enabled check for file and parse it.
 		if (FileExists(&Buf[sz + 1])) {//.alyssa exists inside.
 			if (customactions == 1) {
-				return caParse(c, r, &Buf[sz + 1]);
+				return caParse(c, r, &Buf[sz + 1], 0);
 			}
 			else { // add it to list of files that will checked.
 				*(unsigned short*)&Buf[BufSz - as] = sz + 10; as -= 2;
@@ -454,7 +479,7 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 					Buf[i + 5] = 's', Buf[i + 6] = 's', Buf[i + 7] = 'a', Buf[i + 8] = '\0';
 				if (FileExists(&Buf[sz + 1])) {//.alyssa exists inside.
 					if (customactions == 1) {
-						return caParse(c, r, &Buf[sz + 1]);
+						return caParse(c, r, &Buf[sz + 1], 0);
 					}
 					else { // add it to list of files that will checked.
 						*(unsigned short*)&Buf[BufSz - as] = i - sz + 9; as -= 2;
@@ -466,18 +491,17 @@ int caMain(const clientInfo& c, const requestInfo& r, char* h2path) {
 				// If recursion is enabled this will also search for parent directories.
 			}
 		}
-		*(unsigned short*)&Buf[BufSz - as] = 0;
-		// This should never get executed anyway (all paths start with /) but still
-		// return CA_NO_ACTION;
 	}
+	*(unsigned short*)&Buf[BufSz - as] = 0;
 	// Parse all found files while searching the parent. (only executed when recursion is enabled)
+	int depth = 0;
 	i = 2 * sz + 10; while (i < BufSz) {
 		if (*(unsigned short*)&Buf[i]) {
-			char ret = caParse(c, r, &Buf[i + 2]);
+			char ret = caParse(c, r, &Buf[i + 2], depth);
 			if (ret) return ret;
 		}
 		else return CA_NO_ACTION;
-		i += *(unsigned short*)&Buf[i] + 3;
+		i += *(unsigned short*)&Buf[i] + 2; depth++;
 	}
 	return 0;
 }

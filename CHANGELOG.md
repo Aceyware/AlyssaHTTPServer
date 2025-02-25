@@ -1,5 +1,15 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.1 - 24.02.2025
+- **Fixed the bypass of custom actions by using short paths on Windows**
+	- Any request that includes '~' will be denied on Windows.
+- Range validity checks added which was omitted on 3.0
+- Many bugfixes varying from custom actions to crashes
+	- Literally many of them.
+- Method handling codes are now fully unified
+	- Now both GET and POST requests for both HTTP versions are handled in a single common function
+	- old implementation had two separate versions of same thing for each HTTP versions and for each method.
+
 ## 3.0 - 22.12.2024
 - Server entirely rewritten from scratch
 	- You heard it right, almost all of the server's code got rewritten from scratch, with major changes including thread pooling. Details are below.

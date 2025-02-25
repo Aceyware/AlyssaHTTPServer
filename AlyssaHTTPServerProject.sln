@@ -5,7 +5,7 @@ VisualStudioVersion = 17.6.33815.320
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AlyssaHTTPServerProject", "AlyssaHTTPServerProject.vcxproj", "{700A2600-71DC-470A-9A0B-60514B73F796}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AlyssaTester", "test\test.vcxproj", "{95A3AA06-B562-403F-9FDE-8AB52F80A14B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AlyssaTester", "..\..\test\test.vcxproj", "{95A3AA06-B562-403F-9FDE-8AB52F80A14B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
