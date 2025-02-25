@@ -101,7 +101,7 @@
 #endif
 
 // Constants
-#define version "3.0"
+extern const char* version;
 
 ///  dP     dP                   oo          dP       dP                   
 ///  88     88                               88       88                   
@@ -111,6 +111,7 @@
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
+#define version "3.0.1"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -328,10 +329,27 @@ void setPredefinedHeaders();
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz);
 void serverHeaders(respHeaders* h, clientInfo* c);
 void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg);
-void getInit(clientInfo* c);
-#ifdef COMPILE_CUSTOMACTIONS
-void postInit(clientInfo* c);
-#endif
+
+#ifdef COMPILE_HTTP2
+// HTTP/2 functions
+void goAway(clientInfo* c, char code); // This one sends GOAWAY packet to user agent and cuts the connection.
+short h2parseHeader(clientInfo* c, char* buf, int sz, int s); // Parses the HPACK headers.
+void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent sent.
+void h2serverHeaders(clientInfo* c, requestInfo* r, respHeaders* h); // Sends response headers.
+void h2SetPredefinedHeaders();
+void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz);
+inline unsigned int h2size(unsigned char* Source) {
+	return (
+		(Source[0] << 24)
+		| (Source[1] << 16)
+		| (Source[2] << 8)
+		) >> 8;
+}
+static char alpn[] = "h2,http/1.1,http/1.0";
+#endif // COMPILE_HTTP2
+
+// Methods
+extern void methodGetPostInit(clientInfo* c, int nStream = 0);
 
 // Error pages functions (common)
 int errorPages(char* buf, unsigned short statusCode, unsigned short vhost, requestInfo& stream);
@@ -351,25 +369,6 @@ inline int Recv(clientInfo* c, char* buf, int sz) {
 	#define Recv(a,b,c) recv(a->s,b,c,0)
 #endif // COMPILE_WOLFSSL
 
-#ifdef COMPILE_HTTP2
-// HTTP/2 functions
-void goAway(clientInfo* c, char code); // This one sends GOAWAY packet to user agent and cuts the connection.
-short h2parseHeader(clientInfo* c, char* buf, int sz, int s); // Parses the HPACK headers.
-void parseFrames(clientInfo* c, int sz); // Parses the frames that user agent sent.
-void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream); // Sends response headers.
-void h2SetPredefinedHeaders();
-//void h2getInit(clientInfo* c, int s); // Initiates GET request for given "s"tream.
-void h2SendData(clientInfo* c, int s, char* buf, unsigned int sz);
-inline unsigned int h2size(unsigned char* Source) {
-	return (
-		(Source[0] << 24)
-		| (Source[1] << 16)
-		| (Source[2] << 8)
-		) >> 8;
-}
-static char alpn[] = "h2,http/1.1,http/1.0";
-#endif // COMPILE_HTTP2
-
 // Misc. functions
 //int epollCtl(SOCKET s, int e);
 //int epollRemove(SOCKET s);
@@ -385,7 +384,7 @@ int8_t getLocale();
 #define getLocale() 0
 #endif
 int commandline(int argc, char* argv[]);
-extern "C" void logReqeust(clientInfo* c, int s, respHeaders* p, bool pIsALiteralString = 0);
+extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(std::string logName);
 extern int printa(int String, char Type, ...);
 const void* getLocaleString(int String);
@@ -424,6 +423,7 @@ extern std::vector<listeningPort> sslPorts;
 #endif
 
 // Functions/definitions provided for API compatibility between pre-C++17 and post-C++17 inclusive.
+// Overrides may apply to these
 #if __cplusplus < 201700L
 static bool FileExists(char* path) {
 	FILE* f = fopen(path, "rb");
@@ -448,8 +448,8 @@ static int isInaccesible(const char* path) {
 	return 0;
 }
 #else
-#define FileExists std::filesystem::exists
-#define FileSize std::filesystem::file_size
-#define IsDirectory std::filesystem::is_directory
+#define FileExists(A) std::filesystem::exists(std::filesystem::u8path(A))
+#define FileSize(A) std::filesystem::file_size(std::filesystem::u8path(A))
+#define IsDirectory(A) std::filesystem::is_directory(std::filesystem::u8path(A))
 #define WriteTime(A) to_time_t(std::filesystem::last_write_time(A));
 #endif

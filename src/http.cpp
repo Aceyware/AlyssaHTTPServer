@@ -163,6 +163,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->path[end - &buf[pos]] = '\0';// Add null terminator
 				end = &r->path[end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
 				pos += end - &r->path[0] + 1;
+				pathParsing(r, end - &buf[pos]);
 				if (!strncmp(&buf[pos], "HTTP/1", 6)) {
 					pos += 7; if (buf[pos] == '0') {
 						c->flags ^= FLAG_CLOSE;
@@ -174,7 +175,6 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			}
 			// Mark first-line parsing as complete.
 			r->flags |= FLAG_FIRSTLINE;
-			pathParsing(r, end-&r->path[0]);
 			if (r->flags & FLAG_INCOMPLETE) { // Clear the incomplete-line space, set the buf and pos back
 				buf = oldbuf; pos=oldpos;
 				// Check for line demiliter (was ignored while copying to incomplete line buffer.
@@ -299,7 +299,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 }
 
 void serverHeaders(respHeaders* h, clientInfo* c) {
-	if (loggingEnabled) logReqeust(c, 0, h);
+	if (loggingEnabled) logRequest(c, 0, h);
 	// Set up the error page to send if there is an error
 	if (h->statusCode >= 400 && errorPagesEnabled) { 
 		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = h->conLength;
@@ -338,7 +338,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	if(h->flags & FLAG_CHUNKED) {
 		memcpy(&buf[pos], "Transfer-Encoding: chunked\r\n", 28); pos += 28;
 	}
-	else if(h->flags ^ FLAG_NOLENGTH) {
+	else if (!(h->flags & FLAG_NOLENGTH)) {
 		memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
 		pos += snprintf(&buf[pos], 512 - pos, "%llu\r\n", (h->statusCode != 206) ? h->conLength : c->stream[0].fs);
 	}
@@ -441,295 +441,3 @@ void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char fl
 	// Reset request flags.
 	c->stream[0].flags = 0;
 }
-
-void getInit(clientInfo* c) {
-	respHeaders h; requestInfo* r = &c->stream[0]; h.conType = "text/html";
-	//h.conLength = 14; serverHeaders(&h, c);
-	//send(c->s, "teestasdzxcqwe", 14, 0);
-	//if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-	//else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-	//return;
-
-	// Various variables used for file functions.
-#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
-	int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0;
-#elif __cplusplus > 201700L
-	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-	#define Path u8p
-#else
-	#define Path tBuf[c->cT]
-	struct stat attr;
-#endif
-	if (c->stream[0].flags & FLAG_INVALID) {
-		if (c->stream[0].flags & FLAG_DENIED) h.statusCode = 403;
-		else h.statusCode = 400;
-
-		serverHeaders(&h, c);
-		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		return;
-	} 
-	else if (hsts && c->flags ^ FLAG_SSL) {
-		h.statusCode = 302; h.flags |= FLAG_NOLENGTH; char target[512] = { 0 };
-		// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
-		sprintf_s(target, 512, "https://%s%s", (r->vhost) ? virtualHosts[r->vhost].hostname.data() : (char*)&r->zstrm, r->path.data());
-		h.conType = target; serverHeaders(&h, c); epollRemove(c); return;
-	}
-getRestart:
-	switch (virtualHosts[r->vhost].type) {
-		case 0: // Standard virtual host.
-			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
-				int htrs = strlen(virtualHosts[r->vhost].respath.data());
-				memcpy(tBuf[c->cT], virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(&tBuf[c->cT][htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
-#ifdef _WIN32
-				WinPathConvert(tBuf[c->cT]);
-#elif __cplusplus > 201700L
-				u8p = std::filesystem::u8path(tBuf[c->cT]); 
-#endif
-				goto openFilePoint;
-			}
-			else {
-				memcpy(tBuf[c->cT], virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
-				memcpy(tBuf[c->cT] + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
-#if __cplusplus > 201700L && !defined(_WIN32)
-				u8p = std::filesystem::u8path(tBuf[c->cT]);
-#endif
-			}
-			break;
-		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[r->vhost].target.data(); // Reusing content-type variable for redirection path.
-			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
-			return; break;
-		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-			epollRemove(c); 
-			if (loggingEnabled) logReqeust(c, 0, (respHeaders*)"Request rejected and connection dropped.", true);
-			return; break;
-		default: break;
-	}
-#ifdef COMPILE_CUSTOMACTIONS
-	if (customactions) switch (caMain(*c, *r)) {
-		case CA_NO_ACTION:
-		case CA_KEEP_GOING:
-			break;
-		case CA_REQUESTEND:
-			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
-		case CA_CONNECTIONEND:
-			epollRemove(c); return;
-		case CA_ERR_SERV:
-		case CA_ERR_SYNTAX:
-			h.statusCode = 500; h.conLength = 0; 
-			serverHeaders(&h, c); if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-			else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
-		case CA_RESTART:
-			goto getRestart;
-		default:
-			std::terminate(); break;
-	}
-#endif
-	// path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths. Does nothing on other platforms
-	WinPathConvert(tBuf[c->cT])
-
-	if (FileExists(Path)) {// Something exists on such path.
-		if (IsDirectory(Path)) { // It is a directory.
-			// Check for index.html
-			int pos = strlen(tBuf[c->cT]);
-			memcpy(&tBuf[c->cT][pos], "/index.html", 12);
-#ifdef _WIN32
-			WinPathConvert(tBuf[c->cT])
-#elif _cplusplus > 201700L
-			Path += "/index.html";
-#endif
-			if (FileExists(tBuf[c->cT])) goto openFilePoint;
-#ifdef COMPILE_DIRINDEX
-			// Send directory index if enabled.
-			else if (dirIndexEnabled) {
-				tBuf[c->cT][pos] = '\0';
-				std::string payload = diMain(tBuf[c->cT], r->path);
-				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
-				serverHeaders(&h, c); if (r->method != METHOD_HEAD) Send(c, payload.data(), h.conLength);
-				if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-				else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-				return;
-			}
-#endif // COMPILE_DIRINDEX
-			goto h1send404;
-		}
-		else { // It is a file. Open and go.
-		openFilePoint:
-			r->f = fopen(tBuf[c->cT], "rb");
-			if (r->f != OPEN_FAILED) {
-				h.conType = fileMime(tBuf[c->cT]); h.conLength = FileSize(Path); 
-				h.lastMod = WriteTime(Path); h.flags |= FLAG_HASRANGE;
-				if (r->rstart || r->rend) {// is a range request.
-					// Note that h.conLength, content length on headers is the original file size,
-					// And r->fs will be morphed into remaining from ranges if any.
-					if (!r->conditionType || r->condition == h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
-						h.statusCode = 206; r->conditionType = 0;
-						if (r->rstart == -1) { // read last rend bytes 
-							fseek(r->f, r->rend * -1, SEEK_END);
-							r->rstart = h.conLength - r->rend;  r->fs = r->rend;
-						}
-						else if (r->rend == -1) { // read thru 
-							fseek(r->f, r->rstart, SEEK_SET);
-							r->fs = h.conLength - r->rstart;
-							r->rend = h.conLength - 1; // Required for response headers.
-						}
-						else { // standard range req.
-							fseek(r->f, r->rstart, SEEK_SET);
-							r->fs = r->rend - r->rstart + 1;
-						}
-					}
-					else { // Condition not satisfied.
-						h.statusCode = 200;
-						r->fs = h.conLength;
-					}
-				}
-				// Check the conditions other than if-range if any.
-				else if (r->conditionType) {
-					switch (r->conditionType) {
-					case CR_IF_NONE_MATCH:
-						if (r->condition == h.lastMod) {// ETags match, send 304.
-							h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
-							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
-							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-							else epollCtl(c, EPOLLIN | EPOLLONESHOT);
-							r->conditionType = 0;
-							return;
-						}
-						else {
-							h.statusCode = 200; r->fs = h.conLength;
-						} break;
-					case CR_IF_MATCH: // Normally not used with GET requests but here we go.
-						if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
-							h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
-							serverHeaders(&h, c); fclose(r->f); r->fs = 0;
-							if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-							else epollCtl(c, EPOLLIN | EPOLLONESHOT); 
-							r->conditionType = 0;
-							return;
-						}
-						else {
-							h.statusCode = 200; r->fs = h.conLength; r->conditionType = 0;
-						} break;
-					default: break;
-					}
-				}
-				else { // No range or conditions.
-					h.statusCode = 200;
-					r->fs = h.conLength;
-				}
-
-				if (r->method == METHOD_HEAD) {
-					h.conLength = r->fs; serverHeaders(&h, c); fclose(r->f); r->fs = 0;
-					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
-				}
-				else if (r->fs < bufsize) { // Read it on a single step without passing it to a thread.
-#ifdef COMPILE_ZLIB
-					if (gzEnabled && r->fs < bufsize / 2) {
-						// Read the file
-						fread(tBuf[c->cT], r->fs, 1, r->f);
-						// Init compression 
-						int8_t ret = deflateInit2(&r->zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
-						if (ret != Z_OK) {// Error
-
-						}
-						// Set compression up
-						r->zstrm.next_in = (Bytef*)tBuf[c->cT]; r->zstrm.avail_in = r->fs;
-						r->zstrm.next_out = (Bytef*)&tBuf[c->cT][bufsize / 2]; r->zstrm.avail_out = bufsize / 2;
-						// Do compression and send the headers & data.
-						deflate(&r->zstrm, Z_FINISH); deflateEnd(&r->zstrm);
-						if (r->zstrm.total_out < r->fs) {// Compressed data is smaller than uncompressed
-							//if(true) {
-							h.conLength = r->zstrm.total_out; h.flags |= FLAG_ENCODED;
-							serverHeaders(&h, c); Send(c, &tBuf[c->cT][bufsize / 2], r->zstrm.total_out);
-						}
-						else {// Compression made it bigger, send uncompressed data.
-							h.conLength = r->fs;
-							serverHeaders(&h, c); Send(c, tBuf[c->cT], r->fs);
-						}
-					}
-#else
-					if(0){}
-#endif
-					else {
-						serverHeaders(&h, c);
-						fread(tBuf[c->cT], r->fs, 1, r->f); 
-						Send(c, tBuf[c->cT], r->fs);
-					}
-					fclose(r->f);  r->fs = 0;
-					if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-					else epollCtl(c, EPOLLIN | EPOLLONESHOT);
-				}
-				else {
-					h.conLength = r->fs; serverHeaders(&h, c); epollCtl(c, EPOLLOUT | EPOLLONESHOT);
-				}
-				return;
-			}
-			else { // Open failed, 404
-				goto h1send404;
-			}
-		}
-	}
-	else { // Requested path does not exists at all.
-	h1send404:
-		h.statusCode = 404; h.conLength = 0; serverHeaders(&h, c);
-		if (errorPagesEnabled && r->method != METHOD_HEAD) errorPagesSender(c);
-		else if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
-		else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		return;
-	}
-}
-
-#ifdef COMPILE_CUSTOMACTIONS
-void postInit(clientInfo* c) {
-	if (!customactions) {
-		return serverHeadersInline(405, 0, c, 1, NULL);
-	}
-	respHeaders h;
-	switch (virtualHosts[c->stream[0].vhost].type) {
-		case 0: // Standard virtual host.
-			memcpy(tBuf[c->cT], virtualHosts[c->stream[0].vhost].target.data(), strlen(virtualHosts[c->stream[0].vhost].target.data()));
-			memcpy(tBuf[c->cT] + strlen(virtualHosts[c->stream[0].vhost].target.data()), c->stream[0].path.data(), strlen(c->stream[0].path.data()) + 1);
-			break;
-		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[c->stream[0].vhost].target.data(); // Reusing content-type variable for redirection path.
-			h.statusCode = 302; serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
-			return; break;
-		case 2: // Black hole (disconnects the client immediately, without even sending any headers back)
-			epollRemove(c); return; break;
-		default: break;
-	}
-postRestart:
-	switch (caMain(*c, c->stream[0])) {
-		case CA_NO_ACTION:
-		case CA_KEEP_GOING:
-			h.statusCode = 404; h.conLength = 0;
-			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
-		case CA_REQUESTEND:
-			epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			c->stream[0].flags = 0;
-			return;
-		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); return;
-		case CA_ERR_SYNTAX:
-		case CA_ERR_SERV:
-			h.statusCode = 500; h.conLength = 0;
-			serverHeaders(&h, c); if (errorPagesEnabled) errorPagesSender(c);
-			else epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return;
-		case CA_RESTART:
-			goto postRestart;
-		default:
-			std::terminate(); break;
-	}
-}
-#endif // COMPILE_CUSTOMACTIONS

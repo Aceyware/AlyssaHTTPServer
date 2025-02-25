@@ -424,7 +424,7 @@ streamFound:
 					default: break;
 				}
 			}
-			else { // Search on dynamic table.
+			else { // Search on dynamic table. Not implemented.
 				__debugbreak();
 				for (size_t i = 0; i < 0; i++) {
 					break;
@@ -433,415 +433,8 @@ streamFound:
 			pos += size;
 		}
 	}
-
-	//// Stub function that writes hardcoded headers.
-	//c->stream[streamIndex].method = 1; memcpy(c->stream[streamIndex].path, "./htroot/asd.txt", 17);
-	return 0;
+	return (buf[4] & END_STREAM) ? c->stream[streamIndex].method : 0;
 }
-
-/// <summary>
-/// Initializes GET request to respond to server.
-/// </summary>
-static void h2getInit(clientInfo* c, int s) {
-	char streamIndex;
-	for (char i = 0; i < 8; i++) {
-		if (c->stream[i].id == s) { streamIndex = i; break; }
-	}
-	respHeaders h; requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
-#define h2bufsz 16600
-	char buff[h2bufsz] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
-
-	// Various variables used for file functions.
-#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
-	int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0;
-#elif __cplusplus > 201700L
-	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-#define Path u8p
-#else
-#define Path tBuf[c->cT]
-	struct stat attr;
-#endif
-
-h2getRestart:
-	if (r->flags & FLAG_INVALID) {
-		if (r->flags & FLAG_DENIED) h.statusCode = 403;
-		else h.statusCode = 400;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, r->vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, streamIndex);
-			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) r->id = 0;
-			//  ^^^ Mark the stream space on memory free. ^^^
-			// if return is not 2. 2 means there's a custom page
-			// that got opened as a file and server will mark it free itself.
-			// This comment also applies to ones below.
-		}
-		else {
-			h.conLength = 0; h2serverHeaders(c, &h, streamIndex);
-			r->id = 0;  // Mark the stream space on memory free.
-		}
-		return;
-	}
-	// Rest of the code is pretty much same as HTTP/1.1
-
-	switch (virtualHosts[r->vhost].type) {
-		case 0: // Standard virtual host.
-			if (strlen(r->path.data()) >= strlen(htrespath.data()) && !strncmp(r->path.data(), htrespath.data(), strlen(htrespath.data()))) {
-				int htrs = strlen(virtualHosts[r->vhost].respath.data());
-				memcpy(buff, virtualHosts[r->vhost].respath.data(), htrs);
-				memcpy(&buff[htrs], r->path.data() + htrs - 1, strlen(r->path.data()) - htrs + 2);
-#ifdef _WIN32
-				WinPathConvert(buff);
-#elif __cplusplus > 201700L
-				u8p = std::filesystem::u8path(buff); 
-#endif
-				goto openFilePoint;
-			}
-			else {
-				memcpy(buff, virtualHosts[r->vhost].target.data(), strlen(virtualHosts[r->vhost].target.data()));
-				memcpy(buff + strlen(virtualHosts[r->vhost].target.data()), r->path.data(), strlen(r->path.data()) + 1);
-#if __cplusplus > 201700L && !defined(_WIN32)
-				u8p = std::filesystem::u8path(buff);
-#endif
-				break;
-			}
-		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[r->vhost].target.data(); // Reusing content-type variable for redirection path.
-			h.statusCode = 302; h2serverHeaders(c, &h, streamIndex); epollCtl(c, EPOLLIN | EPOLLONESHOT);
-			r->id = 0;
-			return; break;
-		case 2: // Black hole (disconnects the client immediately, without even sending anything back
-			epollRemove(c);
-			if (loggingEnabled) logReqeust(c, 0, (respHeaders*)"Request rejected and connection dropped.", true);
-			// Close and delete stream datas.
-			for (int j = 0; j < 8; j++) {
-				c->stream[j].fs = 0;
-				if (c->stream[j].f) {
-					fclose(c->stream[j].f); c->stream[j].f = NULL;
-					c->activeStreams--; if (!c->activeStreams) break;
-				}
-			}
-			return; break;
-		default: break;
-	}
-
-#ifdef COMPILE_CUSTOMACTIONS
-	if (customactions) switch (caMain(*c, *r, buff)) {
-		case CA_NO_ACTION:
-		case CA_KEEP_GOING:
-			break;
-		case CA_REQUESTEND:
-			return;
-		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); return;
-		case CA_ERR_SYNTAX:
-		case CA_ERR_SERV:
-			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
-			if (errorPagesEnabled) {
-				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-				h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h2serverHeaders(c, &h, streamIndex);
-				if (r->method != METHOD_HEAD) {
-					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-				}
-			}
-			else {
-				h2serverHeaders(c, &h, streamIndex);
-				c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-			}
-			return;
-		case CA_RESTART:
-			goto h2getRestart;
-		//case -2: again no idea whatever fuck that was
-		//	h.statusCode = 405; h.conLength = 0; c->stream[streamIndex].id = 0;
-		//	h2serverHeaders(c, &h, streamIndex);
-		//	c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-		//	return;
-		default:
-			std::terminate(); break;
-	}
-#endif
-
-	WinPathConvert(buff)
-
-	if (FileExists(Path)) {// Something exists on such path.
-		if (IsDirectory(Path)) { // It is a directory.
-			// Check for index.html
-			int pos = strlen(buff);
-			memcpy(&buff[pos], "/index.html", 12);
-#ifdef _WIN32
-			WinPathConvert(buff)
-#elif _cplusplus>201700L
-			u8p += "/index.html";
-#endif
-			if (FileExists(Path)) goto openFilePoint;
-#ifdef COMPILE_DIRINDEX
-			// Send directory index if enabled.
-			else if (dirIndexEnabled) {
-				buff[pos] = '\0';
-				std::string payload = diMain(buff, r->path);
-				h.statusCode = 200; h.conType = "text/html"; h.conLength = payload.size();
-				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h2serverHeaders(c, &h, streamIndex);
-				if (r->method != METHOD_HEAD) h2SendData(c, s, payload.data(), h.conLength);
-				r->id = 0;  // Mark the stream space on memory free.
-				return;
-			}
-#endif // COMPILE_DIRINDEX
-			goto h2Get404;
-		}
-		else { // It is a file. Open and go.
-		openFilePoint:
-			r->f = fopen(buff, "rb");
-			if (r->f != OPEN_FAILED) {
-				if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h.conType = fileMime(buff);  h.conLength = FileSize(Path); 
-				h.lastMod = WriteTime(Path); h.flags |= FLAG_HASRANGE;
-				if (r->rstart || r->rend) {// is a range request.
-					// Note that h.conLength, content length on headers is the original file size,
-					// And r->fs will be morphed into remaining from ranges if any.
-					if (!r->conditionType || r->condition == h.lastMod) { // Check if "if-range" is here and it is satisfied if so.
-						h.statusCode = 206;
-						if (r->rstart == -1) { // read last rend bytes 
-							fseek(r->f, r->rend * -1, SEEK_END);
-							r->rstart = r->fs - r->rend;  r->fs = r->rend;
-						}
-						else if (r->rend == -1) { // read thru 
-							fseek(r->f, r->rstart, SEEK_SET);
-							r->fs = h.conLength - r->rstart;
-							r->rend = h.conLength - 1; // Required for response headers.
-						}
-						else { // standard range req.
-							fseek(r->f, r->rstart, SEEK_SET);
-							r->fs = r->rend - r->rstart + 1;
-						}
-					}
-					else { // Condition not satisfied.
-						h.statusCode = 200;
-						r->fs = h.conLength;
-					}
-				}
-				// Check the conditions other than if-range if any.
-				else if (r->conditionType) {
-					switch (r->conditionType) {
-					case CR_IF_NONE_MATCH:
-						if (r->condition == h.lastMod) {// ETags match, send 304.
-							h.statusCode = 304; h.flags |= FLAG_NOLENGTH;
-							h2serverHeaders(c, &h, streamIndex);
-							r->id = 0; // Mark the stream space on memory free.
-							fclose(r->f); return;
-						}
-						else {
-							h.statusCode = 200; r->fs = h.conLength;
-						} break;
-					case CR_IF_MATCH: // Normally not used with GET requests but here we go.
-						if (r->condition != h.lastMod) {// ETags don't match, 412 precondition failed.
-							h.statusCode = 412; h.flags |= FLAG_NOLENGTH;
-							h2serverHeaders(c, &h, streamIndex);
-							r->id = 0; // Mark the stream space on memory free.
-							fclose(r->f); return;
-							return;
-						}
-						else {
-							h.statusCode = 200; r->fs = h.conLength;
-						} break;
-					default: break;
-					}
-				}
-				else { // No range or conditions.
-					h.statusCode = 200;
-					r->fs = h.conLength;
-				}
-				if (r->method == METHOD_HEAD) {// If head request, send headers and exit.
-					h2serverHeaders(c, &h, streamIndex);
-					r->id = 0; // Mark the stream space on memory free.
-					fclose(r->f); return;
-				} // Else keep going.
-				else if (r->fs < h2bufsz - 9) {
-#ifdef COMPILE_ZLIB
-					if (gzEnabled && r->fs < h2bufsz / 2 - 9) {
-						// Read the file
-						fread(&buff[h2bufsz / 2], r->fs, 1, r->f);
-						// Init compression 
-						int8_t ret = deflateInit2(&r->zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
-						if (ret != Z_OK) {// Error
-							memcpy(&buff[9], &buff[h2bufsz / 2], r->fs); h.conLength = r->fs;
-							h2serverHeaders(c, &h, streamIndex);
-						}
-						else {
-							// Set compression parameters
-							r->zstrm.next_out = (Bytef*)buff + 9; r->zstrm.avail_out = h2bufsz / 2 - 9;
-							r->zstrm.next_in = (Bytef*)&buff[h2bufsz / 2]; r->zstrm.avail_in = r->fs;
-							// Do compression and set the headers
-							deflate(&r->zstrm, Z_FINISH); deflateEnd(&r->zstrm);
-							if (r->zstrm.total_out < r->fs) {// Compressed data is smaller than uncompressed
-								// Send headers
-								h.conLength = r->zstrm.total_out; h.flags |= FLAG_ENCODED; h2serverHeaders(c, &h, streamIndex);
-							}
-							else {// Compression made it bigger, send uncompressed data.
-								memcpy(&buff[9], &buff[h2bufsz / 2], r->fs); h.conLength = r->fs;
-								h2serverHeaders(c, &h, streamIndex);
-							}
-						}
-					}
-#else
-					if(0){}
-#endif
-					else { // Read and send file normally.
-						fread(&buff[9], r->fs, 1, r->f); h.conLength = r->fs; h2serverHeaders(c, &h, streamIndex);
-					}
-					// Set DATA frame headers
-					buff[0] = h.conLength >> 16; // Size
-					buff[1] = h.conLength >> 8;
-					buff[2] = h.conLength >> 0;
-					buff[3] = 0; // Type: 0 (DATA)
-					buff[4] = END_STREAM; // Flags
-					*(unsigned int*)&buff[5] = htonl(r->id); // Stream identifier
-					// Send the data.
-					Send(c, buff, h.conLength + 9);
-					r->id = 0; // Mark this stream free on memory.
-					return;
-				}
-				else {
-					h2serverHeaders(c, &h, streamIndex); c->activeStreams++; return;
-				}
-			}
-			else { // Open failed, 404
-				goto h2Get404;
-			}
-		}
-	}
-	else { // Requested path does not exists at all.
-	h2Get404:
-		h.statusCode = 404;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, r->vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-			h2serverHeaders(c, &h, streamIndex);
-			if (r->method != METHOD_HEAD) {
-				if (h2ErrorPagesSender(c, s, buff, eSz) != 2) r->id = 0;
-				//  ^^^ Mark the stream space on memory free. ^^^
-				// if return is not 2. 2 means there's a custom page
-				// that got opened as a file and server will mark it free itself.
-				// This comment also applies to ones below.
-			}
-		}
-		else {// Reset polling.
-			h.conLength = 0; h2serverHeaders(c, &h, streamIndex);
-			r->id = 0; ; // Mark the stream space on memory free.
-		}
-	}
-}
-
-/// <summary>
-/// This function is same as h2getInit without file parts. Returns 405 if custom actions are disabled.
-/// </summary>
-/// <param name="c">The clientInfo struct</param>
-/// <param name="s">Stream identifier</param>
-#ifdef COMPILE_CUSTOMACTIONS
-static void h2postInit(clientInfo* c, int s) {
-	char streamIndex;
-	for (char i = 0; i < 8; i++) {
-		if (c->stream[i].id == s) { streamIndex = i; break; }
-	}
-	respHeaders h;
-	if (c->stream[streamIndex].flags & FLAG_INVALID) {
-		h.statusCode = 400; h2serverHeaders(c, &h, streamIndex); c->stream[streamIndex].id = 0;
-	}
-	else if (!customactions) {
-		h.statusCode = 405; h2serverHeaders(c, &h, streamIndex); c->stream[streamIndex].id = 0;
-	}
-	requestInfo* r = &c->stream[streamIndex]; h.conType = NULL;
-	char buff[10240] = { 0 };// On HTTP/2 thread buffer can't be freely used. I'll just use stack.
-
-h2postRestart:
-	if (c->stream[streamIndex].flags & FLAG_INVALID) {
-		if (c->stream[streamIndex].flags & FLAG_DENIED) h.statusCode = 403;
-		else h.statusCode = 400;
-		if (errorPagesEnabled) {
-			unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-			h.conLength = eSz; h.conType = "text/html"; h2serverHeaders(c, &h, streamIndex);
-			if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-			//  ^^^ Mark the stream space on memory free. ^^^
-			// if return is not 2. 2 means there's a custom page
-			// that got opened as a file and server will mark it free itself.
-			// This comment also applies to ones below.
-		}
-		else {
-			h.conLength = 0; h2serverHeaders(c, &h, streamIndex);
-			c->stream[streamIndex].id = 0;  // Mark the stream space on memory free.
-		}
-		return;
-	}
-	// Rest of the code is pretty much same as HTTP/1.1
-
-	switch (virtualHosts[c->stream[streamIndex].vhost].type) {
-		case 0: // Standard virtual host.
-			memcpy(buff, virtualHosts[c->stream[streamIndex].vhost].target.data(), strlen(virtualHosts[c->stream[streamIndex].vhost].target.data()));
-			memcpy(buff + strlen(virtualHosts[c->stream[streamIndex].vhost].target.data()), c->stream[streamIndex].path.data(), strlen(c->stream[streamIndex].path.data()) + 1);
-			break;
-		case 1: // Redirecting virtual host.
-			h.conType = virtualHosts[c->stream[streamIndex].vhost].target.data(); // Reusing content-type variable for redirection path.
-			h.statusCode = 302; h2serverHeaders(c, &h, streamIndex); epollCtl(c, EPOLLIN | EPOLLONESHOT);
-			c->stream[streamIndex].id = 0;
-			return; break;
-		case 2: // Black hole (disconnects the client immediately, without even sending anything back
-			epollRemove(c); closesocket(c->s); wolfSSL_free(c->ssl);
-			// Close and delete stream datas.
-			for (int j = 0; j < 8; j++) {
-				c->stream[j].fs = 0;
-				if (c->stream[j].f) {
-					fclose(c->stream[j].f); c->stream[j].f = NULL;
-					c->activeStreams--; if (!c->activeStreams) break;
-				}
-			}
-			return; break;
-		default: break;
-	}
-	
-	if (customactions) switch (caMain(*c, *r, buff)) {
-		case CA_NO_ACTION:
-		case CA_KEEP_GOING:
-			h.statusCode = 404; h.conLength = 0; c->stream[streamIndex].id = 0;
-			if (errorPagesEnabled) {
-				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-				h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h2serverHeaders(c, &h, streamIndex);
-				if (r->method != METHOD_HEAD) {
-					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-				}
-			}
-			else {
-				h2serverHeaders(c, &h, streamIndex);
-				c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-			}
-			return;
-		case CA_REQUESTEND:
-			return;
-		case CA_CONNECTIONEND:
-			shutdown(c->s, 2); return;
-		case CA_ERR_SYNTAX:
-		case CA_ERR_SERV:
-			h.statusCode = 500; h.conLength = 0; c->stream[streamIndex].id = 0;
-			if (errorPagesEnabled) {
-				unsigned short eSz = errorPages(buff, h.statusCode, c->stream[streamIndex].vhost, c->stream[streamIndex]);
-				h.conLength = eSz; h.conType = "text/html"; if (r->method == METHOD_HEAD) h.flags |= FLAG_ENDSTREAM;
-				h2serverHeaders(c, &h, streamIndex);
-				if (r->method != METHOD_HEAD) {
-					if (h2ErrorPagesSender(c, s, buff, eSz) != 2) c->stream[streamIndex].id = 0;
-				}
-			}
-			else {
-				h2serverHeaders(c, &h, streamIndex);
-				c->stream[streamIndex].id = 0; // Mark the stream space on memory free.
-			}
-			return;
-		case CA_RESTART:
-			goto h2postRestart;
-		default:
-			std::terminate(); break;
-	}
-}
-#endif
 
 /// <summary>
 /// This function parses all HTTP/2 frames sent by user agent
@@ -875,10 +468,11 @@ void parseFrames(clientInfo* c, int sz) {
 						}
 						else if (!(c->stream[i].flags & FLAG_INVALID)) {
 							memcpy(&c->stream[i].payload[1 + *(unsigned short*)&c->stream[i].payload[0]],
-								&buf[i + 9], fsz); *(unsigned short*)&c->stream[i].payload[0] += fsz;
+								&buf[i + 9], fsz); 
+							*(unsigned short*)&c->stream[i].payload[0] += fsz;
 						}
-#ifdef COMPILE_CUSTOMACTIONS // else no idea yet.
-						if (flags & END_STREAM) h2postInit(c, str);
+#ifdef COMPILE_CUSTOMACTIONS
+						if (flags & END_STREAM) methodGetPostInit(c, str);
 #endif
 					}
 				}
@@ -889,19 +483,21 @@ void parseFrames(clientInfo* c, int sz) {
 					case -7: goAway(c, H2COMPRESSION_ERROR); return; break;
 					case -9: goAway(c, H2CONNECTION_ERROR ); return; break;
 					case -10: {
-						int streamIndex;
 						// I'm really lazy
 						for (char i = 0; i < 8; i++) {
-							if (c->stream[i].id == str) { streamIndex = i; break; }
+							if (c->stream[i].id == str) { 
+								respHeaders h; h.statusCode = 413; h.conLength = 0;
+								h2serverHeaders(c, &c->stream[i], &h); 
+								resetStream(c, str, H2CANCEL);
+								break;
+							}
 						}
-						respHeaders h; h.statusCode = 413; h.conLength = 0;
-						h2serverHeaders(c, &h, str); resetStream(c, str, H2CANCEL);
+						
 					}
 					break;
 					default:				   break;
 				}
-				if (flags & END_STREAM) h2getInit(c, str);
-				//else __debugbreak();
+				if (flags & END_STREAM) methodGetPostInit(c, str);
 				break;
 			case H2RST_STREAM: 
 				// Search for the stream
@@ -926,7 +522,12 @@ void parseFrames(clientInfo* c, int sz) {
 				break;
 			case H2PING:	wolfSSL_send(c->ssl, h2PingResponse, 17, 0); break;
 			case H2GOAWAY:  
-				__debugbreak();
+				#if 0	/* Enable this when you need to debug HTTP/2
+						   Do not keep it enabled otherwise or it will
+						   cause server to crash when server runs without
+						   any debugger attached and someone disconnects. */
+					__debugbreak();
+				#endif
 				// Close the connection.
 				epollRemove(c);
 				// Close and delete stream datas.
@@ -956,12 +557,12 @@ void parseFrames(clientInfo* c, int sz) {
 /// <param name="c">clientInfo</param>
 /// <param name="h">respHeaders structure, parameters for headers.</param>
 /// <param name="stream">Stream offset.</param>
-void h2serverHeaders(clientInfo* c, respHeaders* h, unsigned short stream) {
-	if (loggingEnabled) logReqeust(c, stream, h);
+void h2serverHeaders(clientInfo* c, requestInfo* r, respHeaders* h) {
+	if (loggingEnabled) logRequest(c, r, h);
 	char buf[384] = { 0 };  unsigned short i = 9; // We can't use the thread buffer like we did on 1.1 because there may be headers unprocessed still.
 	// Stream identifier is big endian so we need to write it swapped.
-	buf[5] = c->stream[stream].id >> 24; buf[6] = c->stream[stream].id >> 16; 
-	buf[7] = c->stream[stream].id >> 8;  buf[8] = c->stream[stream].id >> 0;
+	buf[5] = r->id >> 24; buf[6] = r->id >> 16; 
+	buf[7] = r->id >> 8;  buf[8] = r->id >> 0;
  	buf[3] = H2HEADERS; // Type: HEADERS
 	buf[4] = END_HEADERS;
 	//if (h->statusCode > 400) { h->conLength = errorPages(c, h->statusCode); }

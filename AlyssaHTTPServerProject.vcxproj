@@ -136,7 +136,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>C:\Users\Administrator\wolfssl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/Zc:__cplusplus /source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader>Create</PrecompiledHeader>
       <PrecompiledHeaderFile>Alyssa.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
@@ -178,12 +178,15 @@
     <ClCompile Include="src\dirindex.cpp" />
     <ClCompile Include="src\localization.cpp" />
     <ClCompile Include="src\logging.cpp" />
+    <ClCompile Include="src\methods.cpp" />
     <ClCompile Include="src\misc.cpp" />
-    <ClCompile Include="src\errorPages.cpp" />
+    <ClCompile Include="src\errorpages.cpp" />
     <ClCompile Include="src\http.cpp" />
     <ClCompile Include="src\http2.cpp" />
-    <ClCompile Include="src\Main.cpp" />
-    <ClCompile Include="src\wepoll.c" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\wepoll.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
