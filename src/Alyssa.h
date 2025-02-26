@@ -57,7 +57,7 @@
 	#include <pthread.h>
 
 	#define sprintf_s snprintf
-	#define vsprintf_s vsnprint
+	#define vsprintf_s vsnprintf
 
 	// sockaddr definitions
 	#define _SinAddr s_addr
@@ -70,6 +70,7 @@
 	#define SOCKET_ERROR -1
 	#define INVALID_HANDLE_VALUE -1
 	#define __debugbreak() std::terminate()
+	#define Sleep usleep
 #endif // _WIN32
 
 #ifdef COMPILE_WOLFSSL
@@ -86,7 +87,9 @@
 
 #ifdef COMPILE_ZLIB
 	#include <zlib.h>
-	#pragma comment(lib, "zlib.lib")
+	#ifdef _WIN32
+		#pragma comment(lib, "zlib.lib")
+	#endif
 #endif
 
 // Typedefs
@@ -111,7 +114,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.1"
+#define version "3.0.2"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -387,7 +390,7 @@ int commandline(int argc, char* argv[]);
 extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool pIsALiteralString = 0);
 int loggingInit(std::string logName);
 extern int printa(int String, char Type, ...);
-const void* getLocaleString(int String);
+const char* getLocaleString(int String);
 #if __cplusplus > 201700L
 template <typename TP>
 inline std::time_t to_time_t(TP tp) {
@@ -448,8 +451,15 @@ static int isInaccesible(const char* path) {
 	return 0;
 }
 #else
-#define FileExists(A) std::filesystem::exists(std::filesystem::u8path(A))
-#define FileSize(A) std::filesystem::file_size(std::filesystem::u8path(A))
-#define IsDirectory(A) std::filesystem::is_directory(std::filesystem::u8path(A))
-#define WriteTime(A) to_time_t(std::filesystem::last_write_time(A));
+   #ifdef _WIN32
+	#define FileExists(A) std::filesystem::exists(std::filesystem::u8path(A))
+	#define FileSize(A) std::filesystem::file_size(std::filesystem::u8path(A))
+	#define IsDirectory(A) std::filesystem::is_directory(std::filesystem::u8path(A))
+	#define WriteTime(A) to_time_t(std::filesystem::last_write_time(std::filesystem::u8path(A)));
+   #else
+	#define FileExists(A) std::filesystem::exists(A)
+	#define FileSize(A) std::filesystem::file_size(A)
+	#define IsDirectory(A) std::filesystem::is_directory(A)
+	#define WriteTime(A) to_time_t(std::filesystem::last_write_time(A));
+   #endif
 #endif

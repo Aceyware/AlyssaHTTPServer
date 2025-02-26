@@ -10,8 +10,9 @@ enum Languages {
 	LANG_UNSPEC = -1,
 	LANG_EN,
 #ifdef COMPILE_LOCALES
-	LANG_TR
+	LANG_TR,
 #endif
+	LANG_END
 };
 
 enum Strings {
@@ -66,12 +67,13 @@ enum Strings {
 	STR_CA_STX_3,
 	STR_CA_STX_4,
 	STR_CA_STX_5,
-	// 40
-	STR_CA_STX_6,
 #endif
 	STR_VHOST,
+	// 40
 	STR_VHOST_INACCESSIBLE,
 	STR_SOCK_EXCEEDS_ALLOCATED_SPACE,
+	STR_NOTHING_TO_LISTEN,
+	STR_DISABLED,
 	STR_END
 };
 
@@ -85,4 +87,4 @@ enum PrintaTypeFlags {
 	TYPE_FLAG_NOTIME = 32 // Do not print time.
 };
 
-extern const char* StringTable[][STR_END];
+extern const char* StringTable[LANG_END][STR_END+1];

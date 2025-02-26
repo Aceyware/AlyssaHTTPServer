@@ -250,16 +250,30 @@ void* threadMain(int num) {
 }
 
 int main(int argc, char* argv[]) {
-	commandline(argc, argv); // Parse command line arguments
+	// Parse command line arguments
+	commandline(argc, argv); 
 
-	if(!configLoaded) readConfig("Alyssa.cfg"); // Load default config if no config is given on command line.
-	if(currentLocale==LANG_UNSPEC) currentLocale = getLocale(); // Get system locale if not explicitly set from config
 #ifdef _WIN32
-	SetConsoleOutputCP(CP_UTF8); // Set console codepage to UTF-8 on Windows.
+	// Set console codepage to UTF-8 on Windows.
+	SetConsoleOutputCP(CP_UTF8); 
 #endif
-	if(!virtualHosts.size()) virtualHosts.emplace_back("", 0, htroot, respath); // Add default vhost if there is none.
 
-	if (!threadCount) threadCount = getCoreCount(); // Set thread count to CPU core count if not explicitly set by config.
+	// Load default config if no config is given on command line.
+	if (!configLoaded) readConfig("Alyssa.cfg"); 
+	// Get system locale if not explicitly set from config
+	if (currentLocale == LANG_UNSPEC) currentLocale = getLocale(); 
+
+	if (!configLoaded) {
+		// Config still not loaded, failed to load any config.
+		ports.emplace_back(80); printa(STR_CANNOT_OPEN_CONFIG, TYPE_ERROR | TYPE_FLAG_NOLOG);
+	}
+
+	// Add default vhost if there is none.
+	if(!virtualHosts.size()) virtualHosts.emplace_back("", 0, htroot, respath); 
+
+	// Set thread count to CPU core count if not explicitly set by config.
+	if (!threadCount) threadCount = getCoreCount(); 
+
 	// Allocate data for threads
 	tBuf.resize(threadCount); tShared.resize(threadCount);
 	hThreads.resize(threadCount);
@@ -317,8 +331,8 @@ int main(int argc, char* argv[]) {
 			printa(STR_SOCKET_FAIL, TYPE_ERROR); std::terminate();
 		}
 #ifndef _WIN32
-		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
-			error("setsockopt(SO_REUSEADDR) failed");
+		if (setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
+			perror("setsockopt(SO_REUSEADDR) failed");
 #endif
 		hints.sin_port = htons(ports[i].port);
 		if(bind(listening, (struct sockaddr*)&hints, hintSize)) {
@@ -345,8 +359,8 @@ int main(int argc, char* argv[]) {
 				return -1;
 			}
 #ifndef _WIN32
-			if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
-				error("setsockopt(SO_REUSEADDR) failed");
+			if (setsockopt(listening, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int)) < 0)
+				perror("setsockopt(SO_REUSEADDR) failed");
 #endif
 			setsockopt(listening, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(int));
 			hints6.sin6_port = htons(ports[i].port);

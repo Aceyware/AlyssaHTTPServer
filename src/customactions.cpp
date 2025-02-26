@@ -3,6 +3,10 @@
 
 #include "Alyssa.h"
 #ifdef COMPILE_CUSTOMACTIONS
+#ifdef COMPILE_WOLFSSL
+#include <wolfssl/wolfcrypt/hash.h>
+#include <wolfssl/wolfcrypt/coding.h>
+#endif
 
 enum CAActions {
 	CA_A_REDIRECT = 1,
@@ -297,7 +301,7 @@ while (buf[i] != '{' && i < sz) {\
 }\
 /* vvv EOF before scope beginning vvv. */\
 if (buf[i] != '{') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_6), i, path); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
 char* begin = &buf[i]; i++; \
@@ -310,7 +314,7 @@ while (buf[i] != '}' && i < sz) {\
 }\
 /* vvv EOF before scope ending vvv. */\
 if (buf[i] != '}') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5), i, path); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_4), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
 else return caExec(c, r, begin, &buf[i] - begin); \
@@ -333,7 +337,7 @@ while (buf[i] != '}' && i < sz) {\
 }\
 /* vvv EOF before scope ending vvv. */\
 if (buf[i] != '{') if (buf[i] != '}') {\
-	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_5), i, path); \
+	printa(STR_CA_SYNTAX, TYPE_ERROR, getLocaleString(STR_CA_STX_4), i, path); \
 	return CA_ERR_SYNTAX;\
 } \
 }

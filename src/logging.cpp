@@ -13,17 +13,19 @@ int loggingInit(std::string logName) {
 		logfile = fopen(buf, "a");
 	}
 	if (!logfile) return -1; // Open failed.
-	setvbuf(logfile, NULL, _IOLBF, 0); // Set stream to unbuffered mode.
+	setvbuf(logfile, NULL, _IOLBF, 65536); // Set stream to unbuffered mode.
 
 	// Read the heading of log file, i.e. product info, version, time, some parameters, etc.
 	std::string heading = "=== Aceyware Alyssa HTTP Server version " version " started on "; heading.reserve(512);
 	char buf[64] = { 0 }; strftime(buf, 64, "%Y.%m.%d %H:%M:%S\nPorts: ", gmtime(&startupTime)); heading += buf; 
-	for (int i = 0; i < ports.size(); i++) {
+	if (!ports.size()) heading += "Disabled ";
+	else for (int i = 0; i < ports.size(); i++) {
 		heading += std::to_string(ports[i].port) + " ";
 	}
 #ifdef COMPILE_WOLFSSL
 	heading += "SSL: ";
-	for (int i = 0; i < sslPorts.size(); i++) {
+	if (!sslPorts.size()) heading += "Disabled ";
+	else for (int i = 0; i < sslPorts.size(); i++) {
 		heading += std::to_string(sslPorts[i].port) + " ";
 	} heading += "\n";
 #else
@@ -53,10 +55,10 @@ extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool p
 	time_t t = time(NULL); strftime(Time, 64, "%d.%b %H:%M:%S", localtime(&t));
 	// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 	if (pIsALiteralString) {
-		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[r->vhost].hostname
+		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[r->vhost].hostname.data()
 			, r->path.data(), (const char*)p);
 	} else {
-		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (r->vhost)?virtualHosts[r->vhost].hostname:(char*)&r->zstrm
+		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (r->vhost)?virtualHosts[r->vhost].hostname.data() : (char*)&r->zstrm
 			, r->path.data(), p->statusCode);
 	}
 }
@@ -113,21 +115,39 @@ int printa(int String, char Type, ...) {
 void printInformation() {
 	printa(STR_LISTENINGON, TYPE_INFO | TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME); 
 	std::cout << "HTTP: ";
-	for (int i = 0; i < ports.size(); i++) {
+	if(!ports.size()) {
+		// This deliberately uses direct reference to string so we can
+		// easily check for any missing strings in string table.
+		std::cout << StringTable[currentLocale][STR_DISABLED] << std::endl;
+	}
+	else for (int i = 0; i < ports.size(); i++) {
 		std::cout << ports[i].port << " ";
 	}
 #ifdef COMPILE_WOLFSSL
+	std::cout << "HTTPS: ";
 	if (sslEnabled) {
-		std::cout << "HTTPS: ";
 		for (int i = 0; i < sslPorts.size(); i++) {
 			std::cout << sslPorts[i].port << " ";
 		}
 	}
+	else std::cout << StringTable[currentLocale][STR_DISABLED] << std::endl;
+	
+// Below code will be removed on Alyssa 3.1, do not make any changes
+	if (!ports.size() && (!sslEnabled || !sslPorts.size())) {
+		printa(STR_LISTENINGON, TYPE_INFO | TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME);
+		exit(-1);
+	}
+#else
+	if (!ports.size()) {
+		printa(STR_LISTENINGON, TYPE_INFO | TYPE_FLAG_NOLOG | TYPE_FLAG_NOTIME);
+		exit(-1);
+	}
+// Above code will be removed on Alyssa 3.1, do not make any changes
 #endif // COMPILE_WOLFSSL
 	std::cout << std::endl;
 }
 
-const void* getLocaleString(int String) {
+const char* getLocaleString(int String) {
 #ifdef COMPILE_LOCALES
 	if (currentLocale) { // Language is non-English
 		if (StringTable[currentLocale][String] == NULL) // Check if requested string is translated

@@ -1,9 +1,7 @@
 #include "Alyssa.h"
-#include <unordered_map>
 #include <locale>
 #include <codecvt>
 #include <fstream>
-//std::unordered_map<std::string, std::string> configData;
 
 int8_t readPorts(char* buf, std::vector<listeningPort>& target) {
 	unsigned long newport=strtoul(buf, &buf, 10);
@@ -27,22 +25,6 @@ static std::vector<std::string> readAcao(char* path) {
 	} numAcao = ret.size();
 	return ret;
 }
-
-//static std::vector<vhost> readVhosts(char* path) {
-//	std::vector<vhost> ret(1); std::ifstream f; f.open(path);
-//	if (!f.is_open()) {
-//		return;
-//	}
-//	auto x = new std::codecvt_utf8<wchar_t>;
-//	f.imbue(std::locale(std::locale(), x));
-//	for (std::string line; std::getline(f, line); ) {
-//		vhost element; bool def = 0;
-//		std::cout << line << std::endl;
-//		
-//		ret.push_back(element);
-//	}
-//	return ret;
-//}
 
 // reads vhosts. taken from old alyssa and frontported to current one because i didnt want to parse shit one more time. returns 0 on success, 1 on fail.
 static bool readVhosts(char* path) {

@@ -1,5 +1,8 @@
 #include "Alyssa.h"
 #include "AlyssaOverrides.h"
+#ifdef COMPILE_WOLFSSL
+#include <wolfssl/wolfcrypt/coding.h>
+#endif
 
 char* predefinedHeaders; int predefinedSize;
 void setPredefinedHeaders() {

@@ -73,21 +73,25 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>C:\Users\Administrator\zlib;C:\Users\Administrator\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <OutDir>$(SolutionDir)..\..\$(Platform)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>C:\Users\Administrator\zlib;C:\Users\Administrator\wolfssl;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
     <LibraryPath>C:\Users\Administrator\zlib;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Users\Administrator\wolfssl\Release\Win32</LibraryPath>
+    <OutDir>$(SolutionDir)..\..\$(Platform)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>C:\Users\Administrator\zlib;C:\Users\Administrator\wolfssl;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\Administrator\zlib\x64;C:\Users\Administrator\wolfssl\Debug\x64;$(LibraryPath)</LibraryPath>
+    <OutDir>$(SolutionDir)..\..\$(Platform)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>C:\Users\Administrator\zlib;C:\Users\Administrator\wolfssl;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\Administrator\zlib\x64\;C:\Users\Administrator\wolfssl\Release\x64;$(LibraryPath)</LibraryPath>
+    <OutDir>$(SolutionDir)..\..\$(Platform)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

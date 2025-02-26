@@ -68,20 +68,8 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="../../src/AlyssaBuildConfig.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="../../src/AlyssaHuffman.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="../../src/external/subprocess.h">
-      <Filter>Headers\External</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\src\AlyssaLocalization.h">
       <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="../../src/resource.h">
-      <Filter>Headers\External</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\Alyssa.h">
       <Filter>Headers</Filter>
@@ -93,6 +81,18 @@
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\AlyssaOverrides.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src/AlyssaBuildConfig.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src/AlyssaHuffman.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src/resource.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src/external/subprocess.h">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>

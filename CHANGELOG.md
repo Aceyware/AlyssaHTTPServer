@@ -1,5 +1,12 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2 - 26.02.2025
+- Now plain HTTP can be disabled (by specifying empty port list)
+- Fixed misbehavior caused after failure to load config.
+- Fixed some other chunk of bugs including but not limited to crashes due to logging and localization
+- Fixed some invalid code that I have no idea how do they came there
+- Fixed compilation on non-Windows platforms
+
 ## 3.0.1 - 24.02.2025
 - **Fixed the bypass of custom actions by using short paths on Windows**
 	- Any request that includes '~' will be denied on Windows.

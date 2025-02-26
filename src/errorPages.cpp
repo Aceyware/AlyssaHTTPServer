@@ -47,7 +47,7 @@ seFallback:
 	else if (errorPagesEnabled == 2) {// Custom error pages
 		if (numVhosts) {
 			//memcpy(&buf[512], virtualHosts[c->vhost].respath, strlen(virtualHosts[c->vhost].respath));
-			snprintf(&buf[512], 512, "%s/%d.html", virtualHosts[vhost].respath, statusCode);
+			snprintf(&buf[512], 512, "%s/%d.html", virtualHosts[vhost].respath.data(), statusCode);
 			stream.f = fopen(&buf[512], "rb"); if (!stream.f) goto seFallback; // If error page HTML does not exists, fallback to synthetic.
 			// Get size of page and return.
 			struct stat attr; stat(&buf[512], &attr); stream.fs = attr.st_size; return attr.st_size;

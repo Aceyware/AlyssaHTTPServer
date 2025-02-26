@@ -76,3 +76,4 @@ resource.h
 *.sh
 
 *.txt
+*.user
