@@ -302,7 +302,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 }
 
 void serverHeaders(respHeaders* h, clientInfo* c) {
-	if (loggingEnabled) logRequest(c, 0, h);
+	if (loggingEnabled) logRequest(c, &c->stream[0], h);
 	// Set up the error page to send if there is an error
 	if (h->statusCode >= 400 && errorPagesEnabled) { 
 		h->conLength = errorPages(tBuf[c->cT], h->statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = h->conLength;

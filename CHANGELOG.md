@@ -1,5 +1,10 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2.1 - 26.02.2025
+- Added the ability to set logging buffer size (or disabling buffering entirely) through config
+- Now logging the hostname client reports is working on HTTP/2
+- Fixed some more crashes
+
 ## 3.0.2 - 26.02.2025
 - Now plain HTTP can be disabled (by specifying empty port list)
 - Fixed misbehavior caused after failure to load config.

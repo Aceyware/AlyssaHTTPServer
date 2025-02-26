@@ -13,7 +13,9 @@ int loggingInit(std::string logName) {
 		logfile = fopen(buf, "a");
 	}
 	if (!logfile) return -1; // Open failed.
-	setvbuf(logfile, NULL, _IOLBF, 65536); // Set stream to unbuffered mode.
+	// Set stream buffer size
+	if(logbufsize) setvbuf(logfile, NULL, _IOLBF, logbufsize);
+	else setvbuf(logfile, NULL, _IONBF, 0);
 
 	// Read the heading of log file, i.e. product info, version, time, some parameters, etc.
 	std::string heading = "=== Aceyware Alyssa HTTP Server version " version " started on "; heading.reserve(512);

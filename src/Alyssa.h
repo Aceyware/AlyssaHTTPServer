@@ -114,7 +114,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2"
+#define version "3.0.2.1"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -144,6 +144,7 @@ extern int8_t currentLocale;
 // Legacy htroot and respath, not directly used anymore.
 extern std::string htroot;
 extern std::string respath;
+extern unsigned int logbufsize;
 
 extern struct clientInfo* clients;
 extern std::vector<char*> tBuf;

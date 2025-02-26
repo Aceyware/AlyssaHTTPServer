@@ -33,6 +33,8 @@ bool		dirIndexEnabled	  = 1;
 int8_t		customactions	  = 2;
 // IPv6 enabled or not?
 bool		ipv6Enabled		  = 1;
+// Logfile buffer size (0 disables buffering)
+unsigned int logbufsize = 512;
 #ifdef COMPILE_ZLIB
 bool		gzEnabled		  = 1;
 #endif

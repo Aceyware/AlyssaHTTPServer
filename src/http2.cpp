@@ -273,7 +273,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 		// Search for an empty space in frames buffer and allocate it to this stream.
 		for (char i = 0; i < maxstreams; i++) {
 			if (!c->stream[i].id) {
-				streamIndex = i; c->stream[i] = requestInfo();
+				streamIndex = i; c->stream[i].clean();
 				c->stream[i].id = s;
 				goto streamFound;
 			}
@@ -314,7 +314,7 @@ streamFound:
 				}
 			}
 			else { // Search on dynamic table.
-				__debugbreak();
+				//__debugbreak();
 				for (size_t i = 0; i < 0; i++) {
 					break;
 				}
@@ -349,13 +349,14 @@ streamFound:
 						std::string huffstr;
 						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
 						for (short i = 0; i < numVhosts; i++) {
-							if (!strncmp(virtualHosts[i].hostname.data(),
-								((isHuffman) ? huffstr.data() : &buf[pos]),
-								strlen(virtualHosts[i].hostname.data()))) {
+							if (!strcmp(virtualHosts[i].hostname.data(),
+								((isHuffman) ? huffstr.data() : &buf[pos]))) {
 							
-								c->stream[streamIndex].vhost = i;
+								c->stream[streamIndex].vhost = i; break;
 							}
 						}
+						strcpy((char*)&c->stream[streamIndex].zstrm,
+							((isHuffman) ? huffstr.data() : &buf[pos]));
 						break;
 					}
 					case 2: c->stream[streamIndex].method = 1;	break; // :method
@@ -425,7 +426,7 @@ streamFound:
 				}
 			}
 			else { // Search on dynamic table. Not implemented.
-				__debugbreak();
+				//__debugbreak();
 				for (size_t i = 0; i < 0; i++) {
 					break;
 				}

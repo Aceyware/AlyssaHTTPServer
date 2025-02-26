@@ -168,7 +168,7 @@ extern "C" int8_t readConfig(const char* path) {
 #endif
 					break;
 				case 'l': // lang
-				case 'L': // logfile
+				case 'L': // logfile, logbufsz
 #ifdef COMPILE_LOCALES
 					if(begin[3] =='g'||begin[3]=='G'){
 						if (begin[5] == 'e') currentLocale = LANG_EN;
@@ -177,8 +177,12 @@ extern "C" int8_t readConfig(const char* path) {
 					else
 #endif
 						if (begin[6] == 'e' || begin[6] == 'E') { // logfile
-						if(begin[8]=='0') loggingEnabled=0;
-						else loggingFileName = begin + 8;
+							if(begin[8]=='0') loggingEnabled=0;
+							else loggingFileName = begin + 8;
+					}
+					else if (begin[9] == 'e' || begin[9] == 'E') { // logbufsize
+							logbufsize = strtoul(begin + 11, NULL, 10);
+							if (logbufsize == 1) logbufsize = 512;
 					}
 					break;
                 case 'm': // maxpath, maxauth, maxstream, maxpayload, maxclient, maxthreads
