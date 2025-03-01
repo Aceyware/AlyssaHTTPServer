@@ -1,5 +1,15 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2.2 - 02.03.2025
+- Added security checks for Host header
+	- Host could be spoofed to "127.0.0.1" or "192.168.x.y" to make server think that client connects from local network
+	- Now server will check for their actual IP addresses when host is given as any of these.
+	- Requests will be denied if they connect from outside.
+- Fixed some other cluster of bugs and errors
+- Fixed the problem about request method parsing on HTTP/2
+- Implemented OPTIONS methods again (was available on 2.x but omitted on 3.0)
+- Updated custom error pages code and fixed an error on synthetic error pages.
+
 ## 3.0.2.1 - 26.02.2025
 - Added the ability to set logging buffer size (or disabling buffering entirely) through config
 - Now logging the hostname client reports is working on HTTP/2

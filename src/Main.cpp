@@ -130,21 +130,22 @@ void* threadMain(int num) {
 #endif
 				else {
 					switch (parseHeader(&clients[clientIndex(num)].stream[0], &clients[clientIndex(num)], tBuf[num], received)) {
-					case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL);
-						clients[clientIndex(num)].epollNext = 31; break;
-					case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
-					case -3: serverHeadersInline(414, 0, &clients[clientIndex(num)], 0, NULL); break;
-					case  METHOD_POST:
-					case  METHOD_PUT:
+						case -10: serverHeadersInline(413, 0, &clients[clientIndex(num)], 0, NULL);
+							clients[clientIndex(num)].epollNext = 31; break;
+						case -7: serverHeadersInline(431, 0, &clients[clientIndex(num)], 0, NULL); break;
+						case -6: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
+						case -3: serverHeadersInline(414, 0, &clients[clientIndex(num)], 0, NULL); break;
+						case  METHOD_POST:
+						case  METHOD_PUT:
 #ifndef COMPILE_CUSTOMACTIONS
 						serverHeadersInline(501, 0, &clients[clientIndex(num)], 0, NULL); break;
 #endif // COMPILE_CUSTOMACTIONS
-					case  METHOD_GET:
-					case  METHOD_HEAD:
-						methodGetPostInit(&clients[clientIndex(num)]); break;
-					case  METHOD_OPTIONS: serverHeadersInline(200, 0, &clients[clientIndex(num)], 0, NULL); break;
-					case 666: break;
-					default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
+						case  METHOD_GET:
+						case  METHOD_HEAD:
+							methodGetPostInit(&clients[clientIndex(num)]); break;
+						case  METHOD_OPTIONS: serverHeadersInline(204, 0, &clients[clientIndex(num)], 0, NULL); break;
+						case 666: break;
+						default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					}
 				}
 			}

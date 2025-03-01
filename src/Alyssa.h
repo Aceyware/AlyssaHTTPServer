@@ -95,8 +95,10 @@
 // Typedefs
 #ifdef _WIN32
 	#define AThread HANDLE
+	#define AFile	HANDLE
 #else
 	#define AThread pthread_t
+	#define AFile	FILE*
 #endif
 
 #ifdef DEBUG
@@ -114,7 +116,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2.1"
+#define version "3.0.2.2"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -199,39 +201,22 @@ typedef struct requestInfo {
 	char method; // HTTP method (GET, POST, etc.)
 	unsigned char flags;
 	unsigned short contentLength; // client payload content length.
-#ifndef _WIN32 // File stream 
-	FILE* f; 
-#else
-	HANDLE f; 
-#endif
+	AFile f; // File stream
 	unsigned long long fs; //file size.
-	size_t rstart; size_t rend; // Range start and end.
+	unsigned long long rstart, rend; // Range start and end.
 	char* qStr; // Query string location.
 	std::string path = std::string(maxpath,'\0');
 	std::string auth = std::string(maxauth, '\0');
 	std::string payload = std::string(maxpayload, '\0');
 	size_t condition; char conditionType; // Conditional Request ETag and it's type.
+	char compressType = 0;
 	unsigned short vhost; // Virtual host number
 	unsigned short acao; // (CORS) Access Control Allow Origin origin number.
-#ifdef COMPILE_ZLIB
-	int8_t compressType = 0;
-	// Starting with "3.0 prerelase 3.5" zstrm is now used for storing the value of "host" header if it is not a registered virtual host.
-	// Previously we were only saving index of which virtual host user agent connects, and discarding the actual hostname string, which can be *anything*
-	// I realized that actual hostname string is actually needed for logging and HSTS redirection (and nothing else really), and didn't wanted to allocate
-	// more space for something like that which has very few (but necessary) purpose, and decided to use some already existing space instead.
-	// 
-	// zstrm (along with f and fs, but 16 bytes are so small that something like "www.aceyware.net\0" won't fit there.) is the only field that is not
-	// used until request parsing ends and gets started on processing. So that space can be used for storing anything until compression starts.
-	// For users without zlib we will allocate some decoy char array for solely that purpose.
-	// Requests done to a registered virtual host will not be saved here as we have the hostname already, only "vhost" variable will be used for such.
-	z_stream zstrm = { 0 };
-#else
-	char zstrm[88] = { 0 };
-#endif
+	char hostname[64] = { 0 };
 
 	void clean() {
 		id = 0, method = 0, flags = 0, rstart = 0, rend = 0, contentLength = 0, qStr = NULL, vhost = 0,
-		path[0] = '\0', auth[0] = '\0', payload[0] = '\0';
+			path[0] = '\0', auth[0] = '\0', payload[0] = '\0'; hostname[0] = '\0';
 	}
 	// Constructors
 	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
@@ -264,7 +249,7 @@ typedef struct clientInfo {
 	WOLFSSL* ssl;
 #endif // COMPILE_WOLFSSL
 	void clean() {
-		flags = 0;
+		flags = 0; ssl = NULL;
 		for (int i = 0; i < maxstreams; i++) {
 			stream[i].clean();
 		}
@@ -303,7 +288,7 @@ extern char* predefinedHeaders; extern int predefinedSize;
 
 typedef struct respHeaders {
 	unsigned short statusCode; 
-	size_t conLength; // Content Length
+	unsigned long long conLength; // Content Length
 	const char* conType; // Content Type (mime)
 	time_t lastMod; // Last modified
 	char flags;
@@ -332,7 +317,7 @@ typedef struct listeningPort {
 void setPredefinedHeaders();
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz);
 void serverHeaders(respHeaders* h, clientInfo* c);
-void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg);
+void serverHeadersInline(unsigned short statusCode, unsigned long long conLength, clientInfo* c, char flags, char* arg);
 
 #ifdef COMPILE_HTTP2
 // HTTP/2 functions

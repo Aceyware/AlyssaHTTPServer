@@ -268,12 +268,12 @@ void goAway(clientInfo* c, char code) {
 /// <param name="s">Stream identifier.</param>
 /// <returns></returns>
 short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
-	unsigned char streamIndex;
+	requestInfo* r;
 	if (buf[3] == H2HEADERS) {
 		// Search for an empty space in frames buffer and allocate it to this stream.
 		for (char i = 0; i < maxstreams; i++) {
 			if (!c->stream[i].id) {
-				streamIndex = i; c->stream[i].clean();
+				r = &c->stream[i]; c->stream[i].clean();
 				c->stream[i].id = s;
 				goto streamFound;
 			}
@@ -286,7 +286,7 @@ short h2parseHeader(clientInfo* c, char* buf, int sz, int s) {
 		// Find the stream or return goaway if not found.
 		for (char i = 0; i < maxstreams; i++) {
 			if (c->stream[i].id==s) {
-				streamIndex = i; goto streamFound;
+				r = &c->stream[i]; goto streamFound;
 			}
 		}
 		// Stream not found.
@@ -304,11 +304,11 @@ streamFound:
 			if ((index = h2Integer(&buf[pos], &pos, 127)) < 1) return -7; // Index 0 is invalid. -1 is error.
 			else if (index < 62) {// Index is on static table.
 				switch (index) {
-					case 2: c->stream[streamIndex].method = 1;	break; // :method: GET
-					case 3: c->stream[streamIndex].method = 2;	break; // :method: POST
-					case 4: c->stream[streamIndex].path[0] = '/';
-						    c->stream[streamIndex].path[1] = 0;	break; // :path: /
-					case 5: memcpy((void*)c->stream[streamIndex].path.data(), "/index.html", 12); break; // :path: /index.html
+					case 2: r->method = 1;	break; // :method: GET
+					case 3: r->method = 2;	break; // :method: POST
+					case 4: r->path[0] = '/';
+						    r->path[1] = 0;	break; // :path: /
+					case 5: memcpy((void*)r->path.data(), "/index.html", 12); break; // :path: /index.html
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
 					default: break;
 				}
@@ -348,27 +348,44 @@ streamFound:
 					{
 						std::string huffstr;
 						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
+						const char* str = (isHuffman) ? huffstr.data() : &buf[pos];
+						// Check client is from localhost if host header is localhost
+						if (!strncmp(str, "127.0", 5)) {
+							if (c->ipAddr[0] != 127 || c->ipAddr[1] != 0) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
+						}
+						// Same for LAN networks too.
+						if (!strncmp(str, "192.168", 7)) {
+							if (c->ipAddr[0] != 192 || c->ipAddr[1] != 168) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
+						}
 						for (short i = 0; i < numVhosts; i++) {
-							if (!strcmp(virtualHosts[i].hostname.data(),
-								((isHuffman) ? huffstr.data() : &buf[pos]))) {
-							
-								c->stream[streamIndex].vhost = i; break;
+							if (!strcmp(virtualHosts[i].hostname.data(), str)) {
+								r->vhost = i; break;
 							}
 						}
-						strcpy((char*)&c->stream[streamIndex].zstrm,
-							((isHuffman) ? huffstr.data() : &buf[pos]));
-						break;
+						strcpy((char*)r->hostname, str); break;
 					}
-					case 2: c->stream[streamIndex].method = 1;	break; // :method
+					case 2: // :method
+					{
+						std::string huffstr;
+						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
+						const char* str = (isHuffman) ? huffstr.data() : &buf[pos];
+						if		(!strncmp(str, "GET", 3)) r->method = METHOD_GET;
+						else if (!strncmp(str,"POST", 4)) r->method = METHOD_POST;
+						else if (!strncmp(str, "PUT", 3)) r->method = METHOD_PUT;
+						else if (!strncmp(str,"HEAD", 4)) r->method = METHOD_HEAD;
+						else if (!strncmp(str,"OPTIONS", 7)) r->method = METHOD_OPTIONS;
+						else	r->method = -1;
+					}
+						break;
 					case 4: // :path
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							memcpy((void*)c->stream[streamIndex].path.data(), huffstr.data(), huffstr.size());
-							pathParsing(&c->stream[streamIndex], huffstr.size());
+							memcpy((void*)r->path.data(), huffstr.data(), huffstr.size());
+							pathParsing(r, huffstr.size());
 						}
 						else {
-							memcpy((void*)c->stream[streamIndex].path.data(), &buf[pos], size);
-							pathParsing(&c->stream[streamIndex], size);
+							memcpy((void*)r->path.data(), &buf[pos], size);
+							pathParsing(r, size);
 						}
 						
 						break;
@@ -379,14 +396,14 @@ streamFound:
 								std::string huffstr = decodeHuffman(&buf[pos], size); int _size = huffstr.size();
 								for (int i = 1; i < numAcao; i++) {
 									if (!strncmp(acaoList[i].data(), huffstr.data(), _size)) {
-										c->stream[streamIndex].acao = i; break;
+										r->acao = i; break;
 									}
 								}
 							}
 							else {
 								for (int i = 1; i < numAcao; i++) {
 									if (!strncmp(acaoList[i].data(), &buf[pos], size)) {
-										c->stream[streamIndex].acao = i; break;
+										r->acao = i; break;
 									}
 								}
 							}
@@ -394,14 +411,14 @@ streamFound:
 					case 28: // content-length.
 						if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							c->stream[streamIndex].contentLength = strtol(huffstr.data(), NULL, 10);
-							if (!c->stream[streamIndex].contentLength) c->stream[streamIndex].flags |= FLAG_INVALID;
+							r->contentLength = strtol(huffstr.data(), NULL, 10);
+							if (!r->contentLength) r->flags |= FLAG_INVALID;
 						}
 						else {
-							c->stream[streamIndex].contentLength = strtol(&buf[pos], NULL, 10);
-							if (!c->stream[streamIndex].contentLength) c->stream[streamIndex].flags |= FLAG_INVALID;
+							r->contentLength = strtol(&buf[pos], NULL, 10);
+							if (!r->contentLength) r->flags |= FLAG_INVALID;
 						}
-						if (c->stream[streamIndex].contentLength > maxpayload - 2) {
+						if (r->contentLength > maxpayload - 2) {
 							return -10;
 						}
 						break;
@@ -409,17 +426,17 @@ streamFound:
 					case 41: // if-none-match
 					case 42: // if-range
 						switch (index) {
-							case 39: c->stream[streamIndex].conditionType = CR_IF_MATCH; break;
-							case 41: c->stream[streamIndex].conditionType = CR_IF_NONE_MATCH; break;
-							case 42: c->stream[streamIndex].conditionType = CR_IF_RANGE; break;
+							case 39: r->conditionType = CR_IF_MATCH; break;
+							case 41: r->conditionType = CR_IF_NONE_MATCH; break;
+							case 42: r->conditionType = CR_IF_RANGE; break;
 						} if (isHuffman) {
 							std::string huffstr = decodeHuffman(&buf[pos], size);
-							c->stream[streamIndex].condition = strtoull(huffstr.data(), NULL, 10);
-							if (!c->stream[streamIndex].condition) c->stream[streamIndex].flags |= FLAG_INVALID;
+							r->condition = strtoull(huffstr.data(), NULL, 10);
+							if (!r->condition) r->flags |= FLAG_INVALID;
 						}
 						else {
-							c->stream[streamIndex].condition = strtoull(&buf[pos], NULL, 10);
-							if (!c->stream[streamIndex].condition) c->stream[streamIndex].flags |= FLAG_INVALID;
+							r->condition = strtoull(&buf[pos], NULL, 10);
+							if (!r->condition) r->flags |= FLAG_INVALID;
 						}
 						break;
 					default: break;
@@ -434,7 +451,7 @@ streamFound:
 			pos += size;
 		}
 	}
-	return (buf[4] & END_STREAM) ? c->stream[streamIndex].method : 0;
+	return (buf[4] & END_STREAM) ? r->method : 0;
 }
 
 /// <summary>

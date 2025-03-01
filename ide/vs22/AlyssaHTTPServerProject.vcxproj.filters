@@ -77,9 +77,6 @@
     <ClInclude Include="..\..\src\wepoll.h">
       <Filter>Headers\External</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\resource.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\src\AlyssaOverrides.h">
       <Filter>Headers</Filter>
     </ClInclude>

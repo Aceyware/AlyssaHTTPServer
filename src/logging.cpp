@@ -29,14 +29,14 @@ int loggingInit(std::string logName) {
 	if (!sslPorts.size()) heading += "Disabled ";
 	else for (int i = 0; i < sslPorts.size(); i++) {
 		heading += std::to_string(sslPorts[i].port) + " ";
-	} heading += "\n";
+	} heading += '|';
 #else
-	heading += "SSL: N/A\n";
+	heading += "SSL: N/A |";
 #endif // COMPILE_WOLFSSL
-	heading += "CA: " + std::to_string(customactions) + ", T: " + std::to_string(threadCount) +
+	heading += " CA: " + std::to_string(customactions) + ", T: " + std::to_string(threadCount) +
 	", Sz: \"" += std::to_string(maxclient) + "c " + std::to_string(maxpath) + "p " + std::to_string(maxpayload) + "l "
 	+ std::to_string(maxauth) + "a " + std::to_string(maxstreams) + "s " + std::to_string(bufsize) + "b"
-		"\"v6: " + std::to_string(ipv6Enabled)+" === \n";
+		"\" v6: " + std::to_string(ipv6Enabled)+" === \n";
 	// Write the heading to file.
 	fwrite(heading.data(), heading.size(), 1, logfile);
 	return 0;
@@ -57,10 +57,12 @@ extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool p
 	time_t t = time(NULL); strftime(Time, 64, "%d.%b %H:%M:%S", localtime(&t));
 	// hostname is saved on zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
 	if (pIsALiteralString) {
-		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, virtualHosts[r->vhost].hostname.data()
+		fprintf(logfile, "[%S] R: %s:%d -> %s%s: %s\n", Time, addr, c->portAddr, 
+			(r->vhost) ? virtualHosts[r->vhost].hostname.data() : (char*)&r->hostname
 			, r->path.data(), (const char*)p);
 	} else {
-		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, (r->vhost)?virtualHosts[r->vhost].hostname.data() : (char*)&r->zstrm
+		fprintf(logfile, "[%s] R: %s:%d -> %s%s: %d\n", Time, addr, c->portAddr, 
+			(r->vhost)?virtualHosts[r->vhost].hostname.data() : (char*)&r->hostname
 			, r->path.data(), p->statusCode);
 	}
 }

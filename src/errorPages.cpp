@@ -3,6 +3,7 @@
 // It will handle both user defined and synthetic error pages.
 
 #include "Alyssa.h"
+#include "AlyssaOverrides.h"
 
 // Prolog and epilog (beginning and ending) of synthetic error pages.
 const char epProlog[] = "<!DOCTYPE html><html><head><style>html{font-family:system-ui,sans-serif;background:black;color:white;text-align:center;font-size:140%}</style><title>";
@@ -37,21 +38,32 @@ seFallback:
 			case 416: statusCode = 4; break;
 			case 418: statusCode = 5; break;
 			case 500: statusCode = 6; break;
-			case 501: 
-			default : statusCode = 7; break;
+			case 501: statusCode = 7; break;
+			default : return 0;
 		}
 		memcpy(&buf[512 + size], epVariable[statusCode], epVariableSz[statusCode]); size += epVariableSz[statusCode];
 		memcpy(&buf[512 + size], epEpilog, sizeof(epEpilog) - 1); size += sizeof(epEpilog) - 1;
 		return size;
 	}
 	else if (errorPagesEnabled == 2) {// Custom error pages
-		if (numVhosts) {
-			//memcpy(&buf[512], virtualHosts[c->vhost].respath, strlen(virtualHosts[c->vhost].respath));
-			snprintf(&buf[512], 512, "%s/%d.html", virtualHosts[vhost].respath.data(), statusCode);
-			stream.f = fopen(&buf[512], "rb"); if (!stream.f) goto seFallback; // If error page HTML does not exists, fallback to synthetic.
-			// Get size of page and return.
-			struct stat attr; stat(&buf[512], &attr); stream.fs = attr.st_size; return attr.st_size;
-		}
+		// Various platform specific variables used for file functions.
+#ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
+		int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0; char* Path = &buf[512];
+#elif __cplusplus > 201700L
+		std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
+		#define Path u8p
+#else
+		char* Path = &buf[512];
+		struct stat attr;
+#endif
+		snprintf(&buf[512], 512, "%s/%d.html", virtualHosts[vhost].respath.data(), statusCode);
+#ifdef _WIN32
+		WinPathConvert(Path);
+#endif
+
+		stream.f = fopen(Path, "rb"); if (stream.f == OPEN_FAILED) goto seFallback; // If error page HTML does not exists, fallback to synthetic.
+		// Get size of page and return.
+		stream.fs = FileSize(); return stream.fs;
 	}
 	return 0;
 }

@@ -5,7 +5,7 @@
 /// have it twice...
 /// (idk why it took so long to decide to do that...)
 /// 
-/// UPDATE: Now I also merget both GET and POST requests 
+/// UPDATE: Now I also merged both GET and POST requests 
 /// on a single function, POST handler was stripped down version
 /// of GET handler anyway.
 
@@ -42,9 +42,9 @@ void methodGetPostInit(clientInfo* c, int nStream) {
 	int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0;
 #elif __cplusplus > 201700L
 	std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-#define Path u8p
+	#define Path u8p
 #else
-#define Path tBuf[c->cT]
+	#define Path buff
 	struct stat attr;
 #endif
 
@@ -133,7 +133,7 @@ getRestart:
 	  case CA_KEEP_GOING:
 		break;
 	  case CA_REQUESTEND:
-		if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+		if (r->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 		return;
 	  case CA_CONNECTIONEND:
 		epollRemove(c); return;
@@ -163,7 +163,7 @@ getRestart:
 			int pos = strlen(buff);
 			memcpy(&buff[pos], "/index.html", 12);
 #ifdef _WIN32
-			WinPathConvert(buff)
+			WinPathConvert(buff);
 #elif _cplusplus>201700L
 			u8p += "/index.html";
 #endif
@@ -221,7 +221,7 @@ getRestart:
 								r->rend = h.conLength - 1; // Required for response headers.
 							}
 							else { // standard range req.
-								if (r->rend > h.conLength || r->rend > h.conLength || r->rend > r->rstart) {
+								if (r->rend > h.conLength || r->rstart > h.conLength || r->rend > r->rstart) {
 									h.statusCode = 416; h.conLength = 0; goto getEnd; 
 								}
 								fseek(r->f, r->rstart, SEEK_SET);
@@ -269,19 +269,20 @@ getRestart:
 						// Read the file
 						fread(&buff[sz / 2], r->fs, 1, r->f);
 						// Init compression 
-						int8_t ret = deflateInit2(&r->zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
+						z_stream zstrm = { 0 };
+						int8_t ret = deflateInit2(&zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
 						if (ret != Z_OK) {// Error
 							memcpy(&buff[9], &buff[sz / 2], r->fs); h.conLength = r->fs;
 						}
 						else {
 							// Set compression parameters
-							r->zstrm.next_out = (Bytef*)buff + 9; r->zstrm.avail_out = sz / 2 - 9;
-							r->zstrm.next_in = (Bytef*)&buff[sz / 2]; r->zstrm.avail_in = r->fs;
+							zstrm.next_out = (Bytef*)buff + 9; zstrm.avail_out = sz / 2 - 9;
+							zstrm.next_in = (Bytef*)&buff[sz / 2]; zstrm.avail_in = r->fs;
 							// Do compression and set the headers
-							deflate(&r->zstrm, Z_FINISH); deflateEnd(&r->zstrm);
-							if (r->zstrm.total_out < r->fs) {// Compressed data is smaller than uncompressed
+							deflate(&zstrm, Z_FINISH); deflateEnd(&zstrm);
+							if (zstrm.total_out < r->fs) {// Compressed data is smaller than uncompressed
 								// Send headers
-								h.conLength = r->zstrm.total_out; h.flags |= FLAG_ENCODED;
+								h.conLength = zstrm.total_out; h.flags |= FLAG_ENCODED;
 							}
 							else {// Compression made it bigger, send uncompressed data.
 								buff = &buff[sz / 2 - 9]; h.conLength = r->fs;
@@ -366,7 +367,7 @@ getEnd:
 		else {
 			serverHeaders(&h, c);
 			Send(c, &buff[9], r->fs);
-			if (c->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+			if (r->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 			else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 		}
 	}

@@ -4,6 +4,14 @@
 #include <wolfssl/wolfcrypt/coding.h>
 #endif
 
+enum parseErrors {
+	ERR_TOO_LARGE = -7, // Any header line is too large.
+	ERR_DENIED = -4,
+	ERR_INVALID_METHOD = -3,
+	ERR_PAYLOAD_TOO_LARGE = -2, // POST payload is too large
+	ERR_INVALID_VALUE = -1
+};
+
 char* predefinedHeaders; int predefinedSize;
 void setPredefinedHeaders() {
 	char buf[256] = "Server: Alyssa/" version "\r\n";
@@ -22,19 +30,20 @@ void setPredefinedHeaders() {
 
 // TODO: convert this shit to a macro. Function call is a wasted overhead.
 static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int epos) {
-	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. Other headers are parsed only if request is not bad.
+	if (buf[bpos]=='c' || buf[bpos]=='C') {  // Content-length is a special case and we must parse it in any way. 
+											 //Other headers are parsed only if request is not bad.
 											 // Due to the if statement, all headers starting with C will be parsed here.
 		if (!strncmp(&buf[bpos+1], "ontent-", 7)) { 
 			bpos += 8; if (!strncmp(&buf[bpos + 1], "ength", 5)) { 
 				bpos += 8; r->contentLength = strtol(&buf[bpos], NULL, 10);
 				if (!r->contentLength) r->flags |= FLAG_INVALID;
-				else if (r->contentLength > maxpayload - 2) return -2;
+				else if (r->contentLength > maxpayload - 2) return ERR_PAYLOAD_TOO_LARGE;
 			}																											
 		}
 		else if (!strncmp(&buf[bpos + 1], "onnection: ", 11)) {
 			bpos += 12;
-			if (!strncmp(&buf[bpos], "close", 5)) c->flags |= FLAG_CLOSE;
-			else c->flags ^= FLAG_CLOSE;
+			if (!strncmp(&buf[bpos], "close", 5)) r->flags |= FLAG_CLOSE;
+			else r->flags ^= FLAG_CLOSE;
 		}
 	}																													
 	else if (r->flags ^ FLAG_INVALID) {
@@ -45,9 +54,9 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 			if (!strncmp(&buf[bpos + 1], "uthorization: ", 14)) {
 				bpos += 15; 
 				if (!strncmp(&buf[bpos], "Basic", 5)) {
-					unsigned int _len = 128; int _ret = Base64_Decode((const byte*)&buf[bpos + 6], epos - bpos, (byte*)r->auth.data(), &_len);
-					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = -8; }
-					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = -1; }
+					int _ret = Base64_Decode((const byte*)&buf[bpos + 6], epos - bpos, (byte*)r->auth.data(), &maxauth);
+					if(_ret == BAD_FUNC_ARG)   { r->flags |= FLAG_INVALID; r->method = ERR_TOO_LARGE; }
+					else if(_ret==ASN_INPUT_E) { r->flags |= FLAG_INVALID; r->method = ERR_INVALID_VALUE; }
 				}
 			}
 			else
@@ -65,7 +74,16 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 		case 'h':																										
 		case 'H':																										
 			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
-				bpos += 6;																								
+				bpos += 6;
+				// Check client is from localhost if host header is localhost
+				if (!strncmp(&buf[bpos], "127.0", 5)) {
+					if (c->ipAddr[0] != 127 || c->ipAddr[1] != 0) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
+				}
+				// Same for LAN networks too.
+				if (!strncmp(&buf[bpos], "192.168", 7)) {
+					if (c->ipAddr[0] != 192 || c->ipAddr[1] != 168) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
+				}
+
 				if (numVhosts) {
 					for (int i = 1; i < numVhosts; i++) {
 						//printf("i: %d ",i);
@@ -75,8 +93,14 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					}
 				}
 				// Save the hostname to zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
-				memcpy(&r->zstrm, &buf[bpos], epos - bpos);
-				*((char*)(&r->zstrm)+epos - bpos) = 0;
+				if(epos-bpos < 63) {
+					memcpy(&r->hostname, &buf[bpos], epos - bpos);
+					*((char*)(&r->hostname) + epos - bpos) = 0;
+				}
+				else {
+					r->flags |= FLAG_INVALID; 
+					r->method = ERR_INVALID_VALUE;
+				}
 			}
 			break;
 		case 'i':
@@ -125,7 +149,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					}																																		
 				}																																			
 				else { // Bad request.																														
-					r->flags |= FLAG_INVALID; r->method = -1;																								
+					r->flags |= FLAG_INVALID; r->method = ERR_INVALID_VALUE;																								
 				}																																			
 			}																																				
 			break;																																			
@@ -156,7 +180,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 						else if (buf[1] == 'U' && buf[2] == 'T' && buf[3] == ' ') { r->method = 3; pos = 4; } break;
 				case 'O': if (buf[1] == 'P' && buf[2] == 'T' && buf[3] == 'I' && buf[4] == 'O') { r->method = 4; pos = 5; } break;
 				case 'H': if (buf[1] == 'E' && buf[2] == 'A' && buf[3] == 'D' && buf[4] == ' ') { r->method = 5; pos = 5; } break;
-				default: r->method = -2; break;
+				default: r->method = ERR_INVALID_METHOD; break;
 			}
 			char* end = (char*)memchr(&buf[pos], ' ', sz); // Search for the end of path.
 			if (!end) { r->method = -1; }// Ending space not found, invalid request.
@@ -166,14 +190,14 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 				r->path[end - &buf[pos]] = '\0';// Add null terminator
 				end = &r->path[end - &buf[pos]];// end is now used as end of client path on path buffer instead of end of path on receiving buffer.
 				pos += end - &r->path[0] + 1;
-				pathParsing(r, end - &buf[pos]);
+				pathParsing(r, end - &r->path[0]);
 				if (!strncmp(&buf[pos], "HTTP/1", 6)) {
 					pos += 7; if (buf[pos] == '0') {
-						c->flags ^= FLAG_CLOSE;
+						r->flags |= FLAG_CLOSE;
 					}
 					pos++;
 				}
-				else { r->method = -1; } // No HTTP/1.x, bad request.
+				else { r->method = ERR_INVALID_VALUE; } // No HTTP/1.x, bad request.
 				while (buf[pos] < 32 && pos < sz) pos++; // Itarete from line demiliters to beginning.
 			}
 			// Mark first-line parsing as complete.
@@ -215,8 +239,8 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 						// Parse the resulting line.
 						// int oldpos = pos;
 						switch (parseLine(c, r, buf, 2, pos)) {
-							case -2:
-								return -10;
+							case ERR_PAYLOAD_TOO_LARGE:
+								return ERR_PAYLOAD_TOO_LARGE;
 							default:
 								break;
 						}
@@ -265,9 +289,10 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			bpos = pos;
 		}
 		if (pos > bpos) {// Last line was incomplete
-			// HTTP/1.1 does not use more than 1 stream so the memory, so memory for request path of second stream can be used for this purpose.
-
-			// First 2 bytes of second stream path buffer is used for size, rest is used as string of incomplete line.
+			// HTTP/1.1 does not use more than 1 stream so the memory, 
+			// so memory for request path of second stream can be used for this purpose.
+			// First 2 bytes of second stream path buffer is used for size, 
+			// rest is used as string of incomplete line.
 
 			// First we will check if there is available space.
 			if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos)) { // It exceeds the buffer.
@@ -289,14 +314,14 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		r->contentLength -= sz - pos;
 		if (*(unsigned short*)&r->payload[0] + sz - pos > maxpayload - 2) { // Buffer overflow.
 			r->flags |= FLAG_INVALID; 
-			if (!r->contentLength) return -6;
+			if (!r->contentLength) return ERR_PAYLOAD_TOO_LARGE;
 		}
 		else if(!(r->flags & FLAG_INVALID)) {
 			memcpy(&r->payload[1 + *(unsigned short*)&r->payload[0]],
 				&buf[pos], sz - pos); *(unsigned short*)&r->payload[0] += sz - pos;
 			if (!r->contentLength) return r->method;
 		}
-		else if (!r->contentLength) return -6;
+		else if (!r->contentLength) return ERR_PAYLOAD_TOO_LARGE;
 	}
 	return 0;
 }
@@ -312,6 +337,14 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	char buf[512] = "HTTP/1.1 "; short pos = 9;
 	switch (h->statusCode) {
 		case 200: memcpy(&buf[pos], "200 OK",					  6); pos += 6;  break;
+		case 204: memcpy(&buf[pos], "204 No Content\r\n"
+									"Allow: OPTIONS, GET, HEAD", 41); pos += 41;
+#ifdef COMPILE_CUSTOMACTIONS
+				  if(customactions){buf[pos]=',',buf[pos+1]=' ',buf[pos+2]='P',
+									buf[pos+3]='O',buf[pos+4]='S',buf[pos+5]='T'; 
+									pos+=6; }
+#endif
+				  break;
 		case 206: memcpy(&buf[pos], "206 Partial Content\r\nContent-Range: bytes ", 42); pos += 42; 
 				  pos += snprintf(&buf[pos], 512-pos, "%llu-%llu/%llu", c->stream[0].rstart, c->stream[0].rend, h->conLength); 
 				  break;
@@ -383,64 +416,7 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	c->stream[0].flags = 0;
 }
 
-void serverHeadersInline(short statusCode, int conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
-	// Set up the error page to send if there is an error
-	if (statusCode > 400 && errorPagesEnabled) { 
-		conLength = errorPages(tBuf[c->cT], statusCode, c->stream[0].vhost, c->stream[0]); c->stream[0].fs = conLength;
-	}
-
-	char buf[512] = "HTTP/1.1 "; short pos = 9;
-	switch (statusCode) {
-		case 200: memcpy(&buf[pos], "200 OK",					  6); pos += 6;  break;
-		case 302: memcpy(&buf[pos], "302 Found\r\nLocation: ",   21); pos += 21; 
-				  memcpy(&buf[pos], arg, strlen(arg));       pos += strlen(arg); break;
-		case 304: memcpy(&buf[pos], "304 Not Modified",			 16); pos += 16; break;
-		case 400: memcpy(&buf[pos], "400 Bad Request",			 15); pos += 15; break;
-		case 401: memcpy(&buf[pos], "401 Unauthorized\r\nWWW-Authenticate: Basic", 41); pos += 41; break;
-		case 402: memcpy(&buf[pos], "402 Precondition Failed",	 23); pos += 23; break;
-		case 403: memcpy(&buf[pos], "403 Forbidden",			 13); pos += 13; break;
-		case 404: memcpy(&buf[pos], "404 Not Found",			 13); pos += 13; break;
-		case 405: memcpy(&buf[pos], "405 Method Not Allowed\r\nAllow: GET, HEAD, OPTIONS\r\n", 51); 
-																	  pos += 51; break;
-		case 413: memcpy(&buf[pos], "413 Content Too Large",	 21); pos += 21; break;
-		case 414: memcpy(&buf[pos], "414 URI Too Long",			 16); pos += 16; break;
-		case 418: memcpy(&buf[pos], "418 I'm a teapot",			 16); pos += 16; break;
-		case 431: memcpy(&buf[pos], "431 Request Header Fields Too Large",  35); pos += 35; break;
-		case 500: memcpy(&buf[pos], "500 Internal Server Error", 25); pos += 25; break;
-		case 501:
-		default : memcpy(&buf[pos], "501 Not Implemented",		 19); pos += 19; break;
-	}
-	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
-	// Allow on OPTIONS requets
-	if (c->stream[0].method == 4) {
-#ifdef COMPILE_CUSTOMACTIONS
-		if (customactions) {
-			memcpy(&buf[pos], "Allow: GET, POST, PUT, HEAD, OPTIONS\r\n", 38); pos += 38;
-		}
-		else {
-			memcpy(&buf[pos], "Allow: GET, HEAD, OPTIONS\r\n", 27); pos += 27;
-		}
-#else
-		memcpy(&buf[pos], "Allow: GET, HEAD, OPTIONS\r\n", 27); pos += 27;
-#endif // COMPILE_CUSTOMACTIONS
-	}
-	// Content length
-	memcpy(&buf[pos], "Content-Length: ", 16); pos += 16;
-	pos += snprintf(&buf[pos], 512 - pos, "%d\r\n", conLength);
-	// Current time
-	time_t currentDate = time(NULL);
-	memcpy(&buf[pos], "Date: ", 6); pos += 6; pos += strftime(&buf[pos], 512 - pos, "%a, %d %b %Y %H:%M:%S GMT\r\n", gmtime(&currentDate));
-	// Additionals
-	if (flags & FLAG_NOCACHE) {
-		memcpy(&buf[pos], "Cache-Control: no-cache\r\n", 25); pos += 25;
-	}
-	// Predefined headers
-	memcpy(&buf[pos], predefinedHeaders, predefinedSize); pos += predefinedSize;
-	// Add terminating newline and send.
-	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
-	Send(c, buf, pos);
-	// Send the error page to user agent.
-	if (errorPagesEnabled) errorPagesSender(c);
-	// Reset request flags.
-	c->stream[0].flags = 0;
+void serverHeadersInline(unsigned short statusCode, unsigned long long conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
+	respHeaders h{ statusCode,conLength,arg,0,flags };
+	return serverHeaders(&h, c);
 }
