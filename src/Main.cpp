@@ -12,6 +12,10 @@ short rate = 4;
 short rate = 1;
 #endif
 
+#ifdef _DEBUG
+unsigned int nClients = 0; // Count of client sockets, used for checking if any sockets leaks happen.
+#endif
+
 std::vector<AThread> hThreads;
 std::vector<struct epoll_event> tShared;
 std::vector<char*> tBuf;
@@ -114,7 +118,7 @@ void* threadMain(int num) {
 				}
 				epoll_ctl(ep, EPOLL_CTL_ADD, cSock, &element);
 #ifdef _DEBUG
-				printf("T: %d New incoming: %d\r\n", num, cSock);
+				nClients++; printf("T: %d New incoming: %llu nC: %d\r\n", num, cSock, nClients);
 #endif // _DEBUG	
 				goto pollPass;
 			}
@@ -144,7 +148,7 @@ void* threadMain(int num) {
 						case  METHOD_HEAD:
 							methodGetPostInit(&clients[clientIndex(num)]); break;
 						case  METHOD_OPTIONS: serverHeadersInline(204, 0, &clients[clientIndex(num)], 0, NULL); break;
-						case 666: break;
+						case 0: break;
 						default: serverHeadersInline(400, 0, &clients[clientIndex(num)], 0, NULL); break;
 					}
 				}
@@ -229,17 +233,20 @@ void* threadMain(int num) {
 		// Reset polling or disconnect.
 		clients[clientIndex(num)].cT = -1;
 		if (!clients[clientIndex(num)].epollNext) num = num; //__debugbreak();
-		else if (clients[tShared[num].data.fd / rate].epollNext==31) { // Close connection.
+		else if (clients[clientIndex(num)].epollNext==31) { // Close connection.
+#ifdef _DEBUG
+			nClients--; printf("T: %d disconnected: %llu nC: %d\r\n", num, clients[clientIndex(num)].s, nClients);
+#endif // _DEBUG	
 			if (epoll_ctl(ep, EPOLL_CTL_DEL, tShared[num].data.fd, &tShared[num])) abort();
 #ifdef COMPILE_WOLFSSL // Delete SSL object.
 			if (clients[clientIndex(num)].ssl) wolfSSL_free(clients[clientIndex(num)].ssl);
 #endif // COMPILE_WOLFSSL // Delete SSL object.
-			clients[tShared[num].data.fd / rate].epollNext = 0;
+			clients[clientIndex(num)].epollNext = 0;
 			shutdown(tShared[num].data.fd, 2); closesocket(tShared[num].data.fd);
 		}
 		else { // Set polling
 			tShared[num].events = clients[clientIndex(num)].epollNext; 
-			clients[tShared[num].data.fd / rate].epollNext = 0;
+			clients[clientIndex(num)].epollNext = 0;
 			if (epoll_ctl(ep, EPOLL_CTL_MOD, tShared[num].data.fd, &tShared[num])) abort();
 		}
 	pollPass: // point for passing polling reset, used when a new connection is accepted.

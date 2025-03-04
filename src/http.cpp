@@ -161,17 +161,17 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 }
 
 short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz) {
-	int pos = 0; if (strnlen(buf, 2048) != sz) return -6;
+	int pos = 0; if (strnlen(buf, bufsize) != sz) return -6;
 	if (!(r->flags & FLAG_FIRSTLINE)) {// First line is not parsed.
 		// Check if line is completed.
 		while (buf[pos] > 31 && pos < sz) pos++; 
 		if(pos<sz) {// Line is complete.
 			char* oldbuf = buf; int oldpos = pos;
 			if (r->flags & FLAG_INCOMPLETE) { // Incomplete line is now completed. Parse it on its buffer.
+				buf = c->stream[1].path.data();
 				// Append the new segment
-				memcpy((char*)c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data(), &buf[0], pos);
-				*(unsigned short*)c->stream[1].path.data() += pos;
-				buf = (char*)c->stream[1].path.data() + 2;
+				memcpy(&buf[2] + *(unsigned short*)buf, oldbuf, pos);
+				*(unsigned short*)buf += pos;
 			}
 			pos = 0;
 			switch (buf[0]) {// Method
@@ -203,23 +203,26 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			// Mark first-line parsing as complete.
 			r->flags |= FLAG_FIRSTLINE;
 			if (r->flags & FLAG_INCOMPLETE) { // Clear the incomplete-line space, set the buf and pos back
+				*(unsigned short*)buf = 0; r->flags ^= FLAG_INCOMPLETE;
 				buf = oldbuf; pos=oldpos;
-				// Check for line demiliter (was ignored while copying to incomplete line buffer.
+				// Check for line demiliter (was ignored while copying to incomplete line buffer.)
 				while (buf[pos] > 1 && buf[pos] < 32 && pos < sz) pos++;
-				*(unsigned short*)&c->stream[1] = 0; r->flags ^= FLAG_INCOMPLETE;
 			}
 		}
 		else { // Line is not complete.
 			// Read the comment on if (pos > bpos) scope below.
-			r->flags |= FLAG_INCOMPLETE;
-			if (*(unsigned short*)&c->stream[1] + pos < (maxstreams - 1) * sizeof(requestInfo)) {
+			r->flags |= FLAG_INCOMPLETE; char* xbuf = c->stream[1].path.data();
+			if (*(unsigned short*)xbuf + pos < maxpath - 2) {
 				// Append the new segment 
-				memcpy((char*)&c->stream[1] + 2 + *(unsigned short*)&c->stream[1], &buf[0], pos);
-				*(unsigned short*)&c->stream[1] += pos;
+				memcpy(&xbuf[2] + *(unsigned short*)xbuf, &buf[0], pos);
+				*(unsigned short*)xbuf += pos;
 			}
-			else r->flags |= FLAG_INVALID; // Line is too long and exceeds the available space.
+			else {
+				// Line is too long and exceeds the available space.
+				r->flags |= FLAG_INVALID; r->method = ERR_TOO_LARGE; 
+			}
 			epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-			return 666;
+			return 0;
 		}
 	}
 	// Parse lines one by one till' end of buffer.
@@ -230,11 +233,12 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		if (r->flags & FLAG_INCOMPLETE) {// There was an incomplete header. Complete it.
 			// Read the comment on the if statement right below the next for loop.
 			while (buf[pos] > 31 && pos<sz) pos++;
-			if (r->flags ^ FLAG_INVALID) {
-				if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos) < (maxstreams - 1) * sizeof(requestInfo)) {
+			if (!(r->flags & FLAG_INVALID)) {
+				char* xbuf = c->stream[1].path.data();
+				if (*(unsigned short*)xbuf + (pos - bpos) < maxpath - 2) {
 					// Append the new segment 
-					memcpy((void*)(c->stream[1].path.data() + 2 + *(unsigned short*)c->stream[1].path.data()), &buf[bpos], pos - bpos);
-					*(unsigned short*)c->stream[1].path.data() += (pos - bpos);
+					memcpy((&xbuf[2] + *(unsigned short*)xbuf), &buf[bpos], pos - bpos);
+					*(unsigned short*)xbuf += (pos - bpos);
 					if (pos < sz) {// Line is completed.
 						// Parse the resulting line.
 						// int oldpos = pos;
@@ -244,16 +248,16 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 							default:
 								break;
 						}
-						*(unsigned short*)c->stream[1].path.data() = 0; r->flags ^= FLAG_INCOMPLETE;
+						*(unsigned short*)xbuf = 0; r->flags ^= FLAG_INCOMPLETE;
 					}
 					else { // Line being incomplete should mean end of buffer.
 						epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-						return 666;
+						return 0;
 					}
 				}
 				else { // Line is too long and exceeds the available space.
 					r->flags |= FLAG_INVALID; r->method = -7;
-					*(unsigned short*)c->stream[1].path.data() = maxpath;
+					*(unsigned short*)xbuf = maxpath;
 				} 
 			}
 		}
@@ -293,22 +297,22 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			// so memory for request path of second stream can be used for this purpose.
 			// First 2 bytes of second stream path buffer is used for size, 
 			// rest is used as string of incomplete line.
-
+			char* xbuf = c->stream[1].path.data();
 			// First we will check if there is available space.
-			if (*(unsigned short*)c->stream[1].path.data() + (pos - bpos)) { // It exceeds the buffer.
-				r->flags |= FLAG_INVALID; r->method = -7;
-				*(unsigned short*)c->stream[1].path.data() = maxpath;
-			}
-			else {
-				memcpy((char*)c->stream[1].path.data() + 2, &buf[bpos] + *(unsigned short*)c->stream[1].path.data(), pos - bpos);
-				*(unsigned short*)c->stream[1].path.data() += pos - bpos;
+			if (*(unsigned short*)xbuf + (pos - bpos) < maxpath - 2) { 
+				memcpy((char*)xbuf + 2, &buf[bpos] + *(unsigned short*)xbuf, pos - bpos);
+				*(unsigned short*)xbuf += pos - bpos;
 
 				// Set the INCOMPLETE flag too, obv.
 				r->flags |= FLAG_INCOMPLETE;
 			}
+			else { // It exceeds the buffer.
+				r->flags |= FLAG_INVALID; r->method = -7;
+				*(unsigned short*)xbuf = maxpath;
+			}
 		}
 		epollCtl(c, EPOLLIN | EPOLLONESHOT); // Reset polling.
-		return 666;
+		return 0;
 	}
 	else {// Received remainder of payload, append it.
 		r->contentLength -= sz - pos;
@@ -418,5 +422,5 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 
 void serverHeadersInline(unsigned short statusCode, unsigned long long conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
 	respHeaders h{ statusCode,conLength,arg,0,flags };
-	return serverHeaders(&h, c);
+	serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
 }

@@ -1,5 +1,8 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2.3 - 04.03.2025
+- Some fixes regarding to HTTP/1.1
+
 ## 3.0.2.2 - 02.03.2025
 - Added security checks for Host header
 	- Host could be spoofed to "127.0.0.1" or "192.168.x.y" to make server think that client connects from local network

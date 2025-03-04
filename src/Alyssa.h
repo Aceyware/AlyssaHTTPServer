@@ -116,7 +116,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2.2"
+#define version "3.0.2.3"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -249,10 +249,14 @@ typedef struct clientInfo {
 	WOLFSSL* ssl;
 #endif // COMPILE_WOLFSSL
 	void clean() {
-		flags = 0; ssl = NULL;
-		for (int i = 0; i < maxstreams; i++) {
-			stream[i].clean();
+		if (flags & FLAG_HTTP2) {
+			for (int i = 0; i < maxstreams; i++) {
+				stream[i].clean();
+			}
+		} else {
+			stream[0].clean(); stream[1].path[0] = '\0';
 		}
+		flags = 0; ssl = NULL;
 	}
 
 #ifdef COMPILE_WOLFSSL
