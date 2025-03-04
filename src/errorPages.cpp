@@ -50,8 +50,7 @@ seFallback:
 #ifdef _WIN32 // path on fopen is treated as ANSI on Windows, UTF-8 multibyte path has to be converted to widechar string for Unicode paths.
 		int cbMultiByte = 0; int ret = 0; WIN32_FIND_DATA attr = { 0 }; HANDLE hFind = 0; char* Path = &buf[512];
 #elif __cplusplus > 201700L
-		std::filesystem::path u8p; // This has to be defined here due to next "goto openFile17" skipping it's assignment.
-		#define Path u8p
+		#define Path &buf[512]
 #else
 		char* Path = &buf[512];
 		struct stat attr;
@@ -63,7 +62,7 @@ seFallback:
 
 		stream.f = fopen(Path, "rb"); if (stream.f == OPEN_FAILED) goto seFallback; // If error page HTML does not exists, fallback to synthetic.
 		// Get size of page and return.
-		stream.fs = FileSize(); return stream.fs;
+		stream.fs = FileSize(Path); return stream.fs;
 	}
 	return 0;
 }
