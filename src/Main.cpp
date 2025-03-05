@@ -159,7 +159,7 @@ void* threadMain(int num) {
 #ifdef COMPILE_HTTP2
 			if (shit->flags & FLAG_HTTP2) {
 				int streams = clients[clientIndex(num)].activeStreams;
-				for (size_t i = 0; i < 8; i++) {
+				for (size_t i = 0; i < maxstreams; i++) {
 					if (clients[clientIndex(num)].stream[i].f) {
 						if (clients[clientIndex(num)].stream[i].fs > 16375) {
 							// Frame size = 16384 - 9 = 16375

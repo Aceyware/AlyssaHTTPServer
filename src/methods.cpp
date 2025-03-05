@@ -112,7 +112,7 @@ getRestart:
 #ifdef COMPILE_HTTP2
 		// Close and delete stream datas.
 		if(c->flags & FLAG_HTTP2) {
-			for (int j = 0; j < 8; j++) {
+			for (int j = 0; j < maxstreams; j++) {
 				c->stream[j].fs = 0;
 				if (c->stream[j].f) {
 					fclose(c->stream[j].f); c->stream[j].f = NULL;
@@ -260,6 +260,8 @@ getRestart:
 					r->fs = h.conLength;
 				}
 				if (r->method == METHOD_HEAD) {// If head request, send headers and exit.
+					// Close file because it won't be used anyway.
+					fclose(r->f); r->f = NULL;
 					goto getEnd;
 				} // Else keep going.
 				else if (r->fs < h2bufsz - 9) {
@@ -268,6 +270,8 @@ getRestart:
 					if (gzEnabled && r->fs < sz / 2 - 9) {
 						// Read the file
 						fread(&buff[sz / 2], r->fs, 1, r->f);
+						// Close file after reading ends
+						fclose(r->f); r->f = NULL;
 						// Init compression 
 						z_stream zstrm = { 0 };
 						int8_t ret = deflateInit2(&zstrm, 9, Z_DEFLATED, 15 | 16, MAX_MEM_LEVEL, Z_FILTERED);
@@ -295,6 +299,8 @@ getRestart:
 					else { // Read file normally.
 						fread(&buff[9], r->fs, 1, r->f); 
 						h.conLength = r->fs; fsm = 1;
+						// Close file after reading ends
+						fclose(r->f); r->f = NULL;
 					}
 				}
 				else {
@@ -302,6 +308,9 @@ getRestart:
 				}
 			}
 			else { // Open failed, 404
+#ifdef _WIN32
+				r->f = NULL;
+#endif
 				h.statusCode = 404;
 			}
 		}

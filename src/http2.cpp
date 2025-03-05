@@ -252,7 +252,7 @@ void goAway(clientInfo* c, char code) {
 	wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
 	wolfSSL_free(c->ssl); epollRemove(c); closesocket(c->s);
 	// Close and delete stream datas.
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < maxstreams; i++) {
 		c->stream[i].fs = 0;
 		if (c->stream[i].f) {
 			fclose(c->stream[i].f); c->stream[i].f = NULL;
@@ -511,7 +511,7 @@ void parseFrames(clientInfo* c, int sz) {
 
 		switch (type) {
 			case H2DATA:
-				for (char i = 0; i < 8; i++) {
+				for (char i = 0; i < maxstreams; i++) {
 					if (c->stream[i].id == str) {
 						c->stream[i].contentLength -= fsz;
 						if (*(unsigned short*)&c->stream[i].payload[0] + fsz > maxpayload - 2) { // Buffer overflow.
@@ -549,7 +549,7 @@ void parseFrames(clientInfo* c, int sz) {
 				break;
 			case H2RST_STREAM: 
 				// Search for the stream
-				for (char i = 0; i < 8; i++) {
+				for (char i = 0; i < maxstreams; i++) {
 					if (c->stream[i].id == str) {
 						c->stream[i].fs = 0;
 						if (c->stream[i].f) {
@@ -579,7 +579,7 @@ void parseFrames(clientInfo* c, int sz) {
 				// Close the connection.
 				epollRemove(c);
 				// Close and delete stream datas.
-				for (int j = 0; j < 8; j++) {
+				for (int j = 0; j < maxstreams; j++) {
 					c->stream[j].fs = 0;
 					if (c->stream[j].f) {
 						fclose(c->stream[j].f); c->stream[j].f = NULL;

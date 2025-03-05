@@ -116,7 +116,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2.4"
+#define version "3.0.2.5"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
