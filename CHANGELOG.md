@@ -1,5 +1,9 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2.4 - 05.03.2025
+- Previous release had fixes for HTTP/1.1 exclusively. So we made this release for ensuring equality.
+	- (some fixes regarding to HTTP/2)
+
 ## 3.0.2.3 - 04.03.2025
 - Some fixes regarding to HTTP/1.1
 

@@ -11,6 +11,7 @@ const char h2SettingsResponse[] = "\0\0\x00\4\1\0\0\0\0";
 char* h2PredefinedHeaders;	unsigned short h2PredefinedHeadersSize;
 unsigned short h2PredefinedHeadersIndexedSize; // Appended to end of h2PredefinedHeaders
 char* h2Settings; unsigned short h2SettingsSize = 0;
+static void h2serverHeadersInline(clientInfo* c, requestInfo* r, unsigned short statusCode, unsigned long long conLength, char flags, char* arg);
 
 enum h2FrameTypes {
 	H2DATA,
@@ -309,7 +310,7 @@ streamFound:
 					case 4: r->path[0] = '/';
 						    r->path[1] = 0;	break; // :path: /
 					case 5: memcpy((void*)r->path.data(), "/index.html", 12); break; // :path: /index.html
-					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
+					case 16: r->compressType = 1; break; // accept-encoding: gzip, deflate
 					default: break;
 				}
 			}
@@ -321,7 +322,7 @@ streamFound:
 			}
 		}
 		else if (buf[pos] & 32 && !(buf[pos] & 64)) {// Dynamic table size update.
-			pos++; h2Integer(&buf[pos], &pos, 31);
+			h2Integer(&buf[pos], &pos, 31);
 		}
 		else { // Literal header with/without indexing
 			bool isIndexed = (buf[pos] & 64); if(isIndexed) buf[pos] ^= 64;
@@ -349,8 +350,10 @@ streamFound:
 						std::string huffstr;
 						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
 						const char* str = (isHuffman) ? huffstr.data() : &buf[pos];
+						int _sz = (isHuffman) ? huffstr.size() : size;
+
 						// Check client is from localhost if host header is localhost
-						if (!strncmp(str, "127.0", 5)) {
+						if (!strncmp(str, "127.0", 5) || !strncmp(str, "localhost", 9)) {
 							if (c->ipAddr[0] != 127 || c->ipAddr[1] != 0) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
 						}
 						// Same for LAN networks too.
@@ -362,32 +365,45 @@ streamFound:
 								r->vhost = i; break;
 							}
 						}
-						strcpy((char*)r->hostname, str); break;
+
+						if (_sz < sizeof r->hostname - 1) {
+							memcpy(r->hostname, str, _sz);
+							r->hostname[_sz] = 0;
+						} else {
+							r->flags |= FLAG_INVALID; 
+							r->method = ERR_TOO_LARGE;
+						}
+						 break;
 					}
 					case 2: // :method
 					{
 						std::string huffstr;
 						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
 						const char* str = (isHuffman) ? huffstr.data() : &buf[pos];
-						if		(!strncmp(str, "GET", 3)) r->method = METHOD_GET;
-						else if (!strncmp(str,"POST", 4)) r->method = METHOD_POST;
-						else if (!strncmp(str, "PUT", 3)) r->method = METHOD_PUT;
-						else if (!strncmp(str,"HEAD", 4)) r->method = METHOD_HEAD;
-						else if (!strncmp(str,"OPTIONS", 7)) r->method = METHOD_OPTIONS;
+						if		(!strncmp(str, "GET" , 3)) r->method = METHOD_GET;
+						else if (!strncmp(str, "POST", 4)) r->method = METHOD_POST;
+						else if (!strncmp(str, "PUT" , 3)) r->method = METHOD_PUT;
+						else if (!strncmp(str, "HEAD", 4)) r->method = METHOD_HEAD;
+						else if (!strncmp(str, "OPTIONS", 7)) { r->method = METHOD_OPTIONS; r->flags |= FLAG_INVALID; }
 						else	r->method = -1;
 					}
 						break;
 					case 4: // :path
-						if (isHuffman) {
-							std::string huffstr = decodeHuffman(&buf[pos], size);
-							memcpy((void*)r->path.data(), huffstr.data(), huffstr.size());
-							pathParsing(r, huffstr.size());
+					{
+						std::string huffstr;
+						if (isHuffman) huffstr = decodeHuffman(&buf[pos], size);
+						const char* str = (isHuffman) ? huffstr.data() : &buf[pos];
+						int _sz = (isHuffman) ? huffstr.size() : size;
+
+						if (_sz > maxpath - 1) {
+							r->method = -3; // Path is too long
+							r->flags |= FLAG_INVALID;
+						} else {
+							memcpy(r->path.data(), str, _sz);
+							r->path[_sz] = '\0';
+							pathParsing(r, _sz);
 						}
-						else {
-							memcpy((void*)r->path.data(), &buf[pos], size);
-							pathParsing(r, size);
-						}
-						
+					}	
 						break;
 					case 16: break;	// accept-encoding: gzip, deflate. Not implemented yet.
 					case 20: // access-control-allow-origin (CORS)
@@ -451,7 +467,24 @@ streamFound:
 			pos += size;
 		}
 	}
-	return (buf[4] & END_STREAM) ? r->method : 0;
+	if (buf[4] & END_STREAM) {
+		if (r->flags & FLAG_INVALID) {
+			switch (r->method) {
+				case -10:
+					h2serverHeadersInline(c, r, 413, 0, 0, NULL);
+					resetStream(c, r->id, H2CANCEL); break;
+				case -7: h2serverHeadersInline(c, r, 431, 0, 0, NULL); break;
+				case -6: h2serverHeadersInline(c, r, 400, 0, 0, NULL); break;
+				case -3: h2serverHeadersInline(c, r, 414, 0, 0, NULL); break;
+				case METHOD_OPTIONS: h2serverHeadersInline(c, r, 204, 0, 0, NULL); break;
+				default: break;
+			}
+
+			r->id = 0; return 0;
+		}
+		else return r->method;
+	}
+	else return 0;
 }
 
 /// <summary>
@@ -498,24 +531,21 @@ void parseFrames(clientInfo* c, int sz) {
 			case H2HEADERS: 
 			case H2CONTINUATION:
 				switch (h2parseHeader(c, &buf[i], fsz, str)) {
-					case -7: goAway(c, H2COMPRESSION_ERROR); return; break;
-					case -9: goAway(c, H2CONNECTION_ERROR ); return; break;
-					case -10: {
-						// I'm really lazy
-						for (char i = 0; i < 8; i++) {
-							if (c->stream[i].id == str) { 
-								respHeaders h; h.statusCode = 413; h.conLength = 0;
-								h2serverHeaders(c, &c->stream[i], &h); 
-								resetStream(c, str, H2CANCEL);
-								break;
-							}
-						}
-						
-					}
+					case -7: goAway(c, H2COMPRESSION_ERROR); return;
+					case -9: goAway(c, H2CONNECTION_ERROR ); return;
+					case 0: break;
+					case  METHOD_POST:
+					case  METHOD_PUT:
+#ifndef COMPILE_CUSTOMACTIONS
+						serverHeadersInline(501, 0, &clients[clientIndex(num)], 0, NULL); break;
+#endif // COMPILE_CUSTOMACTIONS
+					case  METHOD_GET:
+					case  METHOD_HEAD:
+						methodGetPostInit(c, str); break;
+					
 					break;
 					default:				   break;
 				}
-				if (flags & END_STREAM) methodGetPostInit(c, str);
 				break;
 			case H2RST_STREAM: 
 				// Search for the stream
@@ -578,17 +608,33 @@ void parseFrames(clientInfo* c, int sz) {
 void h2serverHeaders(clientInfo* c, requestInfo* r, respHeaders* h) {
 	if (loggingEnabled) logRequest(c, r, h);
 	char buf[384] = { 0 };  unsigned short i = 9; // We can't use the thread buffer like we did on 1.1 because there may be headers unprocessed still.
+	buf[3] = H2HEADERS; // Type: HEADERS
+	buf[4] = END_HEADERS; // Flags
 	// Stream identifier is big endian so we need to write it swapped.
-	buf[5] = r->id >> 24; buf[6] = r->id >> 16; 
-	buf[7] = r->id >> 8;  buf[8] = r->id >> 0;
- 	buf[3] = H2HEADERS; // Type: HEADERS
-	buf[4] = END_HEADERS;
+	*(unsigned int*)&buf[5] = htonl(r->id); 
+ 	
 	//if (h->statusCode > 400) { h->conLength = errorPages(c, h->statusCode); }
 	if (!h->conLength || h->flags & FLAG_ENDSTREAM) buf[4] |= END_STREAM;
 
 	switch (h->statusCode) {
 		case 200: buf[i] = 128 | 8 ; i++; break; // Static indexed 8
-		case 204: buf[i] = 128 | 9 ; i++; break; // Static indexed 9
+		case 204: buf[i] = 128 | 9 ; i++; // Static indexed 9
+			buf[i] = 15; buf[i + 1] = 7; i += 2;// Static not indexed 22: allow
+#ifdef COMPILE_CUSTOMACTIONS
+			if (customactions) {
+				buf[i] = 31; //size
+				memcpy(&buf[i + 1], "Allow: OPTIONS, GET, HEAD, POST", 31);
+				i += 32;
+			}
+#else
+			if(0){}
+#endif
+			else {
+				buf[i] = 25; //size
+				memcpy(&buf[i + 1], "Allow: OPTIONS, GET, HEAD", 25);
+				i += 26;
+			}
+			break;
 		case 206: buf[i] = 128 | 10; i++; break; // Static indexed 10
 		case 304: buf[i] = 128 | 11; i++; break; // Static indexed 11
 		case 400: buf[i] = 128 | 12; i++; break; // Static indexed 12
@@ -655,3 +701,8 @@ void h2serverHeaders(clientInfo* c, requestInfo* r, respHeaders* h) {
 	wolfSSL_send(c->ssl, buf, i + 9, 0); return;
 }
 #endif
+
+static void h2serverHeadersInline(clientInfo* c, requestInfo* r, unsigned short statusCode, unsigned long long conLength, char flags, char* arg) {// Same one but without headerParameters type argument.
+	respHeaders h{ statusCode,conLength,arg,0,flags };
+	h2serverHeaders(c, r, &h);
+}

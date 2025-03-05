@@ -116,7 +116,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2.3"
+#define version "3.0.2.4"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -180,6 +180,14 @@ enum clientFlags {
 	FLAG_IPV6 = 32
 };
 
+enum parseErrors {
+	ERR_TOO_LARGE = -7, // Any header line is too large.
+	ERR_DENIED = -4,
+	ERR_INVALID_METHOD = -3,
+	ERR_PAYLOAD_TOO_LARGE = -2, // POST payload is too large
+	ERR_INVALID_VALUE = -1
+};
+
 enum methods {
 	METHOD_GET = 1, METHOD_POST, METHOD_PUT, METHOD_OPTIONS, METHOD_HEAD
 };
@@ -219,10 +227,6 @@ typedef struct requestInfo {
 			path[0] = '\0', auth[0] = '\0', payload[0] = '\0'; hostname[0] = '\0';
 	}
 	// Constructors
-	requestInfo(char method, FILE* f, unsigned long long fs, unsigned char flags, size_t rstart, size_t rend, 
-		unsigned short contentLength, char* qStr, unsigned short vhost, unsigned int id):
-		method(method), f(f), fs(fs), flags(flags), rstart(rstart), rend(rend), contentLength(contentLength), qStr(qStr), vhost(vhost), id(id), 
-		acao(0), condition(0), conditionType(0) {}
 	requestInfo(): method(0), f(NULL), fs(0), flags(0), rstart(0), rend(0), contentLength(0), qStr(0), vhost(0), id(0), acao(0), condition(0), conditionType(0) {}
 } requestInfo;
 
@@ -260,12 +264,8 @@ typedef struct clientInfo {
 	}
 
 #ifdef COMPILE_WOLFSSL
-	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short vhost , WOLFSSL* ssl):
-		 s(s), activeStreams(activeStreams), flags(flags), cT(cT), ssl(ssl) {}
 	clientInfo() : s(0), activeStreams(0), flags(0), cT(0), ssl(NULL) {}
 #else
-	clientInfo(SOCKET s, int activeStreams, unsigned char flags, unsigned char cT, unsigned short vhost) :
-		s(s), activeStreams(activeStreams), flags(flags), cT(cT) {}
 	clientInfo() : s(0), activeStreams(0), flags(0), cT(0) {}
 #endif
 } clientInfo;
@@ -274,11 +274,11 @@ typedef struct vhost {
 	std::string hostname, target, respath; char type; char reserved;
 
 	vhost(char* hostname, char type, char* target, char* respath) : 
-		hostname(hostname), type(type), target(target), respath(respath) {}
+		hostname(hostname), type(type), target(target), respath(respath), reserved(0) {}
 	vhost(std::string hostname, char type, std::string target, std::string respath) :
-		hostname(hostname), type(type), target(target), respath(respath) {}
+		hostname(hostname), type(type), target(target), respath(respath), reserved(0) {}
 	vhost() :
-		hostname(), type(0), target(), respath() {}
+		hostname(), type(0), target(), respath(), reserved(0) {}
 } vhost;
 
 extern std::vector<vhost> virtualHosts;
@@ -377,7 +377,7 @@ int8_t getLocale();
 #define getLocale() 0
 #endif
 int commandline(int argc, char* argv[]);
-extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* p, bool pIsALiteralString = 0);
+extern "C" void logRequest(clientInfo* c, requestInfo* r, respHeaders* h, bool hIsALiteralString = 0);
 int loggingInit(std::string logName);
 extern int printa(int String, char Type, ...);
 const char* getLocaleString(int String);

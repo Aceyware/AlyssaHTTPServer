@@ -4,14 +4,6 @@
 #include <wolfssl/wolfcrypt/coding.h>
 #endif
 
-enum parseErrors {
-	ERR_TOO_LARGE = -7, // Any header line is too large.
-	ERR_DENIED = -4,
-	ERR_INVALID_METHOD = -3,
-	ERR_PAYLOAD_TOO_LARGE = -2, // POST payload is too large
-	ERR_INVALID_VALUE = -1
-};
-
 char* predefinedHeaders; int predefinedSize;
 void setPredefinedHeaders() {
 	char buf[256] = "Server: Alyssa/" version "\r\n";
@@ -76,7 +68,7 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 			if (!strncmp(&buf[bpos + 1], "ost: ", 5)) {																	
 				bpos += 6;
 				// Check client is from localhost if host header is localhost
-				if (!strncmp(&buf[bpos], "127.0", 5)) {
+				if (!strncmp(&buf[bpos], "127.0", 5) || !strncmp(&buf[bpos], "localhost", 9)) {
 					if (c->ipAddr[0] != 127 || c->ipAddr[1] != 0) { r->flags |= FLAG_DENIED | FLAG_INVALID; break; }
 				}
 				// Same for LAN networks too.
@@ -93,13 +85,12 @@ static int8_t parseLine(clientInfo* c, requestInfo* r, char* buf, int bpos, int 
 					}
 				}
 				// Save the hostname to zstrm, refer to comment on Alyssa.h->struct requestInfo->zstrm
-				if(epos-bpos < 63) {
+				if(epos-bpos < sizeof r->hostname - 1) {
 					memcpy(&r->hostname, &buf[bpos], epos - bpos);
-					*((char*)(&r->hostname) + epos - bpos) = 0;
-				}
-				else {
+					r->hostname[epos - bpos] = 0;
+				} else {
 					r->flags |= FLAG_INVALID; 
-					r->method = ERR_INVALID_VALUE;
+					r->method = ERR_TOO_LARGE;
 				}
 			}
 			break;
@@ -168,7 +159,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		if(pos<sz) {// Line is complete.
 			char* oldbuf = buf; int oldpos = pos;
 			if (r->flags & FLAG_INCOMPLETE) { // Incomplete line is now completed. Parse it on its buffer.
-				buf = c->stream[1].path.data();
+				buf = (char*)c->stream[1].path.data();
 				// Append the new segment
 				memcpy(&buf[2] + *(unsigned short*)buf, oldbuf, pos);
 				*(unsigned short*)buf += pos;
@@ -211,7 +202,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 		}
 		else { // Line is not complete.
 			// Read the comment on if (pos > bpos) scope below.
-			r->flags |= FLAG_INCOMPLETE; char* xbuf = c->stream[1].path.data();
+			r->flags |= FLAG_INCOMPLETE; char* xbuf = (char*)c->stream[1].path.data();
 			if (*(unsigned short*)xbuf + pos < maxpath - 2) {
 				// Append the new segment 
 				memcpy(&xbuf[2] + *(unsigned short*)xbuf, &buf[0], pos);
@@ -234,7 +225,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			// Read the comment on the if statement right below the next for loop.
 			while (buf[pos] > 31 && pos<sz) pos++;
 			if (!(r->flags & FLAG_INVALID)) {
-				char* xbuf = c->stream[1].path.data();
+				char* xbuf = (char*)c->stream[1].path.data();
 				if (*(unsigned short*)xbuf + (pos - bpos) < maxpath - 2) {
 					// Append the new segment 
 					memcpy((&xbuf[2] + *(unsigned short*)xbuf), &buf[bpos], pos - bpos);
@@ -297,7 +288,7 @@ short parseHeader(struct requestInfo* r, struct clientInfo* c, char* buf, int sz
 			// so memory for request path of second stream can be used for this purpose.
 			// First 2 bytes of second stream path buffer is used for size, 
 			// rest is used as string of incomplete line.
-			char* xbuf = c->stream[1].path.data();
+			char* xbuf = (char*)c->stream[1].path.data();
 			// First we will check if there is available space.
 			if (*(unsigned short*)xbuf + (pos - bpos) < maxpath - 2) { 
 				memcpy((char*)xbuf + 2, &buf[bpos] + *(unsigned short*)xbuf, pos - bpos);

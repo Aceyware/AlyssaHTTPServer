@@ -10,6 +10,7 @@
 # Precompiled Headers
 *.gch
 *.pch
+*.ipch
 
 # Compiled Dynamic libraries
 *.so
@@ -77,4 +78,5 @@ resource.h
 
 *.txt
 *.user
+*.db
 /YAZSANA.AMK
