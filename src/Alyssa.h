@@ -116,7 +116,7 @@ extern const char* version;
 ///  888888'   `88888P8 dP       dP `88888P8 88Y8888' dP `88888P' `88888P' 
 ///  (and constants)                                                                       
 
-#define version "3.0.2.5"
+#define version "3.0.2.6"
 extern std::string htrespath;
 extern unsigned int maxpath;
 extern unsigned int maxauth;
@@ -247,7 +247,7 @@ typedef struct clientInfo {
 	another thread starts to handle it at the same time and BOOM!
 	In Windows this wasn't as problematic because Windows assigns same socket number
 	less aggresive than linux does. */
-	unsigned int epollNext = 0;
+	std::atomic<unsigned int> epollNext = 0;
 
 #ifdef COMPILE_WOLFSSL
 	WOLFSSL* ssl;

@@ -407,11 +407,15 @@ void serverHeaders(respHeaders* h, clientInfo* c) {
 	// Add terminating newline and send.
 	buf[pos] = '\r', buf[pos + 1] = '\n'; pos += 2;
 	Send(c, buf, pos);
-	// Reset request flags.
-	c->stream[0].flags = 0;
 }
 
 void serverHeadersInline(unsigned short statusCode, unsigned long long conLength, clientInfo* c, char flags, char* arg) {// Same one but without headerParameters type argument.
 	respHeaders h{ statusCode,conLength,arg,0,flags };
-	serverHeaders(&h, c); epollCtl(c, EPOLLIN | EPOLLONESHOT);
+	serverHeaders(&h, c);
+
+	if (errorPages) errorPagesSender(c);
+	else if (c->stream[0].flags & FLAG_CLOSE) epollRemove(c);
+	else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+
+	c->stream[0].flags = 0;
 }

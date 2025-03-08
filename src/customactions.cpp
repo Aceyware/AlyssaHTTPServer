@@ -152,13 +152,14 @@ static int8_t caAuth(const char* auth, char* path) {
 	return 0;
 }
 
-#define caSendHeaders()\
+#define caSendHeaders();\
 	if (c.flags & FLAG_HTTP2) {\
 			h2serverHeaders((clientInfo*)&c, (requestInfo*)&r, &h); \
 	}\
 	else {\
 		serverHeaders(&h, (clientInfo*)&c); \
-		if (errorPagesEnabled) errorPagesSender((clientInfo*)&c); \
+		if (errorPagesEnabled && h.statusCode > 399) errorPagesSender((clientInfo*)&c); \
+		else if(r.flags & FLAG_CLOSE) epollRemove(((clientInfo*)(&c)));\
 		else epollCtl(((clientInfo*)(&c)), EPOLLIN | EPOLLONESHOT);\
 	}\
 
@@ -235,27 +236,26 @@ caExecLoop:
 	switch (actions[0].action) {
 		case CA_A_FORBID:
 			h.statusCode = 403; h.conLength = 0;
-			caSendHeaders()
-			return CA_REQUESTEND;
+			caSendHeaders();; return CA_REQUESTEND;
 #ifdef COMPILE_WOLFSSL
 		case CA_A_AUTH:
 			switch (caAuth(r.auth.data(), &buf[actions[0].args])) {
 				case 0:
 					h.statusCode = 403; h.conLength = 0;
-					caSendHeaders() return CA_REQUESTEND;
+					caSendHeaders(); return CA_REQUESTEND;
 				case 1:
 					break;
 				case CA_ERR_SERV:
 					return CA_ERR_SERV;
 				case -2:
 					h.statusCode = 401; h.conLength = 0;
-					caSendHeaders() return CA_REQUESTEND;
+					caSendHeaders(); return CA_REQUESTEND;
 				case -3:
 					h.statusCode = 500; h.conLength = 0;
-					caSendHeaders() return CA_REQUESTEND;
+					caSendHeaders(); return CA_REQUESTEND;
 				default:
 					h.statusCode = 400; h.conLength = 0;
-					caSendHeaders() return CA_REQUESTEND;
+					caSendHeaders(); return CA_REQUESTEND;
 			}
 			break;
 #endif
@@ -265,7 +265,7 @@ caExecLoop:
 	switch (actions[1].action) {
 		case CA_A_REDIRECT:
 			h.statusCode = 302; h.conLength = 0; h.conType = &buf[actions[1].args];
-			caSendHeaders() return CA_REQUESTEND;
+			caSendHeaders(); return CA_REQUESTEND;
 		case CA_A_SOFTREDIR:
 		{
 			int sz = strlen(&buf[actions[1].args]);

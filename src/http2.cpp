@@ -250,7 +250,7 @@ void goAway(clientInfo* c, char code) {
 	wolfSSL_send(c->ssl, frame, 17, 0);
 	// Close the connection.
 	wolfSSL_shutdown(c->ssl); shutdown(c->s, 2);
-	wolfSSL_free(c->ssl); epollRemove(c); closesocket(c->s);
+	wolfSSL_free(c->ssl); epollRemove(c);
 	// Close and delete stream datas.
 	for (int i = 0; i < maxstreams; i++) {
 		c->stream[i].fs = 0;

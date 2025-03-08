@@ -133,7 +133,7 @@ getRestart:
 	  case CA_KEEP_GOING:
 		break;
 	  case CA_REQUESTEND:
-		if (r->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
+		// poll status is already handled inside CA code.
 		return;
 	  case CA_CONNECTIONEND:
 		epollRemove(c); return;
@@ -187,9 +187,10 @@ getRestart:
 #ifdef COMPILE_HTTP2
 			if (c->flags & FLAG_HTTP2) 
 				r->id = 0;  // Mark the stream space on memory free.
-			else
+			else 
 #endif
-				epollCtl(c, EPOLLIN | EPOLLONESHOT);
+				if (r->flags & FLAG_CLOSE) epollRemove(c);
+				else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 			return;
 			}
 #endif // COMPILE_DIRINDEX
@@ -345,12 +346,18 @@ getEnd:
 			if (0) {}
 #endif
 			else {
-				serverHeaders(&h, c); errorPagesSender(c);
+				serverHeaders(&h, c); 
+				if (errorPages) errorPagesSender(c);
+				else if (c->stream[0].flags & FLAG_CLOSE) epollRemove(c);
+				else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+				c->stream[0].flags = 0; // Reset request flags.
 			}
 		}
 		else {// Send headers and reset polling.
 			h.conLength = 0; sendHeaders(c, r, &h);
 			r->id = 0; ; // Mark the stream space on memory free.
+			if (r->flags & FLAG_CLOSE) { epollRemove(c); }
+			else epollCtl(c, EPOLLIN | EPOLLONESHOT);
 		}
 		return;
 	}
@@ -378,6 +385,7 @@ getEnd:
 			Send(c, &buff[9], r->fs);
 			if (r->flags & FLAG_CLOSE) { epollRemove(c); } // Close the connection if "Connection: close" is set.
 			else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+			c->stream[0].flags = 0; // Reset request flags.
 		}
 	}
 	else { // File is large and will be sent on POLLOUTs (FSM = 2)
@@ -393,7 +401,9 @@ getEnd:
 		else {
 			serverHeaders(&h, c); 
 			if (fsm & 2) epollCtl(c, EPOLLOUT | EPOLLONESHOT);
+			else if (r->flags & FLAG_CLOSE) { epollRemove(c); }
 			else epollCtl(c, EPOLLIN | EPOLLONESHOT);
+			c->stream[0].flags = 0; // Reset request flags.
 		}
 	}
 }

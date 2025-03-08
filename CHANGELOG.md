@@ -1,5 +1,8 @@
 # Alyssa HTTP Server Changelog
 
+## 3.0.2.6 - 08.03.2025
+- partial fix for connections not getting closed in http0 or close flag set and sockets getting leaked
+
 ## 3.0.2.5 - 06.03.2025
 - Fixed stating bug in HTTP/2 that was causing a thread to get in infinite nonproductive loop.
 - Fixed file handles getting leaked on new method handling code introduced with 3.0.1.
